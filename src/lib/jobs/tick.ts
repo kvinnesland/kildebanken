@@ -8,16 +8,27 @@
 // ligger i databasen (unike indekser, statussjekk før overgang), ikke i at
 // denne funksjonen "husker" noe fra forrige kall.
 
-import { and, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { db, type Database } from "@/db/client";
 import {
   contactRequests,
   countries,
+  digestDeliveries,
   digests,
+  emailSubscriptions,
+  journalistProfiles,
   requests,
   users,
 } from "@/db/schema";
-import { sendTransactionalEmail } from "@/lib/email/send";
+import { sendTransactionalEmail, sendBulkEmail } from "@/lib/email/send";
+import { generateToken, hashToken } from "@/lib/auth/tokens";
+import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
+import {
+  insertPerRecipientTokens,
+  renderDigestContent,
+  type DigestRequestItem,
+  type RenderedDigest,
+} from "@/lib/email/digest";
 
 export interface TickResult {
   job: string;
@@ -126,16 +137,19 @@ async function runDigestTick(dbase: Database): Promise<TickResult> {
 
       if (!createdDigest) continue; // tapte kappløpet mot et parallelt tikk
 
+      const requestIds = publishable.map((r) => r.id);
       await dbase
         .update(requests)
         .set({ includedInDigestAt: new Date() })
-        .where(
-          sql`${requests.id} = ANY(${publishable.map((r) => r.id)})`
-        );
+        .where(sql`${requests.id} = ANY(${requestIds})`);
 
-      // TODO (neste iterasjon): finn faktiske mottakere (aktivt abonnement,
-      // riktig land), rendre én variant per locale i bruk (FR-032), send via
-      // Brevo, og opprett DigestDelivery-rader. Se SPEC-V1.md 10.1 og 10.2.
+      const sendErrors = await sendDigestToRecipients(dbase, {
+        digestId: createdDigest.id,
+        country: country.code,
+        requestIds,
+      });
+      errors.push(...sendErrors);
+
       processed += 1;
     } catch (err) {
       errors.push(`${country.code}: ${(err as Error).message}`);
@@ -144,6 +158,145 @@ async function runDigestTick(dbase: Database): Promise<TickResult> {
   }
 
   return { job: "digest-tick", processed, errors };
+}
+
+/**
+ * Finner faktiske mottakere, rendrer én variant per locale i bruk (FR-032),
+ * og sender. Skilt ut fra `runDigestTick` bare for lesbarhet — samme
+ * transaksjonelle enhet (ett land, ett tikk).
+ */
+async function sendDigestToRecipients(
+  dbase: Database,
+  args: { digestId: string; country: string; requestIds: string[] }
+): Promise<string[]> {
+  const errors: string[] = [];
+
+  const requestRows = await dbase
+    .select({
+      id: requests.id,
+      slug: requests.slug,
+      title: requests.title,
+      summary: requests.summary,
+      responseDeadline: requests.responseDeadline,
+      geographicNote: requests.geographicNote,
+      contentLanguage: requests.contentLanguage,
+      organizationName: journalistProfiles.organizationName,
+    })
+    .from(requests)
+    .innerJoin(journalistProfiles, eq(requests.journalistId, journalistProfiles.userId))
+    .where(inArray(requests.id, args.requestIds));
+
+  const digestItems: DigestRequestItem[] = requestRows.map((r) => ({
+    id: r.id,
+    slug: r.slug,
+    title: r.title,
+    summary: r.summary,
+    organizationName: r.organizationName,
+    responseDeadline: r.responseDeadline,
+    geographicNote: r.geographicNote,
+    contentLanguage: r.contentLanguage,
+  }));
+
+  // Aktivt abonnement OG aktiv konto, i riktig land (FR-031, FR-035).
+  const recipients = await dbase
+    .select({
+      userId: users.id,
+      email: users.email,
+      locale: users.locale,
+      subscriptionId: emailSubscriptions.id,
+    })
+    .from(users)
+    .innerJoin(emailSubscriptions, eq(emailSubscriptions.userId, users.id))
+    .where(
+      and(
+        eq(users.role, "recipient"),
+        eq(users.countryCode, args.country),
+        eq(users.status, "active"),
+        eq(emailSubscriptions.status, "active")
+      )
+    );
+
+  if (recipients.length === 0) return errors;
+
+  // Rendrer én gang per locale FAKTISK i bruk blant mottakerne (FR-032),
+  // ikke én gang per mottaker og ikke for hele SUPPORTED_LOCALES.
+  const renderedByLocale = new Map<string, RenderedDigest>();
+  for (const recipient of recipients) {
+    const locale = isSupportedLocale(recipient.locale) ? recipient.locale : PLATFORM_DEFAULT_LOCALE;
+    if (!renderedByLocale.has(locale)) {
+      renderedByLocale.set(locale, renderDigestContent(locale, digestItems));
+    }
+  }
+
+  let sentCount = 0;
+
+  for (const recipient of recipients) {
+    const locale = isSupportedLocale(recipient.locale) ? recipient.locale : PLATFORM_DEFAULT_LOCALE;
+    const rendered = renderedByLocale.get(locale);
+    if (!rendered) continue; // kan ikke skje — men aldri kast for ett locale-oppslag
+
+    const accessToken = generateToken();
+    // Avmeldingstokenet roteres ved hver utsendelse — forrige e-posts lenke
+    // slutter dermed å virke, uten at noen aktivt måtte tilbakekalle den.
+    // Se src/lib/email/digest.ts.
+    const unsubscribeToken = generateToken();
+
+    let deliveryId: string | undefined;
+    try {
+      const [delivery] = await dbase
+        .insert(digestDeliveries)
+        .values({
+          digestId: args.digestId,
+          userId: recipient.userId,
+          locale,
+          accessTokenHash: hashToken(accessToken),
+          status: "queued",
+        })
+        .returning({ id: digestDeliveries.id });
+      if (!delivery) throw new Error("insert av DigestDelivery returnerte ingen rad");
+      deliveryId = delivery.id;
+
+      await dbase
+        .update(emailSubscriptions)
+        .set({ unsubscribeTokenHash: hashToken(unsubscribeToken), lastDigestAt: new Date() })
+        .where(eq(emailSubscriptions.id, recipient.subscriptionId));
+
+      const personalized = insertPerRecipientTokens(rendered, accessToken, unsubscribeToken);
+
+      await sendBulkEmail({
+        to: { email: recipient.email, locale },
+        subject: personalized.subject,
+        html: personalized.html,
+        text: personalized.text,
+      });
+
+      await dbase.update(digestDeliveries).set({ status: "sent" }).where(eq(digestDeliveries.id, deliveryId));
+      sentCount += 1;
+    } catch (err) {
+      const message = (err as Error).message;
+      errors.push(`mottaker ${recipient.userId}: ${message}`);
+      // Én mottakers feil stopper ikke resten av landets utsendelse (FR-036
+      // gjelder land — samme prinsipp håndheves her på mottakernivå).
+      if (deliveryId) {
+        await dbase
+          .update(digestDeliveries)
+          .set({ status: "failed", errorMessage: message })
+          .where(eq(digestDeliveries.id, deliveryId));
+      }
+    }
+  }
+
+  // "failed" bare når ALLE mottakere feilet — delvis feil (noen sendt, noen
+  // ikke) er fortsatt en vellykket digest sett fra landets side, med feilene
+  // synlige i errors[] og på hver enkelt DigestDelivery.status.
+  const digestStatus = sentCount === 0 && recipients.length > 0 ? "failed" : "sent";
+
+  await dbase
+    .update(digests)
+    .set({ recipientCount: sentCount, status: digestStatus, sentAt: new Date() })
+    .where(eq(digests.id, args.digestId));
+
+  return errors;
 }
 
 // ---------------------------------------------------------------------------

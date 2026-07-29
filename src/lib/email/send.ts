@@ -52,3 +52,28 @@ export async function sendTransactionalEmail(
       "Se TODO i src/lib/email/send.ts."
   );
 }
+
+export interface SendBulkEmailInput {
+  to: { email: string; locale: string };
+  subject: string;
+  html: string;
+  text: string;
+}
+
+/**
+ * Egen funksjon for den daglige digesten — atskilt fra
+ * `sendTransactionalEmail` med hensikt (`INFRASTRUCTURE.md` 6.1: "atskilte
+ * strømmer for transaksjonell e-post og bulk, slik at en klage på digesten
+ * ikke ødelegger leveringen av innloggingslenker"). Når Brevo faktisk kobles
+ * til, skal denne bruke bulk-/kampanje-API-et, ikke det transaksjonelle.
+ */
+export async function sendBulkEmail(input: SendBulkEmailInput): Promise<void> {
+  if (!process.env.BREVO_API_KEY) {
+    console.warn(`[email:stub:bulk] "${input.subject}" → ${input.to.email} (${input.to.locale})`);
+    return;
+  }
+
+  throw new Error(
+    "sendBulkEmail: Brevo bulk-integrasjon ikke implementert ennå. Se TODO i src/lib/email/send.ts."
+  );
+}

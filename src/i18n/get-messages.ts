@@ -1,9 +1,16 @@
-import "server-only";
 import { IntlMessageFormat } from "intl-messageformat";
 import { PLATFORM_DEFAULT_LOCALE, SUPPORTED_LOCALES, type SupportedLocale } from "./config";
 
 import nbNO from "./messages/nb-NO.json";
 import enGB from "./messages/en-GB.json";
+
+// Bevisst UTEN `import "server-only"` (fjernet økt 4, se NATTLOGG.md): denne
+// modulen importeres av src/lib/jobs/tick.ts, som kjøres av
+// netlify/functions/tick.ts — en frittstående funksjon utenfor Next.js sin
+// egen bundler, og av vitest direkte. "server-only" kaster ubetinget i begge
+// de kontekstene, uavhengig av at koden faktisk aldri når en nettleser.
+// src/lib/auth/session.ts beholder "server-only" fordi den bruker
+// next/headers, som er reelt Next.js-request-kontekst-bundet.
 
 const MESSAGE_SETS: Record<SupportedLocale, Record<string, string>> = {
   "nb-NO": nbNO,

@@ -326,3 +326,85 @@ en kan settes opp i miljøet; (3) `retention`-jobben, fortsatt med forsiktighet
 først; (4) admin-ruter for journalistgodkjenning
 (`POST /admin/journalists/:id/approve|reject`) siden `verification_status`
 nå finnes men ingenting setter den til noe annet enn default.
+
+---
+
+## Økt 4 — 2026-07-30, natt (`create_trigger` fyrte presist igjen, 23:38 UTC)
+
+### Bygget faktisk mottakerlogikk i `digest-tick` (prioritet 1 fra økt 3)
+
+- `src/lib/email/digest.ts` — `renderDigestContent(locale, requests)` rendrer
+  HTML + tekst ÉN gang per locale faktisk i bruk (FR-032), med to
+  plassholdere (`__ACCESS_TOKEN__`, `__UNSUBSCRIBE_TOKEN__`) i stedet for
+  ekte tokens. `insertPerRecipientTokens()` gjør det billige strengbyttet per
+  mottaker etterpå — dette er selve mekanismen som gjør FR-032 sant i praksis,
+  ikke bare i en kommentar.
+- **Viktig designvalg, verdt å sjekke:** avmeldingstokenet
+  (`EmailSubscription.unsubscribe_token_hash`) roteres ved HVER
+  digest-utsendelse, ikke bare satt én gang ved registrering. Grunnen: den
+  forrige økten (registrering) genererte tokenet, hashet det, og kastet den
+  rå verdien — uten noen plass å faktisk sende den rå verdien til brukeren.
+  Det var reelt ubrukelig som skrevet. Løsningen: generer et FERSKT
+  avmeldingstoken ved hver utsendelse, bruk det rå i den e-postens
+  avmeldingslenke, oppdater hashen. Det gjør forrige e-posts avmeldingslenke
+  ugyldig når en ny sendes — en akseptabel og faktisk ønsket egenskap
+  ("tilbakekallbar", 24.3), ikke en bivirkning.
+- `sendBulkEmail()` lagt til i `src/lib/email/send.ts`, atskilt fra
+  `sendTransactionalEmail()` — speiler kravet i `INFRASTRUCTURE.md` 6.1 om
+  atskilte strømmer, selv om begge fortsatt bare er stubber.
+- `runDigestTick()` i `tick.ts` utvidet til faktisk å: hente forespørslene i
+  digesten (med journalistens organisasjonsnavn via join), finne mottakere
+  (aktiv konto + aktivt abonnement + riktig land — FR-031/FR-035), gruppere
+  på locale faktisk i bruk, rendre én gang per locale, og for hver mottaker
+  opprette `DigestDelivery`, sende, og sette status (`sent`/`failed` med
+  `errorMessage`). `Digest.status` settes til `failed` bare når ALLE
+  mottakere feilet — delvis feil er fortsatt en vellykket utsendelse sett fra
+  landets side.
+- Lagt til 7 enhetstester for rendringslogikken (`digest.test.ts`) — ren
+  funksjon, ingen database nødvendig: flertallsform i emnefelt, HTML-escaping
+  av brukergenerert innhold (tittel/oppsummering), fremmedspråk-varsel,
+  plassholder-erstatning.
+
+### Reell feil oppdaget og rettet underveis: `"server-only"` brøt jobben
+
+`digest.ts` bruker `createTranslator()` fra `src/i18n/get-messages.ts`, som
+hadde `import "server-only"` øverst. Den pakken kaster ubetinget når den
+importeres utenfor Next.js sin egen bundler — og `tick.ts` kjøres av
+`netlify/functions/tick.ts`, en frittstående funksjon UTENFOR Next.js'
+bundler, samt av vitest direkte. Testene feilet umiddelbart med akkurat
+denne feilen.
+
+**Fjernet `"server-only"` fra `get-messages.ts`**, med en kommentar i filen
+som forklarer hvorfor, slik at ingen legger den til igjen uten å forstå
+konsekvensen. `src/lib/auth/session.ts` beholder sin `"server-only"` — den
+bruker `next/headers`, som er reelt bundet til Next.js' request-kontekst og
+aldri importeres av jobblogikken.
+
+### Ikke gjort denne økten, med vilje
+
+- Fortsatt ingen ekte Brevo-integrasjon — `sendBulkEmail`/
+  `sendTransactionalEmail` er begge stubber.
+- Fortsatt ingen integrasjonstester mot en ekte database (samme begrunnelse
+  som økt 3 — ingen kjørende Postgres i denne sandkassen).
+- Klikk-gjennom-verifiseringen for `?da=TOKEN` (som skal gi en innlogget økt,
+  6.2) er IKKE bygget. Jeg har lagt riktig form på lenken og lagret
+  `access_token_hash` på `DigestDelivery`, men selve endepunktet som slår opp
+  tokenet og oppretter en `Session` gjenstår. Naturlig neste steg, ikke
+  glemt.
+- `DESIGN.md` 7 sin fulle byggetids-eksport av designtokens til e-post
+  (`tokens.json`) er ikke bygget — fargeverdiene i `digest.ts` er skrevet
+  direkte som literale verdier som matcher dagens tokens, med en kommentar om
+  at de må oppdateres manuelt inntil pipelinen finnes.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .`, `vitest run` (17 tester — 7 nye), `i18n:check`
+(11 nøkler, opp fra 2), `next build`. Alt grønt, inkludert etter at
+`"server-only"`-feilen ble oppdaget og rettet midt i verifiseringen.
+
+### Neste økt
+
+(1) klikk-gjennom-endepunkt for `?da=TOKEN` → oppretter `Session` (fullfører
+6.2); (2) admin-ruter for journalistgodkjenning; (3) `retention`-jobben,
+fortsatt med forsiktighet; (4) faktisk Brevo-integrasjon når/hvis en ekte
+API-nøkkel blir tilgjengelig i miljøet.
