@@ -50,7 +50,28 @@ eksport av svar, offentlig oversiktsside over alle forespørsler,
 maskinoversettelse av brukerinnhold, publisering av samme forespørsel i flere
 land.
 
-### 2.3 Antagelse om lanseringsomfang
+### 2.3 Forretningsmodell
+
+Det planlegges ingen betaling eller abonnement fra journalister, redaksjoner
+eller mottakere. Dette er ikke en avgrensning som gjelder v1 og senere
+oppheves – det er den faktiske forretningsmodellen: ingen bruker skal noensinne
+måtte betale for å bruke tjenesten.
+
+Fremtidig inntekt er tenkt hentet fra **reklame i grensesnittet og i den
+daglige e-posten**, innført når volumet gjør det verdt å selge. Dette er ikke
+en del av v1-bygget – se punktet i seksjon 25 – men det er verdt å notere nå,
+av to grunner:
+
+1. Reklame skal etter markedsføringsloven være tydelig merket som reklame, og
+   skal aldri kunne forveksles med en forespørsel, et svar eller redaksjonelt
+   innhold. Dette er en designbegrensning som gjelder fra den dagen reklame
+   innføres, ikke noe som kan tilpasses i etterkant.
+2. At forretningsmodellen er reklame og ikke betaling fra journalister eller
+   mottakere, endrer ikke at prosjektet drives med sikte på inntekt. Dette har
+   betydning for hvilke vilkår tredjepartstjenester kan brukes under – se
+   `INFRASTRUCTURE.md` 16.1.
+
+### 2.4 Antagelse om lanseringsomfang
 
 Spesifikasjonen forutsetter at **arkitekturen** bærer flere språk og land fra
 første kodelinje, mens **lanseringen** skjer med ett aktivt land (`NO`) og ett
@@ -1451,7 +1472,7 @@ gjeninnføring.
 | 9 | Organisasjonsentitet, teamkontoer, delte forespørsler | Krever kuratering, duplikathåndtering og en tilgangsmodell. | Ved første redaksjon med mer enn to aktive journalister. |
 | 10 | Rapportering som datamodell | E-post til moderator dekker behovet ved lavt volum. | Ved mer enn ~5 rapporter i måneden. |
 | 11 | Filtrering, sortering og søk i svarinnboksen | Meningsløst under ~20 svar per forespørsel. | Når en forespørsel passerer 30 svar. |
-| 12 | Eksport av svar | Kan vente til journalistene har et reelt arbeidsflytbehov. | Betalende redaksjoner. |
+| 12 | Eksport av svar | Kan vente til journalistene har et reelt arbeidsflytbehov. | Ved redaksjoner med jevnlig og gjentakende behov. |
 | 13 | Selvbetjent dataeksport | GDPR krever at retten oppfylles, ikke at den er selvbetjent. Manuell rutine med 30 dagers frist er tilstrekkelig. | Ved mer enn én forespørsel i måneden, eller 1 000 registrerte brukere. |
 | 14 | Tofaktor for administratorer | Én til to administratorkontoer ved lansering. | Ved tredje administratorkonto eller 500 registrerte mottakere. |
 | 15 | Automatisk sletting ved inaktivitet | Ingen er inaktive ennå. | Innen 18 måneder etter lansering – dette er en forpliktelse, ikke et valg. |
@@ -1462,6 +1483,7 @@ gjeninnføring.
 | 20 | Offentlig oversiktsside og søk over alle forespørsler | Endrer produktdynamikken og krever paginering og indekseringsregler. | Egen produktbeslutning. |
 | 21 | Høyre-til-venstre-språk | Ingen aktuelle markeder. CSS-en skal likevel bruke logiske egenskaper slik at kostnaden senere er lav. | Ved første marked med arabisk eller hebraisk. |
 | 22 | Avsenderdomene per land | Fragmenterer omdømme og krever oppvarming per marked. | Ved leveringsproblemer som kan spores til ett enkelt marked. |
+| 23 | Reklame i grensesnitt og e-post | Den planlagte inntektsmodellen (2.3), men bygges ikke før volumet gjør salg realistisk. Krever tydelig merking etter markedsføringsloven og et prinsipp for at reklame aldri kan forveksles med en forespørsel. | Ved et mottakertall som gjør annonsesalg reelt. Merkingsprinsippet må være avklart før første plassering, ikke underveis. |
 
 ---
 

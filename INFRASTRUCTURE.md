@@ -413,11 +413,23 @@ skal stå i personvernerklæringen så lenge det gjelder, ikke skjules.
 Vercel var det opplagte valget for et Next.js-prosjekt, og er allerede
 fravalgt i 3.1 av driftsmessige grunner. Det er også reelt utelukket av en
 annen grunn: **Hobby-planens vilkår tillater bare personlig, ikke-kommersiell
-bruk**, definert som ethvert prosjekt der noen involvert har en økonomisk
-interesse – inkludert en betalt utvikler som skriver koden. Kildebanken er et
-kommersielt prosjekt fra dag én, uavhengig av at det ikke har inntekt ennå.
-Vercel kan stanse et Hobby-prosjekt uten varsel dersom det oppdages. Dette er
-ikke et gebyr å ta sjansen på – det er en avslåtte-dør.
+bruk**, definert som ethvert prosjekt som er «used for the purpose of
+financial gain of anyone involved in any part of the production of the
+project» – inkludert en betalt utvikler som skriver koden.
+
+**Dette avgjøres av hensikt, ikke av dagens inntekt.** At Kildebanken ikke tar
+betalt fra journalister eller mottakere (`SPEC-V1.md` 2.3), gjør ikke
+prosjektet ikke-kommersielt – planen om å selge reklameplass når volumet
+tillater det er nøyaktig den hensikten Vercels definisjon fanger opp, fra den
+dagen planen finnes. Å vente med annonsesalget utsetter inntekten, ikke
+klassifiseringen. Vercel kan stanse et Hobby-prosjekt uten varsel dersom det
+oppdages, uavhengig av om det på det tidspunktet faktisk har begynt å tjene
+penger.
+
+Dette gjør i praksis ingen forskjell for anbefalingen under: Netlify skiller
+ikke mellom kommersiell og ikke-kommersiell bruk på sin gratisplan i det hele
+tatt. Poenget er bare at Vercel forblir stengt, også senere – ikke noe som
+åpner seg den dagen reklamen faktisk selges.
 
 ### 16.2 Oppsettet
 
