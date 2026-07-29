@@ -3,6 +3,9 @@
 **Status:** arbeidsdokument. Erstatter tidligere spesifikasjonsutkast.
 **Arbeidstittel:** Kildebanken. Navnet skal ikke bygges inn i arkitekturen.
 
+**Supplerende dokumenter:** `DESIGN.md` (designsystem, tokens, e-postmaler),
+`INFRASTRUCTURE.md` (kjøretidsmiljø, drift, leverandører).
+
 ---
 
 ## 1. Formål
@@ -1251,6 +1254,10 @@ forespørsel med engelsk uttale.
 - Mottakerflyten skal være fullt mobiltilpasset. Journalist- og
   administrasjonsflatene skal fungere på mobil, men optimaliseres for desktop.
 - Siste to hovedversjoner av Chrome, Safari, Firefox og Edge.
+- Det visuelle uttrykket skal kunne byttes uten å endre komponentkode.
+  Krav og akseptansekriterier står i `DESIGN.md`.
+- Alle komponenter i kjøretidsmiljøet skal ligge innenfor EØS.
+  Leverandørvalg og begrunnelser står i `INFRASTRUCTURE.md`.
 
 ### 21.5 Analyse
 
@@ -1396,10 +1403,11 @@ virker. Uten dem er den udokumentert.
 
 ## 24. Implementeringsrekkefølge
 
-**Fase 1 – Fundament.** Prosjektoppsett, database, i18n-rammeverk med ICU og
-CI-sjekk av nøkler, `Country` og `LegalDocument`, magic link-autentisering,
-brukere og roller med land og locale, samtykkelogging, revisjonslogg,
-e-postleverandør og domeneoppsett med SPF/DKIM/DMARC.
+**Fase 1 – Fundament.** Prosjektoppsett, database, designtokens og
+komponentgrunnlag etter `DESIGN.md`, i18n-rammeverk med ICU og CI-sjekk av
+nøkler, `Country` og `LegalDocument`, magic link-autentisering, brukere og
+roller med land og locale, samtykkelogging, revisjonslogg, e-postleverandør og
+domeneoppsett med SPF/DKIM/DMARC.
 
 **Fase 2 – Journalist og forespørsel.** Journalistsøknad, moderatorgodkjenning
 med landtildeling, opprettelse av forespørsel, modereringskø, publisering,
@@ -1418,9 +1426,10 @@ tilgjengelighetstest, sikkerhetsgjennomgang, juridisk gjennomgang av vilkår og
 personvernerklæring per land, gjenopprettingstest av sikkerhetskopi, oppvarming
 av avsenderdomene.
 
-i18n-rammeverket ligger i fase 1 med hensikt. Å innføre det senere betyr å gå
-gjennom hver eneste streng i kodebasen på nytt – det er den ene tingen som
-faktisk må gjøres først.
+i18n-rammeverket og designtokenene ligger begge i fase 1 med hensikt. Begge
+krever at hver eneste streng og hver eneste stilregel i kodebasen gås gjennom
+på nytt dersom de innføres senere. Det er de to tingene som faktisk må gjøres
+først.
 
 ---
 
