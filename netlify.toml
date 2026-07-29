@@ -1,0 +1,18 @@
+# Stadium 0-vert (INFRASTRUCTURE.md 16). Dette er den ENESTE filen som skal
+# vite at vi kjører på Netlify — se 16.8, punkt 1. All ruting, redirect- og
+# headerlogikk som kan uttrykkes i Next.js selv, skal ligge i next.config.mjs
+# og src/middleware.ts, ikke her, slik at et bytte til Hetzner ikke krever at
+# denne logikken skrives om to steder.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Tikkejobben i INFRASTRUCTURE.md 16.3. Selve logikken bor i
+# src/lib/jobs/tick.ts og vet ingenting om Netlify — denne filen er bare den
+# tynne adapteren nevnt i 16.8.
+[functions."tick"]
+  schedule = "*/15 * * * *"

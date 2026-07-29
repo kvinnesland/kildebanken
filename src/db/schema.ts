@@ -1,0 +1,446 @@
+// Datamodell — oversatt felt for felt fra SPEC-V1.md seksjon 19.
+// Enhver avvikelse fra spec-en her er en feil i denne filen, ikke et
+// alternativt forslag. Endre spec-en først, deretter dette.
+//
+// Fjorten tabeller (SPEC-V1.md 19 sier "tolv" — det er en gjenstående
+// unøyaktighet i teksten, ikke en avvikende telling her; se NATTLOGG.md).
+
+import {
+  pgTable,
+  pgEnum,
+  text,
+  uuid,
+  timestamp,
+  boolean,
+  integer,
+  jsonb,
+  primaryKey,
+  uniqueIndex,
+  index,
+} from "drizzle-orm/pg-core";
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+export const countryStatus = pgEnum("country_status", [
+  "draft",
+  "active",
+  "paused",
+]);
+
+export const legalDocumentType = pgEnum("legal_document_type", [
+  "terms",
+  "privacy",
+  "journalist_terms",
+]);
+
+export const userRole = pgEnum("user_role", [
+  "recipient",
+  "journalist",
+  "moderator",
+  "admin",
+]);
+
+export const userStatus = pgEnum("user_status", [
+  "pending_email_verification",
+  "active",
+  "suspended",
+  "deleted",
+]);
+
+export const requestStatus = pgEnum("request_status", [
+  "draft",
+  "submitted",
+  "changes_requested",
+  "approved",
+  "published",
+  "closed",
+  "expired",
+  "rejected",
+  "deleted",
+]);
+
+export const responseLifecycleStatus = pgEnum("response_lifecycle_status", [
+  "submitted",
+  "withdrawn",
+  "hidden_by_moderator",
+  "deleted",
+]);
+
+export const responseJournalistMarking = pgEnum("response_journalist_marking", [
+  "unreviewed",
+  "shortlisted",
+  "not_selected",
+]);
+
+export const contactSharing = pgEnum("contact_sharing", ["none", "email"]);
+
+export const contactRequestStatus = pgEnum("contact_request_status", [
+  "pending",
+  "approved",
+  "declined",
+  "expired",
+  "cancelled",
+]);
+
+export const emailSubscriptionStatus = pgEnum("email_subscription_status", [
+  "active",
+  "unsubscribed",
+  "bounced",
+]);
+
+export const digestStatus = pgEnum("digest_status", [
+  "pending",
+  "sending",
+  "sent",
+  "failed",
+]);
+
+export const digestDeliveryStatus = pgEnum("digest_delivery_status", [
+  "queued",
+  "sent",
+  "delivered",
+  "bounced",
+  "complained",
+  "failed",
+]);
+
+export const consentType = pgEnum("consent_type", [
+  "terms",
+  "privacy",
+  "journalist_terms",
+  "email_subscription",
+  "minimum_age",
+]);
+
+export const consentSource = pgEnum("consent_source", [
+  "registration_form",
+  "settings_page",
+  "unsubscribe_link",
+  "country_change",
+  "document_update",
+]);
+
+export const auditActorType = pgEnum("audit_actor_type", [
+  "user",
+  "system",
+  "job",
+]);
+
+export const suppressionReason = pgEnum("suppression_reason", [
+  "unsubscribed",
+  "hard_bounce",
+  "complaint",
+  "manual",
+]);
+
+// ---------------------------------------------------------------------------
+// 19.1 Country
+// ---------------------------------------------------------------------------
+
+export const countries = pgTable("countries", {
+  code: text("code").primaryKey(), // ISO 3166-1 alpha-2
+  nameKey: text("name_key").notNull(),
+  defaultLocale: text("default_locale").notNull(), // BCP-47
+  availableLocales: text("available_locales").array().notNull(),
+  timezone: text("timezone").notNull(), // IANA
+  minimumAge: integer("minimum_age").notNull(),
+  digestSendTime: text("digest_send_time").notNull(), // "HH:MM" i landets tidssone
+  senderNameKey: text("sender_name_key").notNull(),
+  supportEmail: text("support_email").notNull(),
+  status: countryStatus("status").notNull().default("draft"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 19.2 LegalDocument
+// ---------------------------------------------------------------------------
+
+export const legalDocuments = pgTable(
+  "legal_documents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    countryCode: text("country_code")
+      .notNull()
+      .references(() => countries.code),
+    locale: text("locale").notNull(),
+    documentType: legalDocumentType("document_type").notNull(),
+    version: text("version").notNull(), // semantisk, monotont økende per (land, type)
+    body: text("body").notNull(), // eller referanse til versjonert fil i repoet
+    isMaterialChange: boolean("is_material_change").notNull().default(false),
+    publishedAt: timestamp("published_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("legal_documents_country_locale_type_version_idx").on(
+      t.countryCode,
+      t.locale,
+      t.documentType,
+      t.version
+    ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// 19.3 User
+// ---------------------------------------------------------------------------
+
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull().unique(),
+  emailHash: text("email_hash"), // settes ved anonymisering
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+  role: userRole("role").notNull(),
+  status: userStatus("status").notNull().default("pending_email_verification"),
+  countryCode: text("country_code")
+    .notNull()
+    .references(() => countries.code),
+  locale: text("locale").notNull(),
+  timezone: text("timezone"), // nullable — arver landets tidssone når tom
+  displayName: text("display_name"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+});
+
+// ---------------------------------------------------------------------------
+// 19.4 ModeratorCountry — sammensatt primærnøkkel, administrator har ingen rader
+// ---------------------------------------------------------------------------
+
+export const moderatorCountries = pgTable(
+  "moderator_countries",
+  {
+    moderatorUserId: uuid("moderator_user_id")
+      .notNull()
+      .references(() => users.id),
+    countryCode: text("country_code")
+      .notNull()
+      .references(() => countries.code),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.moderatorUserId, t.countryCode] })]
+);
+
+// ---------------------------------------------------------------------------
+// 19.5 JournalistProfile — landet ligger på users.country_code
+// ---------------------------------------------------------------------------
+
+export const journalistProfiles = pgTable("journalist_profiles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().unique().references(() => users.id),
+  fullName: text("full_name").notNull(),
+  jobTitle: text("job_title").notNull(),
+  organizationName: text("organization_name").notNull(),
+  organizationUrl: text("organization_url").notNull(),
+  reviewedBy: uuid("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewNote: text("review_note"), // kun synlig for moderator
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 19.6 Request
+// ---------------------------------------------------------------------------
+
+export const requests = pgTable(
+  "requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    journalistId: uuid("journalist_id").notNull().references(() => users.id),
+    // Kopiert bevisst fra journalisten ved opprettelse — se SPEC-V1.md 19.6.
+    countryCode: text("country_code").notNull().references(() => countries.code),
+    contentLanguage: text("content_language").notNull(), // BCP-47
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    description: text("description").notNull(),
+    targetPersonDescription: text("target_person_description").notNull(),
+    topic: text("topic"), // fast nøkkel, aldri en visningsstreng
+    geographicNote: text("geographic_note"),
+    internalReference: text("internal_reference"),
+    responseDeadline: timestamp("response_deadline", { withTimezone: true }).notNull(),
+    status: requestStatus("status").notNull().default("draft"),
+    allowsAnonymousParticipation: boolean("allows_anonymous_participation").notNull(),
+    mayBeRecorded: boolean("may_be_recorded").notNull(),
+    mayInvolvePhotoVideo: boolean("may_involve_photo_video").notNull(),
+    moderatorComment: text("moderator_comment"),
+    moderatedBy: uuid("moderated_by").references(() => users.id),
+    moderatedAt: timestamp("moderated_at", { withTimezone: true }),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    includedInDigestAt: timestamp("included_in_digest_at", { withTimezone: true }),
+    // Settes ved BÅDE closed og expired — se SPEC-V1.md 9.2.
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("requests_slug_idx").on(t.slug),
+    index("requests_country_status_idx").on(t.countryCode, t.status),
+    // Støtter FR-029 (maks 5 samtidig publiserte per journalist, SPEC-V1.md 9.2).
+    index("requests_journalist_status_idx").on(t.journalistId, t.status),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// 19.7 Response
+// ---------------------------------------------------------------------------
+
+export const responses = pgTable(
+  "responses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    requestId: uuid("request_id").notNull().references(() => requests.id),
+    respondentId: uuid("respondent_id").notNull().references(() => users.id),
+    displayNameSnapshot: text("display_name_snapshot"),
+    relevanceStatement: text("relevance_statement").notNull(),
+    answerText: text("answer_text").notNull(),
+    shortBio: text("short_bio"),
+    contactSharing: contactSharing("contact_sharing").notNull().default("none"),
+    lifecycleStatus: responseLifecycleStatus("lifecycle_status")
+      .notNull()
+      .default("submitted"),
+    journalistMarking: responseJournalistMarking("journalist_marking")
+      .notNull()
+      .default("unreviewed"),
+    journalistNote: text("journalist_note"),
+    viewedAt: timestamp("viewed_at", { withTimezone: true }),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
+    withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Ett aktivt svar per person per forespørsel (FR-041). Drizzle kan ikke
+    // uttrykke en betinget unik indeks (WHERE lifecycle_status = 'submitted')
+    // direkte — legges til i en håndskrevet migrasjon, se src/db/migrate.ts.
+    index("responses_request_id_idx").on(t.requestId),
+    index("responses_respondent_id_idx").on(t.respondentId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// 19.8 ContactRequest
+// ---------------------------------------------------------------------------
+
+export const contactRequests = pgTable("contact_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  responseId: uuid("response_id").notNull().unique().references(() => responses.id),
+  journalistId: uuid("journalist_id").notNull().references(() => users.id),
+  message: text("message").notNull(),
+  requestedContactMethod: text("requested_contact_method").notNull(),
+  status: contactRequestStatus("status").notNull().default("pending"),
+  sharedEmail: text("shared_email"),
+  respondedAt: timestamp("responded_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 19.9 EmailSubscription — landet ligger på brukeren
+// ---------------------------------------------------------------------------
+
+export const emailSubscriptions = pgTable("email_subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().unique().references(() => users.id),
+  status: emailSubscriptionStatus("status").notNull().default("active"),
+  unsubscribeTokenHash: text("unsubscribe_token_hash").notNull(),
+  unsubscribedAt: timestamp("unsubscribed_at", { withTimezone: true }),
+  lastDigestAt: timestamp("last_digest_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 19.10 Digest og DigestDelivery
+// ---------------------------------------------------------------------------
+
+export const digests = pgTable(
+  "digests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    countryCode: text("country_code").notNull().references(() => countries.code),
+    scheduledFor: text("scheduled_for").notNull(), // lokal_dato, "YYYY-MM-DD" i landets tidssone
+    requestIds: uuid("request_ids").array().notNull(),
+    recipientCount: integer("recipient_count").notNull().default(0),
+    status: digestStatus("status").notNull().default("pending"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Bærer idempotensen i INFRASTRUCTURE.md 5.2 — to overlappende tikk kan
+    // ikke gi to digester for samme (land, lokal dato).
+    uniqueIndex("digests_country_scheduled_for_idx").on(t.countryCode, t.scheduledFor),
+  ]
+);
+
+export const digestDeliveries = pgTable(
+  "digest_deliveries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    digestId: uuid("digest_id").notNull().references(() => digests.id),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    locale: text("locale").notNull(),
+    accessTokenHash: text("access_token_hash").notNull(),
+    providerMessageId: text("provider_message_id"),
+    status: digestDeliveryStatus("status").notNull().default("queued"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("digest_deliveries_digest_user_idx").on(t.digestId, t.userId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// 19.11 ConsentRecord
+// ---------------------------------------------------------------------------
+
+export const consentRecords = pgTable("consent_records", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  consentType: consentType("consent_type").notNull(),
+  legalDocumentId: uuid("legal_document_id").references(() => legalDocuments.id),
+  countryCode: text("country_code").notNull().references(() => countries.code),
+  locale: text("locale").notNull(),
+  granted: boolean("granted").notNull(),
+  grantedAt: timestamp("granted_at", { withTimezone: true }).notNull().defaultNow(),
+  withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+  source: consentSource("source").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 19.12 AuditLog
+// ---------------------------------------------------------------------------
+
+export const auditLogs = pgTable("audit_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  actorType: auditActorType("actor_type").notNull(),
+  actorUserId: uuid("actor_user_id").references(() => users.id), // null for system/job
+  countryCode: text("country_code").references(() => countries.code),
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  reason: text("reason"), // obligatorisk (håndheves i applikasjonslaget) ved oppslag i svar
+  // Aldri fullstendige svar eller unødvendige personopplysninger — se SPEC-V1.md 19.12.
+  metadata: jsonb("metadata"),
+  ipAddress: text("ip_address"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 19.13 Suppression — global på tvers av land
+// ---------------------------------------------------------------------------
+
+export const suppressions = pgTable("suppressions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  emailHash: text("email_hash").notNull().unique(),
+  reason: suppressionReason("reason").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

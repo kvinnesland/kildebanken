@@ -1,0 +1,80 @@
+/*
+ * Lag 2 — semantiske tokens. Kopiert fra DESIGN.md 2.2 og 2.3.
+ *
+ * Dette ER kontrakten (DESIGN.md 1). Komponenter skal BARE referere til
+ * variablene i denne filen, aldri til tokens/primitives.css direkte.
+ */
+
+:root {
+  --color-bg: var(--gray-50);
+  --color-surface: var(--gray-0);
+  --color-surface-sunken: var(--gray-100);
+  --color-surface-hover: var(--gray-100);
+
+  --color-border: var(--gray-200);
+  --color-border-strong: var(--gray-300);
+
+  --color-text: var(--gray-900);
+  --color-text-muted: var(--gray-600);
+  --color-text-subtle: var(--gray-500);
+  --color-text-inverse: var(--gray-0);
+
+  --color-accent: var(--accent-600);
+  --color-accent-hover: var(--accent-700);
+  --color-accent-subtle: var(--accent-50);
+  --color-accent-text: var(--gray-0);
+  --color-link: var(--accent-700);
+
+  --color-focus-ring: var(--accent-500);
+
+  --color-success: var(--success-600);
+  --color-success-subtle: var(--success-100);
+  --color-warning: var(--warning-600);
+  --color-warning-subtle: var(--warning-100);
+  --color-danger: var(--danger-600);
+  --color-danger-subtle: var(--danger-100);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: var(--gray-950);
+    --color-surface: var(--gray-900);
+    --color-surface-sunken: var(--gray-950);
+    --color-surface-hover: var(--gray-800);
+
+    --color-border: var(--gray-800);
+    --color-border-strong: var(--gray-700);
+
+    --color-text: var(--gray-100);
+    --color-text-muted: var(--gray-400);
+    --color-text-subtle: var(--gray-500);
+    --color-text-inverse: var(--gray-950);
+
+    --color-accent: var(--accent-400);
+    --color-accent-hover: var(--accent-300);
+    --color-accent-subtle: var(--accent-900);
+    --color-accent-text: var(--gray-950);
+    --color-link: var(--accent-300);
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-bg: var(--gray-950);
+  --color-surface: var(--gray-900);
+  --color-surface-sunken: var(--gray-950);
+  --color-surface-hover: var(--gray-800);
+
+  --color-border: var(--gray-800);
+  --color-border-strong: var(--gray-700);
+
+  --color-text: var(--gray-100);
+  --color-text-muted: var(--gray-400);
+  --color-text-subtle: var(--gray-500);
+  --color-text-inverse: var(--gray-950);
+
+  --color-accent: var(--accent-400);
+  --color-accent-hover: var(--accent-300);
+  --color-accent-subtle: var(--accent-900);
+  --color-accent-text: var(--gray-950);
+  --color-link: var(--accent-300);
+}

@@ -921,7 +921,8 @@ Ingen andre. Ingen teamdeling i v1.
 
 ## 19. Datamodell
 
-Tolv tabeller. `RecipientProfile`, `Organization`, `Category`, `UserInterest`,
+Fjorten tabeller (`Digest` og `DigestDelivery` telles hver for seg).
+`RecipientProfile`, `Organization`, `Category`, `UserInterest`,
 `RequestCategory`, `RequestQuestion`, `ResponseAnswer` og `Attachment` finnes
 ikke i v1.
 

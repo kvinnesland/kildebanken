@@ -1,0 +1,83 @@
+/*
+ * Lag 1 — primitiver. Kopiert direkte fra DESIGN.md 2.1, 3 og 4.
+ *
+ * Ingen komponentfil skal referere til disse variablene direkte
+ * (DESIGN.md 1) — bare tokens/semantic.css skal gjøre det. Håndheves med
+ * lint-regel, se DESIGN.md 1 og 9, punkt 2 (ikke implementert i dette
+ * scaffoldet ennå — se NATTLOGG.md).
+ *
+ * Dette er ETT av tre filer et temabytte skal kunne gjøres gjennom
+ * (DESIGN.md 1.1). De to andre er semantic.css og typography.css.
+ */
+
+:root {
+  /* Nøytraler — svakt kjølige */
+  --gray-0: oklch(100% 0 0);
+  --gray-50: oklch(98.5% 0.002 250);
+  --gray-100: oklch(96.5% 0.004 250);
+  --gray-200: oklch(92.5% 0.006 250);
+  --gray-300: oklch(87% 0.008 250);
+  --gray-400: oklch(71% 0.01 250);
+  --gray-500: oklch(58% 0.012 250);
+  --gray-600: oklch(48% 0.012 250);
+  --gray-700: oklch(39% 0.011 250);
+  --gray-800: oklch(28% 0.01 250);
+  --gray-900: oklch(21% 0.008 250);
+  --gray-950: oklch(15% 0.006 250);
+
+  /* Én aksentfarge — dempet blå */
+  --accent-50: oklch(97% 0.014 230);
+  --accent-100: oklch(94% 0.026 230);
+  --accent-200: oklch(88% 0.045 230);
+  --accent-300: oklch(80% 0.065 230);
+  --accent-400: oklch(70% 0.085 230);
+  --accent-500: oklch(60% 0.095 230);
+  --accent-600: oklch(51% 0.095 230);
+  --accent-700: oklch(43% 0.082 230);
+  --accent-800: oklch(35% 0.065 230);
+  --accent-900: oklch(28% 0.05 230);
+
+  /* Status — lav metning med hensikt */
+  --success-100: oklch(95% 0.03 160);
+  --success-600: oklch(52% 0.085 160);
+  --success-900: oklch(28% 0.055 160);
+
+  --warning-100: oklch(96% 0.04 75);
+  --warning-600: oklch(65% 0.105 75);
+  --warning-900: oklch(35% 0.07 75);
+
+  --danger-100: oklch(96% 0.03 25);
+  --danger-600: oklch(52% 0.13 25);
+  --danger-900: oklch(30% 0.09 25);
+
+  /* Rom — 4px basis */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+  --space-9: 6rem;
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-full: 9999px;
+
+  /* Skygge — myk og svak; dybde kommer fra kantlinje/flate, ikke effekter */
+  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.04);
+  --shadow-md: 0 2px 8px oklch(0% 0 0 / 0.06);
+  --shadow-lg: 0 8px 24px oklch(0% 0 0 / 0.08);
+
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Brytepunkter (brukes kun i CSS-kommentarer/dokumentasjon — media queries
+     kan ikke lese CSS-variabler, se DESIGN.md 5) */
+  --bp-sm: 40rem;
+  --bp-md: 56rem;
+  --bp-lg: 75rem;
+}
