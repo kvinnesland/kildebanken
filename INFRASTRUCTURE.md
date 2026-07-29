@@ -393,6 +393,9 @@ oppsettet er riktig dimensjonert.
    privatperson, fra første dag.
 4. **Hvem som har produksjonstilgang**, og hvordan den fjernes ved
    eierskifte. Bør avklares før første ekte bruker.
+5. **0 kr mot europeisk eierskap i bootstrap-fasen** (16.7). Utredet, ikke
+   avgjort: bli på Netlify/Neon-kompromisset, eller betale ~4–5 €/måned for
+   Clever Cloud og forlate det tidligere enn tersklene i 16.4 krever.
 
 ---
 
@@ -533,3 +536,33 @@ og det skal ikke presenteres som at «all behandling skjer i EØS» før
 migreringen til seksjon 3–14 er gjennomført. Personvernerklæringen skal i
 denne perioden opplyse om hvilke databehandlere som brukes og hvor de er
 etablert, slik regelverket uansett krever.
+
+### 16.7 Vurderte europeiske alternativer til Netlify
+
+Undersøkt fordi avviket i 16.6 er et bevisst kompromiss, ikke en mangel på
+alternativer. Konklusjonen: ingen europeisk leverandør er per i dag både
+reelt gratis og teknisk kompatibel med arkitekturen i 16.2–16.3.
+
+| Leverandør | Land | Gratis? | Hvorfor det ikke er et rent bytte |
+|---|---|---|---|
+| **IONOS Deploy Now** | Tyskland | Ja, permanent | Kun statisk eksport – ingen Node.js-kjøretid. Ingen SSR, ingen API-ruter, ingen erstatning for den cron-utløste funksjonen i 16.3. Dette bærer ikke arkitekturen vi har spesifisert, uansett budsjett. |
+| **Clever Cloud** | Frankrike | Nei – kun prøvekreditt | Betal-per-forbruk fra rundt 4–5 €/måned etter prøveperioden. Ingen tidsbegrensning på selve tjenesten, bare på at den er gratis. |
+| **Scalingo** | Frankrike | Nei – 30 dagers prøve | Fra rundt 7,20 €/måned etter prøveperioden. God Next.js-støtte. |
+
+Mønsteret er strukturelt, ikke tilfeldig: en reelt gratis-for-alltid PaaS-plan
+er en vekststrategi finansiert av risikokapital, og det er i all hovedsak
+amerikanske selskaper som har hatt den finansieringen. Europeiske leverandører
+er lønnsomme fra første euro, noe som er sunt for dem, men som gjør «gratis»
+og «europeisk eid» reelt uforenlige akkurat nå på denne typen tjeneste.
+
+**To legitime veier videre, ikke bare den ene i 16.2:**
+
+1. Behold Netlify + Neon som beskrevet, med avviket i 16.6 stående som
+   dokumentert og midlertidig.
+2. Betal en liten, reell sum nå for å få europeisk eierskap tidligere enn
+   Stadium 1-tersklene i 16.4 krever – Clever Cloud på ~4–5 €/måned er det
+   billigste reelle bruddet med kompromisset, klart under den fulle kostnaden
+   i seksjon 13.
+
+Dette er et verdivalg mellom 0 kr og et prinsipp, ikke et teknisk spørsmål.
+Det er ikke besvart her.
