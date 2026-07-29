@@ -161,3 +161,72 @@ I prioritert rekkefølge: (1) autentisering — magic link request/verify,
 samtykkelogging; (3) den betingede unike indeksen for `responses`; (4)
 "påminnelse sendt"-flagg på `requests` slik at reminder-jobbene blir trygge å
 faktisk kjøre gjentatte ganger.
+
+---
+
+## Økt 2 — 2026-07-29, kveld (brukeren fortsatt våken)
+
+**Viktig hendelse:** den planlagte gjenoppvåkningen (`ScheduleWakeup`,
+21:18) fyrte aldri. Brukeren merket at ingenting skjedde klokken 21:26 —
+`git log` bekreftet at ingen commits var gjort siden forrige økt, og
+`list_triggers` viste ingen aktive triggere i det hele tatt. Jeg vet ikke
+sikkert hvorfor `ScheduleWakeup` ikke leverte, og later ikke som jeg vet.
+Fra og med denne økten brukes i stedet `create_trigger` direkte (en
+selvbundet, timebasert Routine) — den vises i `list_triggers` og kan
+faktisk verifiseres, i motsetning til det forrige forsøket.
+
+Siden brukeren var til stede, gjorde jeg videre arbeid synkront i stedet
+for å vente på neste automatiske oppvåkning.
+
+### Lukket tre av de fire "kjente hull" fra økt 1
+
+- **Autentisering (magic link) er nå implementert**, ikke bare planlagt:
+  - Oppdaget og rettet et reelt spec-hull underveis: `SPEC-V1.md` seksjon 6
+    og 8 forutsetter engangstokens og økter, men seksjon 19 (datamodell)
+    definerte aldri disse tabellene. Lagt til **19.14 AuthToken** og
+    **19.15 Session** i spec-en FØRST (jf. README-prinsippet: "endre
+    spec-en først"), deretter i `schema.ts`. Seksten tabeller totalt nå.
+  - `src/lib/auth/tokens.ts` — generering, hashing (SHA-256), konstant-tid
+    sammenligning.
+  - `src/lib/auth/magic-link.ts` — `requestMagicLink` (avslører aldri om
+    e-post finnes, håndhever 5-per-15-minutter, velger `confirm_email` vs.
+    `magic_link`-mal basert på om kontoen er verifisert fra før) og
+    `verifyMagicLink` (engangsbruk, 15 min gyldighet, setter
+    `email_verified_at`/`active` ved første vellykkede innlogging).
+  - **Tolkning tatt autonomt, verdt å sjekke:** spec-en lister "Bekreft
+    e-postadresse" og "Innloggingslenke" som to separate e-postmaler, men
+    6.1 sier eksplisitt at verifisering skjer "som en del av innloggingen".
+    Jeg har IKKE bygget en separat bekreftelsesflyt — samme
+    `AuthToken`/`verifyMagicLink` brukes for begge, bare med ulik mal valgt
+    ved utsending. Hvis dette er feil lesning av spec-en, er det billig å
+    rette: endringen er isolert til `requestMagicLink`.
+  - `src/lib/auth/session.ts` — øktopprettelse (30 dager mottaker/journalist,
+    12 timer moderator/admin, ingen stille fornyelse), oppslag (utløpt og
+    tilbakekalt behandles likt), tilbakekalling ved utlogging.
+  - Route handlers: `POST /api/auth/request-link`, `POST /api/auth/verify`,
+    `POST /api/auth/logout`, og `GET /api/me` som første beskyttede
+    endepunkt — beviser at hele kjeden (token → økt → cookie → oppslag)
+    faktisk fungerer sammen.
+
+- **Den betingede unike indeksen for `responses` (FR-041) er lagt til**,
+  som håndskrevet migrasjon (`0001_responses_active_unique_index.sql`) —
+  Drizzles schema-API støtter ikke `WHERE`-betingede unike indekser.
+
+- **"Påminnelse sendt"-flaggene er lagt til.** Nye felter
+  `deadline_reminder_sent_at` og `stale_reminder_sent_at` på `Request`
+  (spec-en oppdatert først, deretter schema og migrasjon `0002`).
+  `deadline-reminder` og `stale-request-reminder` i `tick.ts` er omskrevet
+  til å sjekke og sette disse — trygge å kjøre gjentatte ganger nå, ikke
+  bare riktig strukturert.
+
+**Gjenstår fortsatt** (uendret fra økt 1, ikke rørt denne økten):
+registrering (mottaker/journalist) med samtykkelogging, Brevo-integrasjon,
+faktisk mottakerlogikk i `digest-tick`, `retention`-jobben, lint-håndhevelse
+av designtokens, ekte fontfiler.
+
+### Verifisert på nytt før commit
+
+Samme kjede som økt 1 (`tsc --noEmit`, `eslint`, `vitest` — nå 10 tester,
+`i18n:check`, `next build`), pluss `drizzle-kit generate` kjørt to ganger
+(først for `auth_tokens`/`sessions`, så for de to nye feltene på `requests`)
+for å bekrefte at skjemaendringene faktisk gir gyldig SQL. Alt grønt.

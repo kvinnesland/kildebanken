@@ -921,10 +921,11 @@ Ingen andre. Ingen teamdeling i v1.
 
 ## 19. Datamodell
 
-Fjorten tabeller (`Digest` og `DigestDelivery` telles hver for seg).
-`RecipientProfile`, `Organization`, `Category`, `UserInterest`,
-`RequestCategory`, `RequestQuestion`, `ResponseAnswer` og `Attachment` finnes
-ikke i v1.
+Seksten tabeller (`Digest` og `DigestDelivery` telles hver for seg;
+`AuthToken` og `Session` lagt til i 19.14–19.15 under autonomt arbeid, se
+`NATTLOGG.md`). `RecipientProfile`, `Organization`, `Category`,
+`UserInterest`, `RequestCategory`, `RequestQuestion`, `ResponseAnswer` og
+`Attachment` finnes ikke i v1.
 
 ### 19.1 Country
 
@@ -1034,9 +1035,16 @@ moderated_at                nullable
 published_at                nullable
 included_in_digest_at       nullable
 closed_at                   nullable, settes ved både closed og expired
+deadline_reminder_sent_at   nullable – lagt til i økt 2 (NATTLOGG.md)
+stale_reminder_sent_at      nullable – lagt til i økt 2 (NATTLOGG.md)
 created_at
 updated_at
 ```
+
+De to `_sent_at`-feltene ble lagt til under autonomt arbeid: uten dem ville
+`deadline-reminder` og `stale-request-reminder` (`INFRASTRUCTURE.md` 5.1)
+sendt samme påminnelse på nytt ved hver jobbkjøring innenfor sitt tidsvindu,
+ikke bare én gang.
 
 `country_code` kopieres bevisst i stedet for å utledes fra journalisten, slik at
 en senere endring av journalistens marked ikke flytter historiske forespørsler.
@@ -1175,6 +1183,47 @@ created_at
 
 Sperrelisten er global på tvers av land. En adresse som har klaget i ett marked,
 skal ikke motta e-post fra et annet.
+
+### 19.14 AuthToken
+
+Lagt til under autonomt arbeid (se `NATTLOGG.md`, økt 2): seksjon 6
+beskriver magic link-innlogging i detalj, men datamodellen definerte aldri
+hvor selve engangstokenet lagres. Uten denne tabellen er 6.1 uimplementerbar.
+
+```
+id
+user_id                     FK User
+token_hash                  unik – aldri rå token, jf. 24.3
+purpose                     login | delete_account | data_export
+                            (24.3: "særlig sensitive handlinger skal kreve
+                            ny autentisering" – samme mekanisme, annet formål)
+expires_at                  15 minutter fra utstedelse (8.1)
+used_at                     nullable – tokenet er engangsbruk
+created_at
+```
+
+### 19.15 Session
+
+Samme begrunnelse som 19.14 – 8.1 og 8.3 forutsetter øktlevetid uten at en
+økt-entitet noensinne ble definert.
+
+```
+id
+user_id                     FK User
+token_hash                  unik – aldri rå token i cookie ukryptert/usignert
+expires_at                  30 dager (mottaker/journalist) eller 12 timer
+                            (moderator/administrator), fra 8.1/8.3
+last_used_at                fornyer IKKE expires_at automatisk for
+                            moderator/administrator (8.3: "fornyes ikke
+                            automatisk")
+revoked_at                  nullable – satt ved eksplisitt utlogging,
+                            kontosletting eller suspensjon
+created_at
+```
+
+Unik indeks på `token_hash`. En utløpt eller tilbakekalt økt skal behandles
+likt av applikasjonslaget – begge betyr "ikke innlogget", ikke to ulike
+feilveier.
 
 ---
 

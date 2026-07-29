@@ -2,8 +2,8 @@
 // Enhver avvikelse fra spec-en her er en feil i denne filen, ikke et
 // alternativt forslag. Endre spec-en først, deretter dette.
 //
-// Fjorten tabeller (SPEC-V1.md 19 sier "tolv" — det er en gjenstående
-// unøyaktighet i teksten, ikke en avvikende telling her; se NATTLOGG.md).
+// Seksten tabeller. AuthToken og Session (19.14–19.15) ble lagt til i spec-en
+// under autonomt arbeid, økt 2 — se NATTLOGG.md.
 
 import {
   pgTable,
@@ -133,6 +133,12 @@ export const suppressionReason = pgEnum("suppression_reason", [
   "hard_bounce",
   "complaint",
   "manual",
+]);
+
+export const authTokenPurpose = pgEnum("auth_token_purpose", [
+  "login",
+  "delete_account",
+  "data_export",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -274,6 +280,10 @@ export const requests = pgTable(
     includedInDigestAt: timestamp("included_in_digest_at", { withTimezone: true }),
     // Settes ved BÅDE closed og expired — se SPEC-V1.md 9.2.
     closedAt: timestamp("closed_at", { withTimezone: true }),
+    // Idempotens-flagg for jobbene i INFRASTRUCTURE.md 5.1 — uten disse
+    // sendes samme påminnelse på nytt hvert 15. minutt innenfor tidsvinduet.
+    deadlineReminderSentAt: timestamp("deadline_reminder_sent_at", { withTimezone: true }),
+    staleReminderSentAt: timestamp("stale_reminder_sent_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -314,9 +324,9 @@ export const responses = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    // Ett aktivt svar per person per forespørsel (FR-041). Drizzle kan ikke
-    // uttrykke en betinget unik indeks (WHERE lifecycle_status = 'submitted')
-    // direkte — legges til i en håndskrevet migrasjon, se src/db/migrate.ts.
+    // FR-041 (ett aktivt svar per person per forespørsel) håndheves av en
+    // betinget unik indeks Drizzle ikke kan uttrykke i schema-API-et — se
+    // src/db/migrations/0001_responses_active_unique_index.sql.
     index("responses_request_id_idx").on(t.requestId),
     index("responses_respondent_id_idx").on(t.respondentId),
   ]
@@ -442,5 +452,33 @@ export const suppressions = pgTable("suppressions", {
   id: uuid("id").primaryKey().defaultRandom(),
   emailHash: text("email_hash").notNull().unique(),
   reason: suppressionReason("reason").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 19.14 AuthToken — engangstoken for magic link (SPEC-V1.md 6.1, 24.3)
+// ---------------------------------------------------------------------------
+
+export const authTokens = pgTable("auth_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  tokenHash: text("token_hash").notNull().unique(),
+  purpose: authTokenPurpose("purpose").notNull().default("login"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 19.15 Session — SPEC-V1.md 8.1 (30 dager) / 8.3 (12 timer, fornyes ikke)
+// ---------------------------------------------------------------------------
+
+export const sessions = pgTable("sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

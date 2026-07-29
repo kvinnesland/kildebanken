@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1785360779568,
+      "tag": "0000_colossal_the_renegades",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785360803459,
+      "tag": "0001_responses_active_unique_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785360884492,
+      "tag": "0002_mixed_genesis",
+      "breakpoints": true
+    }
+  ]
+}

@@ -8,7 +8,7 @@
 // ligger i databasen (unike indekser, statussjekk før overgang), ikke i at
 // denne funksjonen "husker" noe fra forrige kall.
 
-import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, sql } from "drizzle-orm";
 import { db, type Database } from "@/db/client";
 import {
   contactRequests,
@@ -188,13 +188,12 @@ async function runExpireContactRequests(dbase: Database): Promise<TickResult> {
 
 async function runDeadlineReminders(dbase: Database): Promise<TickResult> {
   const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const in23h = new Date(Date.now() + 23 * 60 * 60 * 1000);
   const errors: string[] = [];
+  let processed = 0;
 
-  // Vindu på én time (23h–24h) siden jobben kjører hvert 15. minutt og vi
-  // ikke har et eget "varsel sendt"-flagg i dette scaffoldet ennå.
-  // TODO (neste iterasjon): eget felt (f.eks. deadline_reminder_sent_at) for
-  // å gjøre dette robust mot at vinduet bommes ved en feilet jobbkjøring.
+  // deadlineReminderSentAt (SPEC-V1.md 19.6) gjør dette trygt å kjøre hvert
+  // 15. minutt uten å sende samme påminnelse flere ganger — erstatter det
+  // tidligere tidsvindu-hacket.
   const soon = await dbase
     .select({ id: requests.id, journalistId: requests.journalistId })
     .from(requests)
@@ -202,7 +201,7 @@ async function runDeadlineReminders(dbase: Database): Promise<TickResult> {
       and(
         eq(requests.status, "published"),
         lt(requests.responseDeadline, in24h),
-        gt(requests.responseDeadline, in23h)
+        isNull(requests.deadlineReminderSentAt)
       )
     );
 
@@ -213,17 +212,23 @@ async function runDeadlineReminders(dbase: Database): Promise<TickResult> {
         .from(users)
         .where(eq(users.id, r.journalistId));
       if (!journalist) continue;
+
       await sendTransactionalEmail({
         template: "deadline_approaching_24h",
         to: { email: journalist.email, locale: journalist.locale },
         data: { requestId: r.id },
       });
+      await dbase
+        .update(requests)
+        .set({ deadlineReminderSentAt: new Date() })
+        .where(eq(requests.id, r.id));
+      processed += 1;
     } catch (err) {
       errors.push(`${r.id}: ${(err as Error).message}`);
     }
   }
 
-  return { job: "deadline-reminder", processed: soon.length, errors };
+  return { job: "deadline-reminder", processed, errors };
 }
 
 // ---------------------------------------------------------------------------
@@ -234,15 +239,20 @@ async function runDeadlineReminders(dbase: Database): Promise<TickResult> {
 async function runStaleRequestReminders(dbase: Database): Promise<TickResult> {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const errors: string[] = [];
+  let processed = 0;
 
-  // TODO (neste iterasjon): samme behov for et "påminnelse sendt"-flagg som
-  // over, ellers sendes denne på nytt hvert 15. minutt etter 30-dagersgrensen
-  // til forespørselen lukkes. Ikke produksjonsklar før det feltet finnes.
+  // staleReminderSentAt (SPEC-V1.md 19.6) — samme mønster som
+  // deadlineReminderSentAt over. Sendes én gang per forespørsel, ikke
+  // gjentatt frem til den lukkes.
   const stale = await dbase
     .select({ id: requests.id, journalistId: requests.journalistId })
     .from(requests)
     .where(
-      and(eq(requests.status, "published"), lt(requests.publishedAt, thirtyDaysAgo))
+      and(
+        eq(requests.status, "published"),
+        lt(requests.publishedAt, thirtyDaysAgo),
+        isNull(requests.staleReminderSentAt)
+      )
     );
 
   for (const r of stale) {
@@ -252,17 +262,23 @@ async function runStaleRequestReminders(dbase: Database): Promise<TickResult> {
         .from(users)
         .where(eq(users.id, r.journalistId));
       if (!journalist) continue;
+
       await sendTransactionalEmail({
         template: "stale_request_reminder_30d",
         to: { email: journalist.email, locale: journalist.locale },
         data: { requestId: r.id },
       });
+      await dbase
+        .update(requests)
+        .set({ staleReminderSentAt: new Date() })
+        .where(eq(requests.id, r.id));
+      processed += 1;
     } catch (err) {
       errors.push(`${r.id}: ${(err as Error).message}`);
     }
   }
 
-  return { job: "stale-request-reminder", processed: stale.length, errors };
+  return { job: "stale-request-reminder", processed, errors };
 }
 
 // ---------------------------------------------------------------------------
