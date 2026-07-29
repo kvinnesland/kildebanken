@@ -1,0 +1,2 @@
+CREATE TYPE "public"."journalist_verification_status" AS ENUM('pending_review', 'approved', 'rejected');--> statement-breakpoint
+ALTER TABLE "journalist_profiles" ADD COLUMN "verification_status" "journalist_verification_status" DEFAULT 'pending_review' NOT NULL;

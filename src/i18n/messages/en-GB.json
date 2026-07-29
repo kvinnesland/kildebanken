@@ -68,5 +68,11 @@
 
   "errors.generic": "Something went wrong. Please try again.",
   "errors.field_required": "This field is required.",
-  "errors.invalid_email": "This doesn't look like a valid email address."
+  "errors.invalid_email": "This doesn't look like a valid email address.",
+  "errors.not_authenticated": "You need to log in to do this.",
+  "errors.consent_required": "You must tick all the consent boxes.",
+  "errors.invalid_country": "This country isn't available.",
+  "errors.invalid_locale": "This language isn't available in the selected country.",
+  "errors.legal_documents_unavailable": "This country and language combination isn't ready for registration yet.",
+  "errors.email_already_registered": "This email address is already registered."
 }

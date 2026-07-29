@@ -230,3 +230,99 @@ Samme kjede som økt 1 (`tsc --noEmit`, `eslint`, `vitest` — nå 10 tester,
 `i18n:check`, `next build`), pluss `drizzle-kit generate` kjørt to ganger
 (først for `auth_tokens`/`sessions`, så for de to nye feltene på `requests`)
 for å bekrefte at skjemaendringene faktisk gir gyldig SQL. Alt grønt.
+
+---
+
+## Økt 3 — 2026-07-29/30, natt (`create_trigger` fyrte som forventet)
+
+Rutinen fra økt 2 fyrte presist til planlagt tid (`22:38 UTC`) og gikk rett
+inn i samme samtale med full kontekst — i motsetning til `ScheduleWakeup`.
+Dette bekrefter at byttet var riktig.
+
+### Oppdaget og rettet et nytt spec-hull: journaliststatus var to ting camouflert som ett felt
+
+Underveis i registreringsarbeidet (se under) måtte jeg faktisk implementere
+statusovergangene fra 8.1, og oppdaget da at de ikke kan implementeres som
+skrevet: 8.1 beskrev `pending_review`, `approved` og `rejected` som om de var
+verdier på samme felt som `pending_email_verification` og `suspended` — men
+`User.status` (19.3) er felles for ALLE roller og har aldri inkludert disse
+verdiene. Å legge journalist-spesifikke verdier til et felt delt med
+mottaker/moderator/administrator ville vært feil retning.
+
+**Rettet i spec-en først** (8.1 og 19.5): splittet til to uavhengige felt.
+`User.status` forblir generisk (`pending_email_verification → active →
+suspended → deleted`, samme for alle roller). Ny
+`JournalistProfile.verification_status`
+(`pending_review → approved | rejected`) eier moderator-vurderingen alene,
+satt til `pending_review` ved søknad og aldri endret av
+innlogging/verifisering. FR-005 omformulert til å referere begge feltene
+eksplisitt. Deretter lagt til i `schema.ts` (`journalist_verification_status`
+enum + kolonne) og migrert (`0003`).
+
+Dette er nøyaktig samme type feil som `AuthToken`/`Session`-hullet i økt 2 —
+en seksjon i spec-en (her: 8, der: 6/8) forutsatte en tilstand
+datamodell-seksjonen (19) aldri faktisk definerte riktig. Mistanke å ta med
+videre: det kan finnes flere slike hull andre steder i spec-en som bare
+dukker opp når noen faktisk prøver å implementere det beskrevne.
+
+### Bygget registrering (prioritet 1 fra forrige økt)
+
+- `src/lib/legal/documents.ts` — henter gjeldende publiserte versjon av et
+  juridisk dokument for (land, locale, type). "Gjeldende" = høyeste
+  `published_at` som ikke ligger i fremtiden. Returnerer `null` for HELE
+  resultatet hvis ett eneste påkrevd dokument mangler (FR-009) — ingen delvis
+  samtykkeflyt.
+- `src/db/errors.ts` — `isUniqueViolation()`, for å skille en reell
+  kappløps-kollisjon (to samtidige registreringer, samme e-post) fra andre
+  databasefeil.
+- `src/lib/registration/recipient.ts` — `registerRecipient()`. Håndhever de
+  tre samtykkene fra 7.1, sjekker at landet er `active` og locale-en er
+  tilgjengelig der, henter gjeldende vilkår+personvern, oppretter bruker +
+  `EmailSubscription` + fire `ConsentRecord`-rader (én kombinert
+  avkrysningsboks for vilkår+personvern gir likevel TO rader, siden de to
+  dokumenttypene versjoneres uavhengig), og sender første e-post via
+  `requestMagicLink`.
+- `src/lib/registration/journalist.ts` — `applyAsJournalist()`. Samme mønster,
+  oppretter også `JournalistProfile` med `verification_status =
+  pending_review` (skjemaets default, ikke satt eksplisitt i koden).
+- Route handlers: `GET /api/countries` (kun `active` land — et land i
+  `draft` skal aldri kunne velges, jf. 3.3), `POST /api/subscribe`,
+  `POST /api/journalists/apply`.
+- **Rettet valg av første e-post:** `requestMagicLink` sendte tidligere
+  alltid `confirm_email` som første e-post, uavhengig av rolle — men spec-en
+  har en egen `journalist_application_received`-mal som sto ubrukt. Journalist
+  får nå denne ved første utsendelse, mottaker får `confirm_email`, begge får
+  `magic_link` ved senere innlogginger.
+- Lagt til seks nye `errors.*`-nøkler i begge locale-filene
+  (`consent_required`, `invalid_country`, `invalid_locale`,
+  `legal_documents_unavailable`, `email_already_registered`,
+  `not_authenticated`) for konsistens, selv om `check-keys.ts` ikke krever
+  det ennå (de sendes som rå API-feilkoder, ikke gjennom `t()`).
+
+### Ikke gjort denne økten, med vilje
+
+- **Ingen integrasjonstester mot en ekte database.** Dette sandkassemiljøet
+  har ingen kjørende Postgres, så `registerRecipient`/`applyAsJournalist` er
+  verifisert ved kodegjennomgang, typecheck og vellykket `next build` —
+  ikke ved faktisk å kjøre dem. Bør dekkes med ekte integrasjonstester (mot
+  en test-database) før dette går i produksjon. Notert som gap, ikke skjult.
+- Digest-tick sin mottakerlogikk, Brevo-integrasjon, retention-jobben — alle
+  uendret fra økt 1/2, fortsatt TODO.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil), `vitest run` (10 tester, uendret antall
+— ingen nye enhetstester denne økten, se over), `i18n:check`, `next build`
+(fire nye API-ruter kompilerer: `/api/countries`, `/api/subscribe`,
+`/api/journalists/apply`, pluss eksisterende), og `drizzle-kit generate` for
+den nye kolonnen på `journalist_profiles`.
+
+### Neste økt
+
+I prioritert rekkefølge: (1) faktisk mottakerlogikk i `digest-tick` (finn
+mottakere per land, rendre locale-varianter, opprette `DigestDelivery`); (2)
+integrasjonstester for registreringsflyten mot en ekte test-database, hvis
+en kan settes opp i miljøet; (3) `retention`-jobben, fortsatt med forsiktighet
+først; (4) admin-ruter for journalistgodkjenning
+(`POST /admin/journalists/:id/approve|reject`) siden `verification_status`
+nå finnes men ingenting setter den til noe annet enn default.

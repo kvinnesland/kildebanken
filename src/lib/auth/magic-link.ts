@@ -20,8 +20,10 @@ const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
  * men 6.1 sier eksplisitt at "e-postadressen verifiseres som en del av
  * innloggingen" — altså samme mekanisme. Jeg har derfor IKKE bygget en egen
  * bekreftelsesflyt: første forespørsel etter registrering (når
- * `email_verified_at` ennå er tom) bruker malen "confirm_email", alle senere
- * bruker "magic_link". Samme `AuthToken`, samme `verifyMagicLink()``.
+ * `email_verified_at` ennå er tom) bruker malen "confirm_email" (mottaker)
+ * eller "journalist_application_received" (journalist — kombinerer
+ * bekreftelse og søknadskvittering i én e-post, økt 3), alle senere bruker
+ * "magic_link". Samme `AuthToken`, samme `verifyMagicLink()`.
  */
 export async function requestMagicLink(email: string): Promise<void> {
   const [user] = await db
@@ -49,8 +51,11 @@ export async function requestMagicLink(email: string): Promise<void> {
     expiresAt: new Date(Date.now() + TOKEN_TTL_MS),
   });
 
+  const firstEmailTemplate =
+    user.role === "journalist" ? "journalist_application_received" : "confirm_email";
+
   await sendTransactionalEmail({
-    template: user.emailVerifiedAt ? "magic_link" : "confirm_email",
+    template: user.emailVerifiedAt ? "magic_link" : firstEmailTemplate,
     to: { email: user.email, locale: user.locale },
     data: { token: rawToken },
   });

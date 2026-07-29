@@ -382,24 +382,45 @@ Moderator skriver begrunnelsen i fritekst; den oversettes ikke.
 
 ### 8.1 Kontostatus for journalist
 
+**Rettet under autonomt arbeid** (se `NATTLOGG.md`, økt 3): denne seksjonen
+beskrev tidligere "pending_review", "approved" og "rejected" som om de var
+verdier på samme felt som `pending_email_verification` og `suspended` — men
+`User.status` (19.3) er et felles felt for alle roller og har aldri hatt
+disse verdiene. Journalistens moderator-vurdering er en egen tilstand, atskilt
+fra kontoens grunnleggende tilgang, og lever derfor på `JournalistProfile`
+(19.5) som et eget felt: `verification_status`.
+
+**To uavhengige felt, ikke ett:**
+
 ```
-pending_email_verification → pending_review → approved
-                                            → rejected
-approved → suspended → approved
-approved → deleted
+User.status (felles for alle roller, 19.3):
+  pending_email_verification → active → (suspended → active) | deleted
+
+JournalistProfile.verification_status (kun journalist, 19.5):
+  pending_review → approved
+                 → rejected
 ```
 
-| Status | Kan logge inn | Kan lage utkast | Kan sende til moderering |
-|---|---|---|---|
-| `pending_email_verification` | nei | nei | nei |
-| `pending_review` | ja | ja | nei |
-| `approved` | ja | ja | ja |
-| `rejected` | nei | – | – |
-| `suspended` | nei | – | – |
+`verification_status` settes til `pending_review` idet søknaden opprettes
+(7.2), uavhengig av om e-posten er bekreftet ennå. Den endres bare av en
+moderatorhandling (godkjenn/avvis) — aldri av innloggings- eller
+verifiseringsflyten.
 
-Ved suspensjon skjules journalistens publiserte forespørsler umiddelbart, og
-åpne kontaktforespørsler kanselleres. Innsendte svar beholdes, men er ikke
-tilgjengelige for journalisten.
+| `User.status` | `verification_status` | Kan logge inn | Kan lage utkast | Kan sende til moderering |
+|---|---|---|---|---|
+| `pending_email_verification` | (uansett) | nei | nei | nei |
+| `active` | `pending_review` | ja | ja | nei |
+| `active` | `approved` | ja | ja | ja |
+| `active` | `rejected` | ja | ja | nei (endelig) |
+| `suspended` | (uansett) | nei | – | – |
+
+FR-005 håndhever raden `active` + `approved` — ikke `User.status` alene.
+
+Ved suspensjon (`User.status = suspended`) skjules journalistens publiserte
+forespørsler umiddelbart, og åpne kontaktforespørsler kanselleres. Innsendte
+svar beholdes, men er ikke tilgjengelige for journalisten. `verification_status`
+endres ikke ved suspensjon — oppheves suspensjonen, er journalisten fortsatt
+`approved` uten ny moderatorbehandling.
 
 ---
 
@@ -999,6 +1020,8 @@ full_name
 job_title
 organization_name
 organization_url
+verification_status         pending_review | approved | rejected — se 8.1,
+                             lagt til under autonomt arbeid (NATTLOGG.md)
 reviewed_by                 nullable
 reviewed_at                 nullable
 review_note                 nullable, kun synlig for moderator
@@ -1006,7 +1029,8 @@ created_at
 updated_at
 ```
 
-Journalistens land ligger på `User.country_code`.
+Journalistens land ligger på `User.country_code`. `verification_status` er
+atskilt fra `User.status` med hensikt — se 8.1 for begrunnelsen.
 
 ### 19.6 Request
 
@@ -1371,7 +1395,7 @@ Hvert krav har et akseptansekriterium som kan verifiseres direkte.
 | FR-002 | Systemet skal ikke ta imot svar fra en konto uten `email_verified_at`. | Test: innsending fra ubekreftet konto returnerer 403. |
 | FR-003 | Systemet skal sette abonnementet til `unsubscribed` ved ett kall til `/unsubscribe/:token`, uten innlogging og uten videre bekreftelse. | Test: ett POST-kall, deretter ingen leveranse i neste digest. |
 | FR-004 | Systemet skal slette ubekreftede kontoer eldre enn 14 dager. | Test: retensjonsjobb mot fikstur. |
-| FR-005 | Systemet skal hindre en journalist med annen status enn `approved` i å sende en forespørsel til moderering. | Test per status i tabellen i 8.1. |
+| FR-005 | Systemet skal hindre en journalist uten `User.status = active` og `JournalistProfile.verification_status = approved` i å sende en forespørsel til moderering. | Test per rad i tabellen i 8.1. |
 
 ### Språk og land
 

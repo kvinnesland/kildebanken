@@ -68,5 +68,11 @@
 
   "errors.generic": "Noe gikk galt. Prøv igjen.",
   "errors.field_required": "Dette feltet er obligatorisk.",
-  "errors.invalid_email": "Dette ser ikke ut som en gyldig e-postadresse."
+  "errors.invalid_email": "Dette ser ikke ut som en gyldig e-postadresse.",
+  "errors.not_authenticated": "Du må logge inn for å gjøre dette.",
+  "errors.consent_required": "Du må krysse av for alle samtykkene.",
+  "errors.invalid_country": "Dette landet er ikke tilgjengelig.",
+  "errors.invalid_locale": "Dette språket er ikke tilgjengelig i valgt land.",
+  "errors.legal_documents_unavailable": "Denne kombinasjonen av land og språk er ikke klar for registrering ennå.",
+  "errors.email_already_registered": "Denne e-postadressen er allerede registrert."
 }

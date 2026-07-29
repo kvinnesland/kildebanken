@@ -141,6 +141,12 @@ export const authTokenPurpose = pgEnum("auth_token_purpose", [
   "data_export",
 ]);
 
+export const journalistVerificationStatus = pgEnum("journalist_verification_status", [
+  "pending_review",
+  "approved",
+  "rejected",
+]);
+
 // ---------------------------------------------------------------------------
 // 19.1 Country
 // ---------------------------------------------------------------------------
@@ -241,6 +247,10 @@ export const journalistProfiles = pgTable("journalist_profiles", {
   jobTitle: text("job_title").notNull(),
   organizationName: text("organization_name").notNull(),
   organizationUrl: text("organization_url").notNull(),
+  // Atskilt fra User.status med hensikt — se SPEC-V1.md 8.1 (rettet økt 3).
+  verificationStatus: journalistVerificationStatus("verification_status")
+    .notNull()
+    .default("pending_review"),
   reviewedBy: uuid("reviewed_by").references(() => users.id),
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
   reviewNote: text("review_note"), // kun synlig for moderator
