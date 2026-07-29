@@ -22,6 +22,13 @@ Infrastrukturvalgene her styres derfor ikke av skala, men av tre andre ting:
 Den viktigste beslutningen i dette dokumentet er derfor hvor mange bevegelige
 deler vi *ikke* har.
 
+**To stadier.** Seksjon 3–14 beskriver oppsettet for når tjenesten har brukere
+og en liten driftskostnad er forsvarlig. Ved null brukere gjelder i stedet
+**seksjon 16** – et oppsett som er gratis i kroner, men som koster ett bevisst
+avvik fra EØS-prinsippet og én arkitekturforskjell i jobbkjøringen. Begge er
+beskrevet der, med eksplisitte terskler for når dere migrerer til oppsettet i
+seksjon 3–14.
+
 ---
 
 ## 2. Kjøretidsarkitektur
@@ -185,14 +192,20 @@ EØS-kravet står i reell spenning med kvalitet.
 | **Mailjet** | Frankrike | Som Brevo. EØS-lagring som standard. |
 | **Scaleway TEM** | Frankrike | Enklest juridisk. Umodent på bulk og analyse. |
 
-**Anbefaling: Brevo eller Mailjet.** Begrunnelsen er ikke teknisk – Postmark er
-det bedre produktet – men produktmessig. Tjenestens verdiforslag er at
-privatpersoner kan stole på den med opplysninger om seg selv. «All behandling
-skjer i EØS, uten unntak» er en setning vi kan stå ved i personvernerklæringen
-og i markedsføringen, og den mister verdi hvis den har en fotnote.
+**Besluttet: Brevo.** Begrunnelsen er ikke teknisk – Postmark er det bedre
+produktet – men produktmessig. Tjenestens verdiforslag er at privatpersoner kan
+stole på den med opplysninger om seg selv. «All behandling skjer i EØS, uten
+unntak» er en setning vi kan stå ved i personvernerklæringen og i
+markedsføringen, og den mister verdi hvis den har en fotnote.
 
 Ved store leveringsproblemer i produksjon er det en beslutning å ta opp igjen,
 med åpne øyne.
+
+**Gratisplanen har et hardt tak: 300 e-poster per døgn**, som ikke ruller over
+til neste dag. Dette er trolig den *første* kvoten som sprenges, ikke
+serverkapasiteten – en digest til noen hundre abonnenter kan alene fylle hele
+døgnkvoten, før en eneste innloggingslenke er sendt samme dag. Se 16.4 for
+terskelen som utløser oppgradering til en betalt Brevo-plan.
 
 ### 6.3 Domener
 
@@ -345,6 +358,10 @@ Et land nummer to koster i praksis ingenting i infrastruktur – det er
 konfigurasjon (`SPEC-V1.md` 3.3). Kostnaden ligger i juridisk gjennomgang,
 oversettelse og moderering.
 
+Dette er kostnaden når tjenesten har brukere og en liten driftsutgift er
+forsvarlig å ta på seg. Ved null brukere, se seksjon 16 for et oppsett til
+0 kr i måneden.
+
 ---
 
 ## 14. Hva som ryker først
@@ -368,12 +385,139 @@ oppsettet er riktig dimensjonert.
 
 ## 15. Åpne beslutninger
 
-1. **E-postleverandør** (6.2). Krever et valg mellom leveringsgrad og en
-   EØS-historie uten fotnoter. Anbefalingen er EØS, men beslutningen er ikke
-   min.
+1. ~~**E-postleverandør**~~ **Besluttet: Brevo** (6.2). Gratisplanens tak på
+   300 e-poster per døgn er lagt inn som overvåkningspunkt i 16.4.
 2. **Administrert database mot selvdrift.** Anbefalingen er administrert.
    Selvdrift halverer kostnaden og flytter risikoen dit den er dyrest.
 3. **Registrar og hvem som eier domenet.** Bør eies av virksomheten, ikke av en
    privatperson, fra første dag.
 4. **Hvem som har produksjonstilgang**, og hvordan den fjernes ved
    eierskifte. Bør avklares før første ekte bruker.
+
+---
+
+## 16. Stadium 0 – gratis oppsett ved null brukere
+
+Seksjon 3–14 forutsetter en liten, men reell driftskostnad. Denne seksjonen
+beskriver oppsettet for perioden før det er forsvarlig – null brukere, null
+inntekt. Det er **midlertidig per design**, med tersklene for å forlate det
+listet i 16.4.
+
+Gratis, kommersielt tillatt bruk og EØS-lagring er ikke alle tre oppnåelige
+samtidig uten kostnad. Dette stadiet velger gratis og kommersielt tillatt, og
+aksepterer et bevisst, tidsbegrenset avvik fra EØS-prinsippet. Det avviket
+skal stå i personvernerklæringen så lenge det gjelder, ikke skjules.
+
+### 16.1 Hvorfor ikke Vercel
+
+Vercel var det opplagte valget for et Next.js-prosjekt, og er allerede
+fravalgt i 3.1 av driftsmessige grunner. Det er også reelt utelukket av en
+annen grunn: **Hobby-planens vilkår tillater bare personlig, ikke-kommersiell
+bruk**, definert som ethvert prosjekt der noen involvert har en økonomisk
+interesse – inkludert en betalt utvikler som skriver koden. Kildebanken er et
+kommersielt prosjekt fra dag én, uavhengig av at det ikke har inntekt ennå.
+Vercel kan stanse et Hobby-prosjekt uten varsel dersom det oppdages. Dette er
+ikke et gebyr å ta sjansen på – det er en avslåtte-dør.
+
+### 16.2 Oppsettet
+
+```
+                    ┌──────────────────────────────┐
+   Nettleser ──────▶│  Next.js på Netlify Free     │
+                    │  (kommersiell bruk tillatt)   │
+                    └──────────┬───────────────────┘
+                               │
+                    ┌──────────▼───────────────────┐
+                    │  Neon Free – PostgreSQL       │
+                    │  region: Frankfurt (eu-central-1) │
+                    └──────────▲───────────────────┘
+                               │
+                    ┌──────────┴───────────────────┐
+                    │  Netlify Scheduled Function   │
+                    │  cron-utløst, ingen egen VM   │
+                    └──────────┬───────────────────┘
+                               │
+                    ┌──────────▼───────────────────┐
+   E-post   ◀───────│  Brevo Free (300/døgn)        │
+                    └──────────────────────────────┘
+```
+
+| Komponent | Valg | Hvorfor dette holder ved null brukere |
+|---|---|---|
+| App | **Netlify Free** | Offisiell Next.js-adapter (SSR, API-ruter). Vilkårene tillater kommersiell bruk – i motsetning til Vercel. Kvote i «credits», ikke i penger. |
+| Database | **Neon Free** | Permanent gratisnivå (ikke tidsbegrenset som mange konkurrenters gratis-Postgres). Frankfurt-region tilgjengelig på gratisplanen. 0,5 GB lagring, 100 CU-timer/måned, «scale to zero» ved inaktivitet. |
+| Planlagte jobber | **Netlify Scheduled Functions** | Se 16.3 – erstatter den alltid-kjørende workeren i seksjon 5. |
+| E-post | **Brevo Free** | Allerede besluttet (6.2). 300 e-poster/døgn, ingen rulling til neste dag. |
+| Feilrapportering | Sentry Free | Samme som i 3 – 5 000 hendelser/måned dekker null-brukere-fasen uendret. |
+| Oppetidsovervåking | Gratis ekstern monitor (f.eks. UptimeRobot) | Erstatter den betalte varianten i 3 til driftskostnad er forsvarlig. |
+| Domene og DNS | **Ikke gratis** | Se 16.5. Det eneste posten som koster reelle kroner i dette stadiet. |
+
+### 16.3 Jobbkjøring uten egen server
+
+Dette er den ene reelle arkitekturforskjellen, ikke bare et leverandørbytte.
+Seksjon 5 forutsetter en alltid-kjørende worker som poller pg-boss kontinuerlig.
+En slik prosess finnes ikke på en gratis, serverløs plattform – funksjonen
+kjører, gjør jobben sin, og avsluttes.
+
+Løsningen er å snu logikken fra «lytt kontinuerlig» til «bli vekket og sjekk»:
+
+```
+Hvert 15. minutt (Netlify Scheduled Function):
+   for hvert land med status = active:
+       samme sjekk som i 5.2 – lokal tid mot digest_send_time,
+       ingen Digest for (land, lokal_dato) ennå
+   kjør expire-requests, expire-contact-requests, deadline-reminder,
+   retention og purge-unverified etter samme mønster – én sjekk per kall,
+   ikke en bakgrunnsprosess
+```
+
+Idempotensen ligger fortsatt i databasens unike indeks på
+`(country_code, local_date)`, akkurat som i 5.2 – det er derfor dette
+fungerer uten pg-boss's lytteprosess. To overlappende kall kan fortsatt ikke gi
+to digester.
+
+**Konsekvens ved migrering til seksjon 3–14:** å bytte til en alltid-kjørende
+worker er byttet ut kallmønster, ikke datamodell. `Digest`, `DigestDelivery` og
+de øvrige tabellene i `SPEC-V1.md` 19 er uendret. Dette er kjent, avgrenset
+arbeid – ikke en omskriving.
+
+### 16.4 Det som faktisk begrenser dette stadiet
+
+| Grense | Verdi | Hva som skjer når den nås |
+|---|---|---|
+| Brevo, e-poster per døgn | 300, ingen rulling | Digest og transaksjonell e-post konkurrerer om samme kvote samme dag. **Dette er trolig den første grensen som treffes** – overvåk daglig sendt antall fra dag én, ikke bare ved feil. |
+| Neon, lagring | 0,5 GB | Nås ikke av forespørsler og svar alene på lang tid; `AuditLog` og `DigestDelivery` vokser raskest. |
+| Neon, beregningstid | 100 CU-timer/måned | Bør holde ved lavt trafikkvolum og en tikkejobb hvert 15. minutt; overvåk om «scale to zero» gir merkbare oppvåkningsforsinkelser for brukeren. |
+| Netlify, funksjonskvote | 300 «credits»/måned | Vokser med trafikk og antall bygg. Verifiser gjeldende omregning mot faktisk bruk før dere nærmer dere den. |
+
+Enhver av disse er en grunn til å migrere den *aktuelle* komponenten alene –
+ikke et signal om å bytte hele stabelen på én gang. Går Brevo-kvoten tom lenge
+før noe annet, bytt bare e-postplan.
+
+**Samlet migreringstrigger til seksjon 3–14:** første betalende kunde, eller
+et reelt antall brukere som gjør 200–300 kr i måneden ubetydelig mot risikoen
+ved kaldstart og gratisnivåenes ustabilitet. Ved den grensen er kostnaden i
+seksjon 13 lav nok til at den ikke lenger er verdt å administrere rundt.
+
+### 16.5 Det som ikke er gratis
+
+- **Domene og DNS.** Uunngåelig fra dag én, uavhengig av hosting. Bør
+  registreres i virksomhetens navn (15, punkt 3), ikke hos en privatperson.
+- **Juridisk gjennomgang av vilkår og personvernerklæring** (`SPEC-V1.md`
+  17.1). Dette er ikke en infrastrukturkostnad, men det er heller ikke gratis,
+  og det kan ikke skyves til stadium 1 – forespørsler tas imot og
+  personopplysninger samles inn fra første reelle bruker.
+
+### 16.6 Det bevisste avviket fra EØS-prinsippet
+
+Neon er et amerikansk selskap. Data lagres i Frankfurt, men amerikansk
+CLOUD Act-jurisdiksjon følger med selskapet, ikke med regionen – present
+selv når lagringen skjer i EØS. Det samme gjelder i praksis Netlify.
+
+Dette aksepteres i dette stadiet fordi risikoen er reell lav – null eller
+nesten null registrerte personer – og fordi terskelen for å forlate det er lav
+og allerede dokumentert i 16.4. Det er ikke akseptert som en permanent løsning,
+og det skal ikke presenteres som at «all behandling skjer i EØS» før
+migreringen til seksjon 3–14 er gjennomført. Personvernerklæringen skal i
+denne perioden opplyse om hvilke databehandlere som brukes og hvor de er
+etablert, slik regelverket uansett krever.
