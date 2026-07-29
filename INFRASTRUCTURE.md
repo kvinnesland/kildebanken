@@ -393,9 +393,11 @@ oppsettet er riktig dimensjonert.
    privatperson, fra første dag.
 4. **Hvem som har produksjonstilgang**, og hvordan den fjernes ved
    eierskifte. Bør avklares før første ekte bruker.
-5. **0 kr mot europeisk eierskap i bootstrap-fasen** (16.7). Utredet, ikke
-   avgjort: bli på Netlify/Neon-kompromisset, eller betale ~4–5 €/måned for
-   Clever Cloud og forlate det tidligere enn tersklene i 16.4 krever.
+5. ~~**0 kr mot europeisk eierskap i bootstrap-fasen**~~ **Besluttet: Netlify**
+   (16.7). Det bevisste EØS-avviket i 16.6 aksepteres i bootstrap-fasen, mot at
+   applikasjonen bygges portabel fra dag én (16.8) – et bytte til Hetzner skal
+   være et verifisert, avgrenset arbeid, ikke en ny vurdering av hele
+   arkitekturen.
 
 ---
 
@@ -459,7 +461,7 @@ tatt. Poenget er bare at Vercel forblir stengt, også senere – ikke noe som
 
 | Komponent | Valg | Hvorfor dette holder ved null brukere |
 |---|---|---|
-| App | **Netlify Free** | Offisiell Next.js-adapter (SSR, API-ruter). Vilkårene tillater kommersiell bruk – i motsetning til Vercel. Kvote i «credits», ikke i penger. |
+| App | **Netlify Free** | Offisiell Next.js-adapter (SSR, API-ruter). Vilkårene tillater kommersiell bruk – i motsetning til Vercel. Kvote i «credits», ikke i penger. Bygges portabelt fra dag én – se 16.8. |
 | Database | **Neon Free** | Permanent gratisnivå (ikke tidsbegrenset som mange konkurrenters gratis-Postgres). Frankfurt-region tilgjengelig på gratisplanen. 0,5 GB lagring, 100 CU-timer/måned, «scale to zero» ved inaktivitet. |
 | Planlagte jobber | **Netlify Scheduled Functions** | Se 16.3 – erstatter den alltid-kjørende workeren i seksjon 5. |
 | E-post | **Brevo Free** | Allerede besluttet (6.2). 300 e-poster/døgn, ingen rulling til neste dag. |
@@ -494,7 +496,8 @@ to digester.
 **Konsekvens ved migrering til seksjon 3–14:** å bytte til en alltid-kjørende
 worker er byttet ut kallmønster, ikke datamodell. `Digest`, `DigestDelivery` og
 de øvrige tabellene i `SPEC-V1.md` 19 er uendret. Dette er kjent, avgrenset
-arbeid – ikke en omskriving.
+arbeid – ikke en omskriving, forutsatt at jobblogikken er skrevet slik 16.8
+beskriver.
 
 ### 16.4 Det som faktisk begrenser dette stadiet
 
@@ -582,3 +585,59 @@ pilotfase, med bredere kommersiell lansering ikke ventet før første halvår
 2027 – ikke en selvbetjent utviklerplattform. Verdt å følge med på likevel:
 norsk, suveren skylagring ville vært et påfallende sterkt tillitssignal for
 nettopp en journalistkildeplattform, den dagen den er reelt tilgjengelig.
+
+### 16.8 Portabilitet – gjøre et bytte til Hetzner (eller andre) billig
+
+Beslutningen er Netlify nå. Denne seksjonen er det som gjør «nå» reversibelt.
+Byttbarhet handler om hvor mye av Netlify som får lekke inn i
+applikasjonskoden – akkurat samme prinsipp som `DESIGN.md` bruker for
+temaer: et lag skal kunne skiftes ut uten at lagene over merker det.
+
+**Allerede portabelt, uten noe ekstra arbeid:**
+
+- Applikasjonen er standard Next.js (App Router). Netlifys offisielle adapter
+  krever ingen Netlify-spesifikk kode i selve applikasjonen for SSR og
+  API-ruter.
+- Databasen er Postgres. Neon → Hetzner-VM med Aiven eller selvhostet Postgres
+  er et bytte av tilkoblingsstreng, ikke av skjema.
+- E-post (Brevo) og feilrapportering (Sentry) er allerede uavhengige av
+  hvem som hoster applikasjonen.
+
+**Den ene reelle koblingen: jobbkjøringen i 16.3.** Løsningen er å holde
+jobblogikken ren og host-uvitende:
+
+```
+lib/jobs/tick.ts              ← selve sjekk-og-send-logikken i 16.3.
+                                 Vet ingenting om Netlify.
+
+netlify/functions/tick.ts     ← tynn adapter. Importerer tick.ts,
+                                 kaller den, returnerer resultatet.
+```
+
+Ved bytte til Hetzner skrives én ny tynn adapter – en pg-boss-lytteprosess
+eller en cron-linje som kaller nøyaktig samme `tick.ts`. Jobblogikken,
+testene og datamodellen i `SPEC-V1.md` 19 røres ikke.
+
+**Regler som holder dette sant, ikke bare sant i dag:**
+
+1. Ingen Netlify-spesifikk API i applikasjonskoden, utover selve
+   deploy-konfigurasjonen (`netlify.toml`, funksjonsmappen). Ruting,
+   omdirigeringer og headere skrives med Next.js' egne mekanismer
+   (`next.config.js`, `middleware.ts`) – de kjører identisk på en Hetzner-VM.
+2. Ingen Netlify-tilleggstjenester. Ingen Netlify Identity (vi har egen
+   magic-link-autentisering, `SPEC-V1.md` 6), ingen Netlify Forms, ingen
+   Netlify-spesifikk databinding.
+3. DNS holdes hos en uavhengig registrar, ikke hos Netlify. Et vertsbytte
+   skal aldri også kreve en DNS-migrering.
+4. Hemmeligheter leses fra `process.env`, aldri fra en Netlify-spesifikk
+   konfigurasjons-API.
+5. Bygg skjer med standard `next build`. Netlify-spesifikke build-plugins
+   brukes bare der adapteren strengt tatt krever det.
+
+**Akseptansekriterium:** før noen del av seksjon 3–14 tas i bruk, skal den
+samme kodebasen faktisk deployeres til en Hetzner-VM i et testmiljø – samme
+`next build`, samme migrasjoner, bare med adapterlaget i punkt 1–2 byttet ut.
+Består ikke testen hvis applikasjonskoden må endres for at den skal kjøre der,
+er noe låst inn uten at noen la merke til det. Dette er samme logikk som
+temabytte-testen i `DESIGN.md` 9 – en påstand om portabilitet som aldri er
+forsøkt, er ikke verifisert.

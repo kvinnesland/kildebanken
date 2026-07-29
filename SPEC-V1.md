@@ -1424,7 +1424,9 @@ virker. Uten dem er den udokumentert.
 
 ## 24. Implementeringsrekkefølge
 
-**Fase 1 – Fundament.** Prosjektoppsett, database, designtokens og
+**Fase 1 – Fundament.** Prosjektoppsett bygget portabelt fra første commit
+(`INFRASTRUCTURE.md` 16.8 – jobblogikk adskilt fra vertsspesifikke adaptere,
+ingen vertsspesifikk API i applikasjonskoden), database, designtokens og
 komponentgrunnlag etter `DESIGN.md`, i18n-rammeverk med ICU og CI-sjekk av
 nøkler, `Country` og `LegalDocument`, magic link-autentisering, brukere og
 roller med land og locale, samtykkelogging, revisjonslogg, e-postleverandør og
