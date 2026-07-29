@@ -464,6 +464,21 @@ lukke den og journalisten opprette en ny.
 `closed` og `expired` er begge terminale. Begge setter `closed_at`, slik at
 retensjonsjobben har én referansedato. En lukket forespørsel kan ikke gjenåpnes.
 
+**Grense på samtidig publiserte forespørsler:** en journalist kan ha maks 5
+forespørsler med status `published` samtidig (FR-029). `submit` som ville gitt
+et sjette samtidig publisert avvises med en feilmelding som forklarer
+hvorfor, og lister hvilke forespørsler journalisten må lukke først. Grensen
+er satt lavt bevisst – se 26.1, punkt 5 – og er konfigurasjon, ikke en
+hardkodet konstant.
+
+**Påminnelse ved lenge åpne forespørsler:** en publisert forespørsel som
+verken er lukket eller utløpt 30 dager etter `published_at`, utløser en
+e-post til journalisten («Denne forespørselen har vært åpen lenge», se
+seksjon 14) med lenke til å lukke den. Ingen automatisk lukking – en lang
+`response_deadline` (opptil 90 dager, 9.1) kan være tilsiktet, og systemet
+skal ikke avslutte en sak uten en menneskelig beslutning. Se 26.1, punkt 6,
+og jobben `stale-request-reminder` i `INFRASTRUCTURE.md` 5.1.
+
 ### 9.3 Moderering
 
 Alle forespørsler skal godkjennes før publisering, av en moderator tildelt
@@ -745,6 +760,7 @@ hvilken journalist som fikk tilgang og hvilket samtykke som lå til grunn.
 | Kontakt godkjent | journalist |
 | Kontakt avslått | journalist |
 | Forespørsel utløper om 24 timer | journalist |
+| Forespørsel har vært åpen lenge (30 dager) | journalist |
 | Forespørsel lukket | journalist |
 | Dagens forespørsler (digest) | mottaker |
 | Kvittering på innsendt svar | mottaker |
@@ -1335,6 +1351,7 @@ Hvert krav har et akseptansekriterium som kan verifiseres direkte.
 | FR-026 | Systemet skal sette status `expired` og `closed_at` på alle publiserte forespørsler der `response_deadline` er passert, innen 15 minutter. | Test: jobb mot fikstur med frist i fortiden. |
 | FR-027 | Journalisten skal kunne lukke en publisert forespørsel før fristen. | Test: status blir `closed`, svarknappen forsvinner. |
 | FR-028 | Systemet skal ikke publisere en forespørsel som ikke har vært innom `submitted` og en moderatorhandling. | Kodegjennomgang og test av direkte statusmanipulasjon. |
+| FR-029 | Systemet skal hindre en journalist i å ha mer enn 5 forespørsler med status `published` samtidig. | Test: forsøk på et sjette samtidige `submit` avvises med forklarende feilmelding. |
 
 ### Utsendelse
 
@@ -1491,25 +1508,49 @@ gjeninnføring.
 
 ## 26. Uavklarte spørsmål
 
-Disse blokkerer ikke arkitekturarbeidet, men bør besvares før angitt fase:
+### 26.1 Besluttet under autonomt arbeid (natt 2026-07-29/30)
 
-1. **Før fase 3:** Skal to land være live ved lansering, eller ett? Arkitekturen
-   er den samme, men to markeder dobler juridisk gjennomgang, oversettelse av
-   vilkår og bemanning av moderering. Spesifikasjonen forutsetter ett.
-2. **Før fase 1:** Hvilket språk er plattformens standardspråk – altså siste
-   ledd i fallback-kjeden? `nb-NO` er enklest ved lansering, `en` er mer robust
-   ved utvidelse. Valget påvirker hvilken fil CI validerer mot.
-3. **Før fase 5:** Hvem eier oversettelse av juridiske tekster, og hvem godkjenner
-   dem? Dette er ikke en utvikleroppgave, og det er en port for å sette et land
-   til `active`.
-4. **Før fase 2:** Skal journalistens navn vises offentlig på forespørselen,
-   eller bare redaksjonen? Spesifikasjonen forutsetter i dag at navnet vises.
-5. **Før fase 4:** Skal en journalist kunne se hvor mange som har åpnet
-   forespørselen? Forutsetter klikkmåling, som 21.5 utelukker i sin nåværende
-   form.
-6. **Før fase 2:** Hvor mange forespørsler kan én journalist ha publisert
-   samtidig? Rate limit finnes i 18, men ingen øvre grense på aktive
-   forespørsler.
-7. **Før fase 4:** Hva skjer med svar på en forespørsel journalisten aldri
-   lukker, og som heller ikke har passert fristen fordi fristen er satt 90 dager
-   frem? Vurder en påminnelse til journalisten og automatisk lukking.
+Løst med begrunnede antagelser fordi ingen av dem er organisasjonsbeslutninger
+– de er arkitektur- og produktvalg som kan revideres uten kostnad hvis noen er
+uenig. Ingen er bygget inn som irreversible.
+
+1. **Ett land ved lansering.** Bekreftet, ikke bare forutsatt (jf. 2.4).
+   Arkitekturen bærer flere, men NO er eneste `active` land ved launch. Ingen
+   ny informasjon tilsier at to markeder samtidig er verdt den doblede
+   juridiske og modereringsbyrden før ett marked er bevist.
+2. **Plattformens standardspråk (siste ledd i fallback-kjeden) er `nb-NO`.**
+   V1 er ett marked, ett språk – å sette `en` som terminal fallback nå er å
+   løse et problem vi ikke har ennå, på bekostning av at hver eneste
+   feilmelding må skrives på et språk ingen bruker faktisk ser i v1. Revurder
+   denne når land nummer to legges til (se 3.4 og FR-011/FR-012).
+3. **Journalistens fulle navn vises offentlig på forespørselen**, ikke bare
+   redaksjonen. Begrunnelse: navngitt avsender er en tillitsmekanisme, ikke
+   bare en opplysning – en anonym redaksjonskonto uten navn gjør det lettere
+   for en useriøs aktør å gjemme seg bak et ekte medienavn. Dette var allerede
+   den underforståtte antagelsen i seksjon 11; den er nå gjort eksplisitt der.
+4. **Journalisten ser ikke antall åpninger av forespørselen i v1.** Konsistent
+   med 21.5, som allerede utelukker individuell åpningssporing av
+   prinsipielle grunner. Å innføre det for forespørselssiden alene ville vært
+   en stille bakdør inn i nøyaktig den sporingen 21.5 argumenterer mot.
+   Aggregerte, ikke-individuelle visningstall kan vurderes senere, aldri
+   åpningspiksler.
+5. **Maks 5 samtidig publiserte forespørsler per journalist.** Lagt til som
+   FR-029 og et nytt punkt i 9.2. Begrunnelse: den daglige e-posten lister
+   forespørsler kronologisk uten gruppering (10.2) – uten en grense kan én
+   aktiv journalist fylle store deler av en dags digest og fortrenge andre.
+   Fem er satt lavt bevisst; heves når reelle journalister melder at det
+   begrenser dem, ikke før.
+6. **En forespørsel som verken lukkes eller når fristen, får en påminnelse til
+   journalisten 30 dager etter publisering**, uavhengig av hvor langt unna
+   `response_deadline` er. Lagt til i 9.2, i e-postmaltabellen (14) og som ny
+   jobb i `INFRASTRUCTURE.md` 5.1. Ingen automatisk lukking – en 90 dagers
+   frist kan være et bevisst, langsiktig opplegg fra journalisten, og
+   plattformen skal ikke stenge en sak uten menneskelig beslutning.
+
+### 26.2 Fortsatt åpent – krever en navngitt eier, ikke en arkitekturbeslutning
+
+1. **Før fase 5:** Hvem eier oversettelse av juridiske tekster, og hvem
+   godkjenner dem? Dette er en organisatorisk rolletildeling – en konkret
+   person eller et advokatforhold – ikke noe en spesifikasjon kan avgjøre på
+   vegne av virksomheten. Må være avklart før noe land kan settes til
+   `active` (jf. 3.3, 17.2).

@@ -141,6 +141,7 @@ Jobber i v1:
 | `retention` | Daglig | Sletting og anonymisering etter `SPEC-V1.md` 17.4 |
 | `deadline-reminder` | Hver time | Varsel 24 t før frist |
 | `purge-unverified` | Daglig | Ubekreftede kontoer eldre enn 14 dager (FR-004) |
+| `stale-request-reminder` | Daglig | Varsel til journalist 30 dager etter `published_at` hvis fortsatt `published` (`SPEC-V1.md` 9.2, 26.1 punkt 6) |
 
 ### 5.2 Utsendelse per land og sommertid
 
