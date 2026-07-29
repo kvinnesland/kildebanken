@@ -566,3 +566,19 @@ og «europeisk eid» reelt uforenlige akkurat nå på denne typen tjeneste.
 
 Dette er et verdivalg mellom 0 kr og et prinsipp, ikke et teknisk spørsmål.
 Det er ikke besvart her.
+
+**Hetzner** (allerede anbefalt for Stadium 1 i seksjon 3) er ikke et tredje
+gratisalternativ, men et annet slags kompromiss: nye kontoer får en
+engangskreditt (typisk ~20 €, opptil ~50 € med kampanjekode) som dekker noen
+måneders drift på det billigste alternativet. Det er en nedtelling, ikke et
+vedvarende gratisnivå, og Hetzner er ren IaaS – hele drifts­jobben i seksjon
+3–14 (Coolify, migrasjoner, worker, overvåking) må gjøres fra dag én, bare
+uten regningen en stund. Dette bytter penger mot oppsettstid ved null brukere,
+altså nøyaktig avveiningen seksjon 1 argumenterer mot å ta for tidlig.
+
+**Telenor** har ingen relevant tjeneste i dag. De bygger «Telenor Sovereign
+Cloud», men den er rettet mot offentlig sektor og regulerte virksomheter, i
+pilotfase, med bredere kommersiell lansering ikke ventet før første halvår
+2027 – ikke en selvbetjent utviklerplattform. Verdt å følge med på likevel:
+norsk, suveren skylagring ville vært et påfallende sterkt tillitssignal for
+nettopp en journalistkildeplattform, den dagen den er reelt tilgjengelig.
