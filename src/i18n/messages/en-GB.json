@@ -289,6 +289,30 @@
   "email.response_request_closed.body": "The request \"{title}\", which you responded to, is now closed.",
   "email.response_request_closed.cta": "View the request",
 
+  "email.new_request_for_moderation.subject": "New request for moderation",
+  "email.new_request_for_moderation.heading": "New request for moderation",
+  "email.new_request_for_moderation.body": "The request \"{title}\" is awaiting review.",
+  "email.new_request_for_moderation.cta": "Go to the moderation queue",
+
+  "email.content_reported.subject": "Content reported",
+  "email.content_reported.heading": "Content reported",
+  "email.content_reported.entity_type.request": "a request",
+  "email.content_reported.entity_type.response": "a response",
+  "email.content_reported.body": "{entity} has been reported. Reason: {reason}",
+  "email.content_reported.body_with_comment": "{entity} has been reported. Reason: {reason}. Comment: {comment}",
+  "email.content_reported.cta": "Go to the moderation queue",
+
+  "email.contact_request_cancelled_account_deleted.subject": "Your contact request has been cancelled",
+  "email.contact_request_cancelled_account_deleted.heading": "Your contact request has been cancelled",
+  "email.contact_request_cancelled_account_deleted.body": "The respondent's account has been deleted, so your contact request has been cancelled.",
+
+  "email.legal_terms_material_change.subject": "We've updated {document}",
+  "email.legal_terms_material_change.heading": "We've updated {document}",
+  "email.legal_terms_material_change.document_type.terms": "the terms",
+  "email.legal_terms_material_change.document_type.privacy": "the privacy policy",
+  "email.legal_terms_material_change.body": "We've made a material change to {document}. Click the link below to read the updated version.",
+  "email.legal_terms_material_change.cta": "Read the updated version",
+
   "contact_request.title": "Request for further contact",
   "contact_request.message_label": "Message from the journalist",
   "contact_request.method_label": "Preferred contact method",

@@ -102,7 +102,7 @@ export async function publishLegalDocument(
       await sendTransactionalEmail({
         template: "legal_terms_material_change",
         to: { email: recipient.email, locale: recipient.locale },
-        data: { documentType: input.documentType, version: input.version },
+        data: { documentType: input.documentType, countryCode: input.countryCode },
       });
     }
   }

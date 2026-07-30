@@ -4967,3 +4967,56 @@ bygges; (2) den store testbarhets-refaktoreringen
 oversatte-stinavn-hullet (3.7); (9) faktisk Brevo-integrasjon når en
 API-nøkkel finnes; (10) den siste ubrukte `nav.*`-nøkkelen,
 `nav.requests`.
+
+## Fortsettelse av økt 7 — de fire siste e-postmalene: ALLE 23 i SPEC-V1.md 15 er nå bygget
+
+Bygget `new_request_for_moderation` og `content_reported` (begge hadde
+allerede fungerende kallere fra tidligere økter — `submitRequest()` i
+`src/lib/requests/requests.ts`, og `submitReport()` i
+`src/lib/reports/reports.ts` — lagt til `title` i førstnevntes data),
+pluss `contact_request_cancelled_account_deleted` og
+`legal_terms_material_change`. Sistnevntes kallende funksjonalitet
+(`publishLegalDocument()`, `src/lib/admin/legal-documents.ts`) viste
+seg IKKE å være et hull — hele varslingslogikken for "vesentlig
+endring i vilkår/personvernerklæring" (17.2) var allerede fullt bygget
+i en tidligere økt, komplett med en grundig dokumentert avgrensning av
+hva som bevisst IKKE er bygget (tvungen re-samtykke-UX, se kommentaren
+i filen). La til `countryCode` i dataene den sender med, slik at malen
+kan lenke til dokumentets faktiske offentlige side
+(`/[locale]/legal/[country]/[docLocale]/[type]`), og droppet `version`
+fra dataene (ikke meningsfullt for en mottaker å se en rå
+versjonsstreng — lenken til å LESE dokumentet er det som betyr noe).
+
+`send.test.ts`s "faller tilbake for en ubygget mal"-test er fjernet —
+det finnes ingen ubygget mal igjen å demonstrere den med. Erstattet med
+en test av det samme fallback-prinsippet på `legal_terms_material_change`
+selv (ugyldige/manglende felt), pluss en ny positiv test for at malen
+faktisk rendrer, og én for `request_closed` (som aldri fikk en egen
+`send.test.ts`-test i sin egen økt). `renderTransactionalEmail()`s
+doc-kommentar oppdatert til å si rett ut at alle 23 er bygget, i stedet
+for å telle ned et gjenværende antall.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**301
+tester**, +13 nye), `i18n:check` (**374 nøkler**), `design:check-tokens`
+(38 komponent-CSS-filer), `rm -rf .next && next build`,
+`test:integration` mot ekte lokal Postgres (47 tester, uendret — ingen
+regresjon fra `legal-documents.ts`s endrede data-payload).
+
+### Neste økt
+
+Alle 23 e-postmaler i SPEC-V1.md 15 er nå bygget — dette er IKKE lenger
+et punkt på denne listen. Gjenstående, i grov prioritert rekkefølge:
+(1) faktisk Brevo-integrasjon når en API-nøkkel finnes — naturlig neste
+steg nå som alle malene finnes å koble til; (2) den store
+testbarhets-refaktoreringen (`admin/`/`moderation/`-lib-laget, pluss
+`tick.ts`s jobbfunksjoner og `account-deletion.ts`) — fortsatt bevisst
+utsatt, men det klart største gjenværende hullet i test-dekning; (3)
+vurder om `contact_approved`/`contact_declined` bør bli egne
+`displayStatus`-verdier i 12.6; (4) resten av komponentbiblioteket
+(Dialog, Toast, Card, Alert, Tabs, Table, Pagination); (5) resten av
+16.1-dashbordet; (6) den ubrukte `"approved"`-verdien i
+`request_status`-enumen; (7) OG-delingsbilde; (8) det
+oversatte-stinavn-hullet (3.7); (9) den siste ubrukte `nav.*`-nøkkelen,
+`nav.requests`.

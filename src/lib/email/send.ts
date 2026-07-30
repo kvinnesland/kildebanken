@@ -18,6 +18,10 @@ import { renderRequestRejectedEmail } from "./templates/request-rejected";
 import { renderDeadlineApproaching24hEmail } from "./templates/deadline-approaching-24h";
 import { renderStaleRequestReminder30dEmail } from "./templates/stale-request-reminder-30d";
 import { renderResponseRequestClosedEmail } from "./templates/response-request-closed";
+import { renderNewRequestForModerationEmail } from "./templates/new-request-for-moderation";
+import { renderContentReportedEmail } from "./templates/content-reported";
+import { renderContactRequestCancelledAccountDeletedEmail } from "./templates/contact-request-cancelled-account-deleted";
+import { renderLegalTermsMaterialChangeEmail } from "./templates/legal-terms-material-change";
 import type { RenderedEmail } from "./templates/simple-cta-email";
 
 // Tynt e-postgrensesnitt. Selve jobblogikken (src/lib/jobs/tick.ts) kaller
@@ -62,9 +66,8 @@ export interface SendTransactionalEmailInput {
 }
 
 /**
- * Rendrer den faktiske mal-HTML-en/-teksten for de malene som har en ekte
- * mal bygget (foreløpig nitten, økt 7 — de andre 4 malene i
- * `TransactionalTemplate` er ennå bare navn uten innhold, se NATTLOGG.md).
+ * Rendrer den faktiske mal-HTML-en/-teksten for ALLE 23 malene i
+ * `TransactionalTemplate` (fullført økt 7, se NATTLOGG.md).
  * `null` betyr "ingen mal bygget ennå for denne, ELLER dataene som kreves
  * mangler", ikke en feil — stubben under faller da tilbake til det gamle,
  * generiske loggformatet. Grenene sjekker BARE de feltene sin egen mal
@@ -178,6 +181,34 @@ function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedE
         return null;
       }
       return renderResponseRequestClosedEmail(locale, requestId, title, slug);
+    }
+    case "new_request_for_moderation": {
+      const title = input.data.title;
+      if (typeof title !== "string") return null;
+      return renderNewRequestForModerationEmail(locale, title);
+    }
+    case "content_reported": {
+      const { entityType, reason, comment } = input.data;
+      if (
+        (entityType !== "request" && entityType !== "response") ||
+        typeof reason !== "string" ||
+        typeof comment !== "string"
+      ) {
+        return null;
+      }
+      return renderContentReportedEmail(locale, entityType, reason, comment);
+    }
+    case "contact_request_cancelled_account_deleted":
+      return renderContactRequestCancelledAccountDeletedEmail(locale);
+    case "legal_terms_material_change": {
+      const { documentType, countryCode } = input.data;
+      if (
+        (documentType !== "terms" && documentType !== "privacy") ||
+        typeof countryCode !== "string"
+      ) {
+        return null;
+      }
+      return renderLegalTermsMaterialChangeEmail(locale, documentType, countryCode);
     }
     default:
       return null;

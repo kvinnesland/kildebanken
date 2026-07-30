@@ -289,6 +289,30 @@
   "email.response_request_closed.body": "Forespørselen «{title}», som du har svart på, er nå lukket.",
   "email.response_request_closed.cta": "Se forespørselen",
 
+  "email.new_request_for_moderation.subject": "Ny forespørsel til moderering",
+  "email.new_request_for_moderation.heading": "Ny forespørsel til moderering",
+  "email.new_request_for_moderation.body": "Forespørselen «{title}» venter på vurdering.",
+  "email.new_request_for_moderation.cta": "Gå til modereringskøen",
+
+  "email.content_reported.subject": "Innhold rapportert",
+  "email.content_reported.heading": "Innhold rapportert",
+  "email.content_reported.entity_type.request": "en forespørsel",
+  "email.content_reported.entity_type.response": "et svar",
+  "email.content_reported.body": "{entity} er rapportert. Begrunnelse: {reason}",
+  "email.content_reported.body_with_comment": "{entity} er rapportert. Begrunnelse: {reason}. Kommentar: {comment}",
+  "email.content_reported.cta": "Gå til modereringskøen",
+
+  "email.contact_request_cancelled_account_deleted.subject": "Kontaktforespørselen din er kansellert",
+  "email.contact_request_cancelled_account_deleted.heading": "Kontaktforespørselen din er kansellert",
+  "email.contact_request_cancelled_account_deleted.body": "Respondentens konto er slettet, og kontaktforespørselen din er derfor kansellert.",
+
+  "email.legal_terms_material_change.subject": "Vi har oppdatert {document}",
+  "email.legal_terms_material_change.heading": "Vi har oppdatert {document}",
+  "email.legal_terms_material_change.document_type.terms": "vilkårene",
+  "email.legal_terms_material_change.document_type.privacy": "personvernerklæringen",
+  "email.legal_terms_material_change.body": "Vi har gjort en vesentlig endring i {document}. Klikk lenken under for å lese den oppdaterte versjonen.",
+  "email.legal_terms_material_change.cta": "Les den oppdaterte versjonen",
+
   "contact_request.title": "Forespørsel om videre kontakt",
   "contact_request.message_label": "Melding fra journalisten",
   "contact_request.method_label": "Ønsket kontaktform",

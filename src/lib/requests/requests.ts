@@ -255,7 +255,7 @@ export async function submitRequest(
     await sendTransactionalEmail({
       template: "new_request_for_moderation",
       to: { email: moderator.email, locale: moderator.locale },
-      data: { requestId },
+      data: { requestId, title: existing.title },
     });
   }
 

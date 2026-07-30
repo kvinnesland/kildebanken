@@ -202,19 +202,47 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
     expect(loggedMessage).toContain("Kontakt avslått");
   });
 
-  it("faller tilbake til det generiske formatet for maler uten en bygget mal ennå", async () => {
+  it("faller tilbake til det generiske formatet når legal_terms_material_change mangler feltene den trenger", async () => {
     vi.stubEnv("BREVO_API_KEY", "");
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     await sendTransactionalEmail({
       template: "legal_terms_material_change",
       to: { email: "test@example.com", locale: "nb-NO" },
-      data: { requestId: "some-id" },
+      data: { documentType: "not-a-valid-type" }, // mangler countryCode, ugyldig documentType
     });
 
     expect(warnSpy).toHaveBeenCalledWith(
       "[email:stub] legal_terms_material_change → test@example.com (nb-NO)",
-      { requestId: "some-id" }
+      { documentType: "not-a-valid-type" }
     );
+  });
+
+  it("logger den faktisk rendrede malen for legal_terms_material_change", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sendTransactionalEmail({
+      template: "legal_terms_material_change",
+      to: { email: "test@example.com", locale: "nb-NO" },
+      data: { documentType: "privacy", countryCode: "NO" },
+    });
+
+    const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
+    expect(loggedMessage).toContain("personvernerklæringen");
+  });
+
+  it("alle 23 malene i TransactionalTemplate har nå en ekte mal bygget", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sendTransactionalEmail({
+      template: "request_closed",
+      to: { email: "journalist@example.com", locale: "nb-NO" },
+      data: { requestId: "req-1", title: "En testforespørsel" },
+    });
+
+    const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
+    expect(loggedMessage).toContain("Forespørselen din er lukket");
   });
 });
