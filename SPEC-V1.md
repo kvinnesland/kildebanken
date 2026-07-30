@@ -1116,8 +1116,8 @@ topic                       nullable, fast nøkkel – aldri en visningsstreng
 geographic_note             nullable
 internal_reference          nullable
 response_deadline           nullable inntil innsending, UTC når satt
-status                      draft | submitted | changes_requested | approved
-                            | published | closed | expired | rejected | deleted
+status                      draft | submitted | changes_requested | published
+                            | closed | expired | rejected | deleted
 allows_anonymous_participation   nullable inntil innsending (boolsk – kan
                                  IKKE default til false, se merknad)
 may_be_recorded                  nullable inntil innsending
@@ -1163,9 +1163,15 @@ etter publisering").
 `country_code` kopieres bevisst i stedet for å utledes fra journalisten, slik at
 en senere endring av journalistens marked ikke flytter historiske forespørsler.
 
-`approved` er med i enumet som mellomtilstand for moderatorens handling, men
-settes og forlates i samme transaksjon som publisering. Alternativt kan den
-sløyfes helt – avgjøres ved implementering.
+**Rettet under autonomt arbeid** (økt 7, se `NATTLOGG.md`): enumet hadde
+tidligere også en `approved`-verdi, ment som en mellomtilstand for
+moderatorens handling ("settes og forlates i samme transaksjon som
+publisering. Alternativt kan den sløyfes helt – avgjøres ved
+implementering"). Implementeringen (`publishRequest()`,
+`src/lib/moderation/requests.ts`) valgte alternativet — `submitted →
+published` er én direkte overgang, `approved` ble aldri satt eller lest
+noe sted. Verdien lå likevel igjen i enumet, ubrukt. Fjernet fra enumet
+her siden implementeringsvalget nå er endelig gjort, ikke lenger åpent.
 
 ### 19.7 Response
 

@@ -53,7 +53,6 @@ export const requestStatus = pgEnum("request_status", [
   "draft",
   "submitted",
   "changes_requested",
-  "approved",
   "published",
   "closed",
   "expired",

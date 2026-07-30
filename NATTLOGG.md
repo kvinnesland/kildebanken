@@ -5411,3 +5411,61 @@ verdier i 12.6; (3) resten av komponentbiblioteket (Dialog, Toast, Card,
 Alert, Tabs, Table, Pagination); (4) resten av 16.1-dashbordet; (5) den
 ubrukte `"approved"`-verdien i `request_status`-enumen; (6)
 OG-delingsbilde.
+
+## Fortsettelse av økt 7 — den ubrukte `approved`-verdien i `request_status`-enumen fjernet (migrasjon)
+
+Tok fatt på punkt (5), det siste gjenværende punktet som var utsatt av
+migrasjonsrisiko fremfor kodekompleksitet. Sjekket SPEC-V1.md 19.6 først
+(spec-en er sannheten) — den sier ORDRETT at spørsmålet allerede var
+åpent ved spec-forfatning: "`approved` er med i enumet som mellomtilstand
+for moderatorens handling, men settes og forlates i samme transaksjon
+som publisering. Alternativt kan den sløyfes helt – avgjøres ved
+implementering." Implementeringen (`publishRequest()`,
+`src/lib/moderation/requests.ts`, verifisert på nytt denne økten via de
+nye integrasjonstestene) går DIREKTE fra `submitted` til `published` —
+`approved` er aldri satt eller lest noe sted i kodebasen (bekreftet med
+grep, og kryssjekket mot `JournalistRequestStatus`-typen i
+`status-badge.ts`, som eksplisitt lister de syv faktisk brukte
+statusene). Dette er altså IKKE et hull mellom spec og kode — spec-en selv
+overlot valget til implementeringen, og implementeringen tok det for
+lenge siden. Det gjenværende hullet var rent en glemt opprydding: enumet
+i databasen hadde fortsatt verdien.
+
+Rettet spec FØRST (19.6-tabellen + forklaringsavsnittet, som nå sier at
+valget er gjort, ikke lenger et åpent spørsmål), deretter koden
+(`request_status`-enumet i `schema.ts`), deretter generert en ekte
+Postgres-migrasjon (`npm run db:generate`).
+
+**Én reell fallgruve i selve migrasjonen:** `drizzle-kit`s
+førstegenererte SQL prøvde å konvertere kolonnen til `text`, droppe det
+gamle enumet, opprette det nye, og konvertere tilbake — men glemte at
+`status`-kolonnens `DEFAULT 'draft'` UTTRYKK selv avhenger av enumtypen
+(`error: cannot drop type request_status because other objects depend on
+it`). Rettet manuelt ved å legge til `ALTER COLUMN status DROP DEFAULT`
+FØR konverteringen og `SET DEFAULT 'draft'::request_status` ETTER — en
+kjent, dokumentert `drizzle-kit`-begrensning ved enum-endringer med en
+avhengig standardverdi, ikke noe spesifikt for dette skjemaet.
+
+Verifiserte FØR migrasjonen kjørte at null rader i BÅDE test- og
+utviklings-Postgres-instansene faktisk hadde `status = 'approved'`
+(`SELECT count(*) ... WHERE status = 'approved'` — 0 i begge), slik at
+selve `USING status::request_status`-konverteringen (som ville feilet
+høylytt, ikke stille korrumpert data, dersom antagelsen var feil) var
+trygg. Kjørte migrasjonen mot BEGGE lokale instanser (test og
+utvikling/nettleserverifisering).
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**329
+tester**, uendret), `i18n:check` (uendret), `design:check-tokens`,
+`rm -rf .next && next build`, `test:integration` mot ekte lokal Postgres
+ETTER migrasjonen (**115 tester**, uendret antall — ingen regresjon fra
+skjemaendringen).
+
+### Neste økt
+
+(1) faktisk Brevo-integrasjon når en API-nøkkel finnes; (2) vurder om
+`contact_approved`/`contact_declined` bør bli egne `displayStatus`-
+verdier i 12.6; (3) resten av komponentbiblioteket (Dialog, Toast, Card,
+Alert, Tabs, Table, Pagination); (4) resten av 16.1-dashbordet; (5)
+OG-delingsbilde.
