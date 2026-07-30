@@ -2330,3 +2330,62 @@ Samme som forrige: OKLCH-fargekonvertering (egen økt), resten av
 komponentbiblioteket (`RadioGroup`/`Select` sannsynligvis neste — landet/
 språket i registreringsskjemaet), eller en GitHub Actions-workflow som
 kjører hele verifiseringskjeden automatisk.
+
+---
+
+## Fortsettelse av økt 7 — `.github/workflows/ci.yml` — verifiseringskjeden er nå automatisert
+
+Samme arbeidsøkt. Plukket opp det siste punktet fra forrige "Neste økt":
+INGEN av de fem-pluss verifiseringskommandoene som er kjørt manuelt foran
+HVER commit i natt har vært koblet til noe automatisk — bare min egen
+disiplin, ikke håndhevet av selve repoet. Bygget `.github/workflows/ci.yml`.
+
+### Oppdaget og rettet i samme slengen: `README.md` var utdatert
+
+`README.md` sa eksplisitt "Lint-håndhevelse er ikke satt opp ennå" for
+`design:check-tokens`-regelen — som BLE satt opp tidligere i denne økten
+(se over). Samme prinsipp som spec-dokumentene (dokumentasjon skal
+reflektere faktisk tilstand, ikke henge etter) — rettet setningen, og la
+til en ny "## Verifisering"-seksjon som lister alle kommandoene samlet ett
+sted, siden de tidligere bare fantes spredt i triggerprompten og i hodet
+mitt.
+
+### `.github/workflows/ci.yml`
+
+- Trigges på `push` (ALLE grener — reelt sett finnes bare ÉN gren i dette
+  repoet ennå, `claude/kildebanken-spec-wdukgp`, ingen `main`, så
+  `branches: [main]` ville aldri kjørt) og `pull_request`.
+- Node 20 (samme som `engines.node` sitt gulv i `package.json` — testet mot
+  MINSTekravet, ikke mot en nyere versjon som kunne skjule et
+  kompatibilitetsproblem).
+- Kjører alle seks kommandoene i rekkefølge: typecheck, lint, enhetstester,
+  i18n-sjekk, token-sjekk, produksjonsbygg.
+- `DATABASE_URL` satt til en bevisst UGYLDIG verdi for byggesteget —
+  bekreftet empirisk (ikke antatt) at `next build` aldri faktisk kontakter
+  databasen: kjørt dusinvis av ganger i natt uten noen `DATABASE_URL` satt
+  i det hele tatt, alltid grønt. Verdien er ren dokumentasjon av intensjonen,
+  ikke en nødvendighet.
+- **Bevisst IKKE inkludert:** `npm run test:integration`. Krever en ekte
+  Postgres — en service-container i Actions er en reell, men EGEN utvidelse
+  (krever å tenke gjennom hemmeligheter/migrasjonssteg i selve
+  workflow-en), ikke noe å haste inn sammen med resten.
+
+### Verifisert før commit
+
+Kjørte hele kjeden LOKALT (samme seks kommandoer workflow-en nå kjører
+automatisk): `tsc --noEmit`, `eslint .`, `vitest run` (78 tester, uendret),
+`i18n:check`, `design:check-tokens`, `next build` — alle grønne. Selve
+YAML-en validert med en rå parse (`python3 -c "import yaml; ..."`) siden
+den ikke kan "kjøres" lokalt uten selve GitHub Actions-miljøet. OG
+`npx vitest run -c vitest.integration.config.ts` mot ekte lokal Postgres
+(39 tester, uendret — ingen kodeendring i denne runden, bare CI-oppsett og
+dokumentasjon).
+
+### Neste økt
+
+CI-verifisering er nå automatisert for alt UNNTATT integrasjonstestene.
+Naturlige neste steg: (1) en Postgres-service-container i CI for
+`test:integration`, som en egen, gjennomtenkt utvidelse; (2)
+OKLCH-fargekonvertering (egen forsiktighet, se tidligere i økten); (3)
+resten av komponentbiblioteket (`RadioGroup`/`Select` for
+registreringsskjemaets land/språk-felt).

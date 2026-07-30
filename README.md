@@ -43,8 +43,29 @@ npm run dev
   `src/i18n/get-messages.ts` og nøklene i `src/i18n/messages/*.json`. CI skal
   kjøre `npm run i18n:check` (FR-012) før bygg.
 - **Ingen komponentfil refererer til `tokens/primitives.css` direkte** — bare
-  `tokens/semantic.css` (DESIGN.md 1). Lint-håndhevelse er ikke satt opp
-  ennå — se NATTLOGG.md.
+  `tokens/semantic.css` (DESIGN.md 1). Håndhevet av
+  `npm run design:check-tokens` (`src/styles/check-tokens.ts`).
+
+## Verifisering
+
+Kjør alle disse før du committer — se `NATTLOGG.md` for hvorfor hver av
+dem finnes:
+
+```bash
+npx tsc --noEmit
+npx eslint .
+npx vitest run
+npx tsx src/i18n/check-keys.ts
+npx tsx src/styles/check-tokens.ts
+npx next build
+```
+
+`npm run test:integration` krever en ekte, disponibel Postgres
+(`DATABASE_URL`) og kjøres separat — se `vitest.integration.config.ts`.
+
+Kjøres automatisk i CI (`.github/workflows/ci.yml`) på hver push og PR —
+IKKE inkludert i CI ennå: integrasjonstestene (krever en Postgres-service-
+container, egen vurdering av hemmeligheter/oppsett).
 
 ## Status
 

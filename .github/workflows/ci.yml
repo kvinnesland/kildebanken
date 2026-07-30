@@ -1,0 +1,48 @@
+name: CI
+
+# Kjører hele den manuelle verifiseringskjeden README.md/INFRASTRUCTURE.md
+# forutsetter før enhver commit — automatisert her for første gang (se
+# NATTLOGG.md, økt 7). Dekker IKKE integrasjonstestene
+# (`npm run test:integration`) ennå — de krever en ekte Postgres (en
+# Postgres-service-container i Actions er en egen, større utvidelse, bevisst
+# utsatt til en egen gjennomgang av hemmeligheter/miljøoppsett).
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint .
+
+      - name: Enhetstester
+        run: npx vitest run
+
+      - name: i18n-nøkkelsjekk (FR-012)
+        run: npx tsx src/i18n/check-keys.ts
+
+      - name: Designtoken-sjekk (DESIGN.md 1)
+        run: npx tsx src/styles/check-tokens.ts
+
+      - name: Produksjonsbygg
+        run: npx next build
+        env:
+          # Bygget krever ikke en ekte database — se next.config.mjs/
+          # src/db/client.ts, ingen spørring kjører under `next build` selv,
+          # bare typesjekk og statisk sidegenerering. Verdien her er bevisst
+          # ugyldig; den skal aldri faktisk kontaktes.
+          DATABASE_URL: "postgres://ci:ci@localhost:5432/ci_unused"
