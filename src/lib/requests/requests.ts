@@ -202,10 +202,12 @@ export async function submitRequest(
     return { ok: false, error: "errors.validation_failed", fieldErrors };
   }
 
-  // FR-029: maks 5 samtidig PUBLISERTE. Sjekket her (submit-tid) som
-  // beskrevet i 9.2 — se TODO i NATTLOGG.md om at samme grense også må
-  // håndheves når et publiseringsendepunkt bygges, siden flere innsendte
-  // forespørsler i prinsippet kan bli godkjent omtrent samtidig.
+  // FR-029: maks 5 samtidig PUBLISERTE. Sjekket her ved submit OG re-sjekket
+  // ved faktisk publisering (src/lib/moderation/requests.ts,
+  // publishRequest()) — to sjekker, ikke fordi den ene er nok, men fordi
+  // tiden mellom submit og moderatorgodkjenning gjør at flere innsendte
+  // forespørsler i prinsippet kunne bli godkjent omtrent samtidig og bryte
+  // grensen hvis bare denne fantes.
   const [publishedRow] = await db
     .select({ value: count() })
     .from(requests)

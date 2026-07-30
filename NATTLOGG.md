@@ -659,3 +659,68 @@ flyten (`POST /journalist/responses/:id/contact-request`,
 lese gjennom RESTEN av `schema.ts` proaktivt for flere NOT NULL/nullable-feil
 av samme type som er funnet tre netter på rad, i stedet for å vente på at
 implementering av neste endepunkt avslører dem enkeltvis.
+
+---
+
+## Fortsettelse av økt 6, del 3 — proaktiv skjemarevisjon + moderasjonsendepunkter
+
+Fortsatt samme arbeidsøkt (00:39–01:38 UTC).
+
+### Proaktiv gjennomgang av resten av `schema.ts` — INGEN nye funn
+
+Fulgte eget råd fra punkt (4) over før jeg gikk videre, i stedet for å vente
+på at nok et endepunkt tilfeldig skulle avsløre et fjerde tilfelle. Gikk
+systematisk gjennom hver eneste `NOT NULL`-kolonne i alle 16 tabellene og
+kryssjekket mot hvilken spec-seksjon som beskriver når raden opprettes.
+
+**Konklusjon: ingen flere motsigelser.** Det avgjørende, gjennomgående
+mønsteret: `Request` er den ENESTE entiteten i hele datamodellen med et
+eksplisitt utkast-konsept (FR-020, "ingen utkast" er til og med sagt
+eksplisitt om `Response` i 12.1) — alt annet (`Response`, `ContactRequest`,
+`JournalistProfile`, `EmailSubscription`, osv.) opprettes atomisk i én
+innsending der alle obligatoriske felter uansett foreligger samtidig. Denne
+kategorien feil (progressivt utfylte felt migrert inn i et "alt-eller-
+ingenting"-skjema) er derfor trolig uttømt, ikke bare denne gangen skjult.
+Dette punktet regnes som lukket.
+
+### Moderasjonsendepunkter for forespørsler (lukker FR-029-hullet permanent)
+
+- `src/lib/moderation/requests.ts`: `publishRequest()` (`submitted →
+  published`, RE-HÅNDHEVER FR-029s 5-grense her — ikke bare ved `submit` i
+  `src/lib/requests/requests.ts`, som fortsatt sjekker den samme grensen ved
+  innsending. To sjekker, samme grense, fordi tiden mellom innsending og
+  moderatorgodkjenning er nøyaktig vinduet der grensen ellers kunne blitt
+  brutt), `rejectRequest()` og `requestChanges()` (`submitted → rejected`
+  / `changes_requested`, begge krever ikke-tom begrunnelse/kommentar),
+  `listModerationQueue()` (samme landfiltrerings-mønster som
+  `listJournalists()`, økt 5).
+- Fire nye route handlers: `GET /api/admin/moderation/requests`,
+  `POST /api/admin/requests/[id]/publish`,
+  `POST /api/admin/requests/[id]/reject`,
+  `POST /api/admin/requests/[id]/request-changes`.
+- Fjernet TODO-kommentaren i `submitRequest()` som pekte på dette hullet —
+  erstattet med en kommentar som forklarer HVORFOR begge sjekkene finnes
+  (ikke redundans, forskjellig tidspunkt).
+
+**Med dette er hele forespørsel-livssyklusen faktisk sammenhengende for
+første gang i natt:** opprett utkast → rediger → send til moderering →
+moderator publiserer/avviser/ber om endringer → publisert forespørsel kan
+motta svar → respondent trekker eller lar det stå. Ingen av delene var
+koblet sammen før denne økten.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (54 tester,
+uendret antall — ingen nye rene funksjoner å teste isolert denne runden),
+`i18n:check`, `next build` (23 API-ruter totalt).
+
+### Neste økt
+
+(1) `DELETE /me` (kontosletting, 17.5) — deler anonymiseringslogikk med den
+utsatte "avvist journalistsøknad"-kategorien i `retention.ts`; (2)
+kontaktforespørsel-flyten (`POST /journalist/responses/:id/contact-request`,
+`POST /contact-requests/:id/respond`) — siste store hull i kjeden fra
+`SPEC-V1.md` 20; (3) journalistens svarinnboks
+(`GET /journalist/requests/:id/responses`,
+`PATCH /journalist/responses/:id/status`); (4) faktisk Brevo-integrasjon når
+en API-nøkkel finnes.
