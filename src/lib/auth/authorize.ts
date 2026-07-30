@@ -34,6 +34,18 @@ export async function requireModeratorForCountry(
   return assignment ? session : null;
 }
 
+/**
+ * Krever administrator spesifikt — IKKE moderator, uansett tildelt land.
+ * Brukes av landstyringsfunksjonene i src/lib/admin/ (16.2: "Land (kun
+ * administrator)"), til forskjell fra `requireModeratorForCountry()` som
+ * bevisst tillater begge roller for landspesifikke moderasjonshandlinger.
+ */
+export async function requireAdmin(): Promise<CurrentSession | null> {
+  const session = await getCurrentSession();
+  if (!session || session.role !== "admin") return null;
+  return session;
+}
+
 /** Landene en moderator er tildelt. Tom liste for administrator betyr "alle
  * land" — det skal IKKE tolkes som "ingen land". Se kallere. */
 export async function getAssignedCountryCodes(session: CurrentSession): Promise<string[] | "all"> {

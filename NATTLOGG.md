@@ -1431,3 +1431,115 @@ Dette er det SISTE gjenstående settet — når det er bygget er HELE
 SPEC-V1.md seksjon 20 dekket. Ellers: faktisk Brevo-integrasjon når en
 API-nøkkel finnes, og vurder om `retryFailedDigestDeliveries()` bør
 refaktoreres til å dele kode med `tick.ts` fremfor å duplisere (se over).
+
+---
+
+## Fortsettelse av økt 7 — landstyring: SISTE settet i seksjon 20 er nå bygget
+
+Samme arbeidsøkt. Med dette er **hele SPEC-V1.md seksjon 20 dekket** — alle
+ruter listet der finnes nå som Route Handlers.
+
+### `src/lib/admin/countries.ts` — "Land (kun administrator)" (16.2, 3.3)
+
+Ny `requireAdmin()` i `src/lib/auth/authorize.ts` — til forskjell fra
+`requireModeratorForCountry()` (som bevisst tillater BÅDE moderator og
+administrator for landspesifikke handlinger), er hele "Land"-seksjonen i
+16.2 eksplisitt "kun administrator". Brukt inne i alle fire funksjonene
+under, samme mønster som resten av `src/lib/moderation/`.
+
+- `listAllCountries()` / `createCountry()` (alltid `draft`, aldri direkte
+  `active` — 3.3, ordrett) / `updateCountry()` (feltredigering).
+- `setCountryStatus()` — statusbytte til `active` håndhever de
+  KODESJEKKBARE forutsetningene fra 3.3: publiserte vilkår OG
+  personvernerklæring i HVERT tilgjengelige språk, og minst én tildelt
+  moderator. "Komplette oversettelser" og "juridisk gjennomgått" er bevisst
+  IKKE forsøkt automatisert (menneskelig vurdering, hhv. en helt annen del
+  av kodebasen) — fortsatt administrators eget ansvar før kallet, akkurat
+  som spec-en selv sier.
+- `assignModeratorToCountry()` — **antagelse tatt, dokumentert i
+  kodekommentar:** spec-en sier at administrator "tildeler moderatorer»
+  (16.2), men aldri hvordan en moderatorKONTO oppstår i utgangspunktet (kun
+  mottaker og journalist har selvregistrering, 7.1/7.2). Valgt: admin oppgir
+  en e-post; finnes ingen bruker opprettes én med `role = moderator` direkte
+  (administrator-provisjonert tillit, ingen e-postbekreftelse å vente på);
+  finnes brukeren med en ANNEN rolle, avvises kallet — å stille om en
+  eksisterende mottaker-/journalistkonto til moderator er for
+  tillitssensitivt til å gjøre implisitt.
+
+`PATCH /admin/countries/:code` er ÉN rute i spec-en, men feltredigering og
+statusbytte er bevisst to separate biblioteksfunksjoner kalt etter
+hverandre fra ruten — statusbytte sine forutsetninger skal ikke kunne
+omgås ved at et vanlig feltPATCH sniker seg forbi dem.
+
+### `src/lib/admin/legal-documents.ts` — `publishLegalDocument()`
+
+Publiserer alltid en NY versjon (17.2: eksisterende versjoner endres aldri).
+Ved `isMaterialChange` på `terms`/`privacy` varsles aktive mottakere i
+NØYAKTIG landet+locale-en dokumentet gjelder (dermed "på sitt eget språk"
+per konstruksjon, uten noen egen språk-filtreringslogikk å holde synkron).
+
+**To bevisst avgrensede antagelser, dokumentert i kodekommentar, ikke
+løst:** (1) samme varsling for en `journalist_terms`-endring er IKKE bygget
+— malen i seksjon 15 er skrevet for "mottaker" spesifikt, og å finne opp en
+ny mal/mottakergruppe uten videre grunnlag i spec-en er for stor en
+antagelse å ta stille; (2) "et nytt samtykke innhentes der endringen krever
+det" (samme setning i 17.2) er IKKE bygget som noen tvungen
+re-samtykke-sperre — spec-en sier ikke NÅR/HVORDAN (ved neste innlogging?
+en blokkerende banner?), og å oppfinne den UX-en her uten videre grunnlag
+risikerer å bygge feil ting.
+
+### Nye ruter
+
+`GET/POST /api/admin/countries`, `PATCH /api/admin/countries/[code]`,
+`POST /api/admin/countries/[code]/moderators`,
+`POST /api/admin/legal-documents`.
+
+### Nye i18n-nøkler
+
+`errors.already_exists`, `errors.no_moderator_assigned` — samme mønster som
+øvrige `errors.*`-nøkler (for en fremtidig frontend).
+
+### Testdekning — samme kjente begrensning som resten av `src/lib/moderation/`
+
+Verken `countries.ts` eller `legal-documents.ts` kan integrasjonstestes
+direkte: begge importerer `requireAdmin()` fra `authorize.ts`, som selv
+gjør et ekte (ikke type-only) import av `getCurrentSession` fra
+`session.ts` — akkurat samme kjede som gjorde `listDigests()` untestbar
+tidligere i denne økten. Verifisert kun ved `tsc`/`eslint`/`next build`,
+konsistent med resten av modereringskoden.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (56 tester,
+uendret), `i18n:check`, `next build` (**44 API-ruter totalt**), OG
+`npx vitest run -c vitest.integration.config.ts` mot ekte lokal Postgres
+(25 tester, uendret siden forrige del — se begrunnelse over).
+
+### Status: HELE SPEC-V1.md seksjon 20 er nå bygget
+
+Alle ~45 endepunktene listet i seksjon 20 finnes nå som Route Handlers.
+Gjenstående kjente arbeid, ingen av det blokkerende for et v1-lanseringsklart
+API-lag:
+
+1. Faktisk Brevo-integrasjon (transaksjonelt + bulk) når en API-nøkkel
+   finnes — all e-post er fortsatt et konsoll-stubbet grensesnitt
+   (`src/lib/email/send.ts`).
+2. `retryFailedDigestDeliveries()` dupliserer rendrings-/sendelogikk fra
+   `tick.ts` bevisst — kandidat for sammenslåing i dagslys.
+3. Flere av modereringsfunksjonene (`approveJournalist`, `publishRequest`,
+   `suspendUser`, hele `src/lib/admin/*`) er strukturelt untestbare med
+   vitest pga. `"server-only"`-kjeden gjennom `session.ts`/`authorize.ts` —
+   verifisert gjennom hele natten kun ved typecheck/lint/build. En ekte
+   e2e- eller komponent-testrigg (Playwright mot en kjørende `next dev`,
+   eller et jest-miljø som later som Next sin bundler) ville lukket dette
+   gapet, men er ikke bygget i natt.
+4. Ingen frontend (sider/komponenter) er bygget ennå — kun API-laget.
+
+### Neste økt
+
+Uten videre eksplisitt prioritering fra brukeren: naturlig neste steg er
+enten (a) begynne på selve frontend-en (design-tokens og i18n-rammeverket
+er allerede lagt fase 1, klare til bruk), eller (b) fortsette å styrke
+testdekningen av det som ER bygget innenfor de begrensningene som er
+dokumentert over. Fortsetter å lese denne filen (siste økt øverst) ved neste
+oppvåkning og velger basert på hva som gir mest verdi da.

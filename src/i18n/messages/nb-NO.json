@@ -86,5 +86,7 @@
   "errors.contact_already_shared": "Respondenten har allerede delt e-postadressen sin.",
   "errors.contact_request_already_sent": "Du har allerede sendt en kontaktforespørsel for dette svaret.",
   "errors.contact_request_not_pending": "Denne kontaktforespørselen er ikke lenger ventende.",
-  "errors.invalid_timezone": "Dette er ikke en gyldig tidssone."
+  "errors.invalid_timezone": "Dette er ikke en gyldig tidssone.",
+  "errors.already_exists": "Dette finnes allerede.",
+  "errors.no_moderator_assigned": "Landet må ha minst én tildelt moderator før det kan aktiveres."
 }
