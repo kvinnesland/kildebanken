@@ -17,4 +17,9 @@ describe("renderResponseRequestClosedEmail", () => {
     const rendered = renderResponseRequestClosedEmail("nb-NO", "req-1", "Tittel", "min-slug");
     expect(rendered.html).toContain("/nb-NO/foresporsler/req-1/min-slug");
   });
+
+  it("SPEC-V1.md 3.7: bruker en-GB sitt eget, oversatte stinavn (requests), ikke nb-NO sitt", () => {
+    const rendered = renderResponseRequestClosedEmail("en-GB", "req-1", "Title", "my-slug");
+    expect(rendered.html).toContain("/en-GB/requests/req-1/my-slug");
+  });
 });

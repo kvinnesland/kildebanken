@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
 import { createTranslator } from "@/i18n/get-messages";
 import { getCurrentSession } from "@/lib/auth/session";
+import { requestDetailPath } from "@/i18n/localized-paths";
 import { getCountryFormOptions, listMineRequests } from "@/lib/requests/requests";
 import {
   isJournalistRequestStatus,
@@ -101,7 +102,7 @@ export default async function MyRequestsPage({
                   {status === "published" || status === "closed" || status === "expired" ? (
                     request.slug ? (
                       <Link
-                        href={`/${locale}/foresporsler/${request.id}/${request.slug}`}
+                        href={requestDetailPath(locale, request.id, request.slug)}
                         className={buttonClassName("ghost")}
                       >
                         {t("journalist.requests.view_link")}

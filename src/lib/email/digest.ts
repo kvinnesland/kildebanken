@@ -1,5 +1,6 @@
 import { createTranslator } from "@/i18n/get-messages";
 import type { SupportedLocale } from "@/i18n/config";
+import { requestDetailPath } from "@/i18n/localized-paths";
 import { escapeHtml } from "./escape-html";
 import { EMAIL_COLOR_SCHEME_META, EMAIL_COLORS, emailDarkModeStyleTag } from "./colors";
 
@@ -71,7 +72,7 @@ export function renderDigestContent(
   // Route Handler. Se route-filens kommentar for hvorfor dette er trygt mot
   // åpen redirect.
   const requestUrl = (r: DigestRequestItem) => {
-    const destination = encodeURIComponent(`/${locale}/foresporsler/${r.id}/${r.slug}`);
+    const destination = encodeURIComponent(requestDetailPath(locale, r.id, r.slug));
     return `${SITE_ORIGIN}/api/digest-access/${ACCESS_TOKEN_PLACEHOLDER}?to=${destination}`;
   };
   const unsubscribeUrl = `${SITE_ORIGIN}/unsubscribe/${UNSUBSCRIBE_TOKEN_PLACEHOLDER}`;

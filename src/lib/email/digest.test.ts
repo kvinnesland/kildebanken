@@ -48,6 +48,15 @@ describe("renderDigestContent", () => {
     expect(rendered.html).not.toContain("et annet språk enn ditt");
   });
 
+  it("SPEC-V1.md 3.7: bruker locale-ens EGET, oversatte stinavn i lenken, ikke alltid nb-NO sitt", () => {
+    const nbRendered = renderDigestContent("nb-NO", [sampleRequest]);
+    expect(nbRendered.html).toContain(encodeURIComponent(`/nb-NO/foresporsler/${sampleRequest.id}/${sampleRequest.slug}`));
+
+    const enRendered = renderDigestContent("en-GB", [sampleRequest]);
+    expect(enRendered.html).toContain(encodeURIComponent(`/en-GB/requests/${sampleRequest.id}/${sampleRequest.slug}`));
+    expect(enRendered.html).not.toContain(encodeURIComponent("/en-GB/foresporsler/"));
+  });
+
   it("DESIGN.md 7: mørkt tema via prefers-color-scheme, med color-scheme-metatagger", () => {
     const rendered = renderDigestContent("nb-NO", [sampleRequest]);
     expect(rendered.html).toContain("@media (prefers-color-scheme: dark)");

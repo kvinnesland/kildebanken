@@ -5020,3 +5020,81 @@ vurder om `contact_approved`/`contact_declined` bør bli egne
 `request_status`-enumen; (7) OG-delingsbilde; (8) det
 oversatte-stinavn-hullet (3.7); (9) den siste ubrukte `nav.*`-nøkkelen,
 `nav.requests`.
+
+## Fortsettelse av økt 7 — det oversatte-stinavn-hullet (3.7) endelig lukket
+
+Tok fatt på punkt (8) fra forrige "Neste økt" — utsatt i over 15 økter med
+begrunnelsen "når locale nummer to faktisk tilbys". Sjekket: `en-GB` ER
+allerede en fullt tilbudt locale (i `SUPPORTED_LOCALES`, full
+i18n-nøkkelparitet, alle 23 e-postmaler bygget i begge, `LanguageSwitcher`
+lar brukeren bytte) — begrunnelsen for å utsette var blitt utdatert uten at
+noen hadde fanget det opp. SPEC-V1.md 3.7 er eksplisitt:
+`/nb-NO/foresporsler/:id/slug` vs `/en-GB/requests/:id/slug` — koden
+serverte til nå `foresporsler` under BEGGE locales, og hreflang-alternatene
+i `generateMetadata()` pekte feilaktig på samme nb-NO-ord for alle locales
+(selve 3.7-bugen, ikke bare en kosmetisk detalj).
+
+**Løsning:** ingen duplisering av rutefiler. Ny modul
+`src/i18n/localized-paths.ts` — en per-locale oversettelsestabell for to
+segmenter (`requests`→`foresporsler`/`requests`, `respond`→`svar`/
+`respond`, sistnevnte en antagelse siden 3.7s eksempel bare viser
+toppsegmentet, konsistent med den eksisterende `request.respond_button`-
+teksten), pluss `requestDetailPath()`/`requestRespondPath()` for utgående
+lenker og en ren, enhetstestet `resolveLocalizedRequestPath()` for
+innkommende ruting. `middleware.ts` bruker denne til å:
+- **rewrite** (URL uendret) når en-GB sitt eget, riktige ord (`requests`)
+  brukes, men det faktiske mappenavnet (`foresporsler`, nb-NO sitt ord —
+  var v1s eneste locale da mappen ble navngitt) er noe annet;
+- **redirect (308)** når FEIL locales ord brukes (`/en-GB/foresporsler/...`
+  eller `/nb-NO/requests/...`) — 3.7 krever nøyaktig én kanonisk URL per
+  locale-variant, så duplikat-tilgjengelighet under to ord skal ikke bestå.
+
+Rettet ALLE stedene som bygget `/foresporsler/`-lenker hardkodet: siden sin
+egen `generateMetadata()` (canonical + hreflang — selve bugen),
+stale-slug-redirecten, "Svar"-knappen, `journalist/requests/page.tsx`s
+"Se forespørselen"-lenke, `digest.ts`, og de tre e-postmalene som lenker
+til den offentlige siden (`request_approved_published`,
+`response_submitted_receipt`, `response_request_closed`).
+
+### Verifisert ende til ende i en ekte nettleser/server
+
+Sådd en publisert forespørsel direkte i databasen. Startet
+produksjonsbygget og testet via `curl` (statuskoder/redirect-mål, ikke
+bare enhetstester av den rene logikken):
+- `/nb-NO/foresporsler/:id/:slug` → 200, uendret (nb-NO sitt eget ord er
+  allerede det faktiske mappenavnet).
+- `/en-GB/requests/:id/:slug` → 200 via intern rewrite, URL i adresselinjen
+  uendret, canonical-taggen sier nøyaktig denne URL-en, hreflang-alternatet
+  for `nb-NO` peker på `/nb-NO/foresporsler/...` (IKKE på `requests`),
+  "Respond"-knappen lenker til `/en-GB/requests/:id/respond`.
+- `/en-GB/foresporsler/:id/:slug` (feil ord) → 308 til `/en-GB/requests/...`.
+- `/nb-NO/requests/:id/:slug` (feil ord) → 308 til `/nb-NO/foresporsler/...`.
+- `/en-GB/requests/:id/respond` (rewrite-mål for svarskjemaet) → 200,
+  viser innloggingsoppfordringen korrekt.
+- En utdatert/feil slug under `/en-GB/requests/...` → 307 til riktig slug,
+  MED en-GB sitt eget ord bevart (ikke tilbake til `foresporsler`).
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**329
+tester**, +29 nye — 20 for `localized-paths.ts`, 4 for `middleware.ts`
+(begge filene hadde INGEN test-dekning fra før), pluss 5 nye
+locale-spesifikke tester i eksisterende e-postmal-/digest-tester),
+`i18n:check` (**374 nøkler**, uendret — ingen nye tekster, bare ren
+rutelogikk), `design:check-tokens` (38 komponent-CSS-filer),
+`rm -rf .next && next build`, `test:integration` mot ekte lokal Postgres
+(47 tester, uendret), PLUSS ende-til-ende-serververifiseringen beskrevet
+over.
+
+### Neste økt
+
+(1) faktisk Brevo-integrasjon når en API-nøkkel finnes; (2) den store
+testbarhets-refaktoreringen (`admin/`/`moderation/`-lib-laget,
+`tick.ts`s jobbfunksjoner, `account-deletion.ts`) — fortsatt bevisst
+utsatt, det klart største gjenværende hullet i test-dekning; (3) vurder
+om `contact_approved`/`contact_declined` bør bli egne
+`displayStatus`-verdier i 12.6; (4) resten av komponentbiblioteket
+(Dialog, Toast, Card, Alert, Tabs, Table, Pagination); (5) resten av
+16.1-dashbordet; (6) den ubrukte `"approved"`-verdien i
+`request_status`-enumen; (7) OG-delingsbilde; (8) den siste ubrukte
+`nav.*`-nøkkelen, `nav.requests`.

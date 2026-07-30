@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { match } from "@formatjs/intl-localematcher";
 import Negotiator from "negotiator";
-import { PLATFORM_DEFAULT_LOCALE, SUPPORTED_LOCALES } from "@/i18n/config";
+import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE, SUPPORTED_LOCALES } from "@/i18n/config";
+import { resolveLocalizedRequestPath } from "@/i18n/localized-paths";
 
 // To ansvar, bevisst holdt sammen fordi begge må skje før noe rendres:
 //
@@ -26,7 +27,7 @@ const LOCALE_COOKIE = "kb_locale";
 
 export function middleware(request: NextRequest) {
   const nonce = generateNonce();
-  const response = routeLocale(request) ?? NextResponse.next();
+  const response = routeLocale(request) ?? routeLocalizedRequestPath(request) ?? NextResponse.next();
 
   response.headers.set("x-nonce", nonce);
   response.headers.set("Content-Security-Policy", buildCsp(nonce));
@@ -46,6 +47,25 @@ function routeLocale(request: NextRequest): NextResponse | undefined {
   const url = request.nextUrl.clone();
   url.pathname = `/${locale}${pathname}`;
   return NextResponse.redirect(url);
+}
+
+// SPEC-V1.md 3.7: offentlige forespørsel-stier har oversatte segmentnavn per
+// locale (/nb-NO/foresporsler/... vs /en-GB/requests/...), men det faktiske
+// mappenavnet i src/app/[locale]/... er fortsatt nb-NO sitt ord — se
+// src/i18n/localized-paths.ts for selve oversettelseslogikken (ren og
+// enhetstestet der). Kjører KUN når `routeLocale()` over har bekreftet at
+// stien allerede har et locale-prefiks.
+function routeLocalizedRequestPath(request: NextRequest): NextResponse | undefined {
+  const { pathname } = request.nextUrl;
+  const locale = pathname.split("/").filter(Boolean)[0];
+  if (!locale || !isSupportedLocale(locale)) return undefined;
+
+  const action = resolveLocalizedRequestPath(pathname, locale);
+  if (!action) return undefined;
+
+  const url = request.nextUrl.clone();
+  url.pathname = action.pathname;
+  return action.kind === "rewrite" ? NextResponse.rewrite(url) : NextResponse.redirect(url, 308);
 }
 
 function resolveRequestedLocale(request: NextRequest): string {

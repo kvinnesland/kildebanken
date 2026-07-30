@@ -1,5 +1,6 @@
 import { createTranslator } from "@/i18n/get-messages";
 import type { SupportedLocale } from "@/i18n/config";
+import { requestDetailPath } from "@/i18n/localized-paths";
 import { SITE_ORIGIN } from "../digest";
 import { renderSimpleCtaEmail, type RenderedEmail } from "./simple-cta-email";
 
@@ -18,7 +19,7 @@ export function renderResponseRequestClosedEmail(
   requestSlug: string
 ): RenderedEmail {
   const t = createTranslator(locale);
-  const requestUrl = `${SITE_ORIGIN}/${locale}/foresporsler/${requestId}/${requestSlug}`;
+  const requestUrl = `${SITE_ORIGIN}${requestDetailPath(locale, requestId, requestSlug)}`;
 
   return renderSimpleCtaEmail({
     locale,

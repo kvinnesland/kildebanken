@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
 import { createTranslator } from "@/i18n/get-messages";
+import { requestDetailPath, requestRespondPath } from "@/i18n/localized-paths";
 import { getPublicRequest } from "@/lib/requests/requests";
 import { isPublicRequestStatus, publicRequestStatusTone } from "@/lib/requests/status-badge";
 import { SITE_ORIGIN } from "@/lib/email/digest";
@@ -36,12 +37,17 @@ export async function generateMetadata({
   const { locale: rawLocale, id } = await params;
   const locale = isSupportedLocale(rawLocale) ? rawLocale : PLATFORM_DEFAULT_LOCALE;
   const request = await loadRequest(id);
-  const path = `/${locale}/foresporsler/${request.id}/${request.slug}`;
+  const path = requestDetailPath(locale, request.id, request.slug ?? "");
 
+  // SPEC-V1.md 3.7: hver locale-variant har sitt EGET, oversatte stinavn
+  // (/nb-NO/foresporsler/... vs /en-GB/requests/...), ikke bare samme
+  // nb-NO-ord for alle hreflang-alternater — reelt hull rettet her, se
+  // NATTLOGG.md.
   const languageAlternates: Record<string, string> = {};
   for (const availableLocale of request.countryAvailableLocales) {
     if (isSupportedLocale(availableLocale)) {
-      languageAlternates[availableLocale] = `${SITE_ORIGIN}/${availableLocale}/foresporsler/${request.id}/${request.slug}`;
+      languageAlternates[availableLocale] =
+        `${SITE_ORIGIN}${requestDetailPath(availableLocale, request.id, request.slug ?? "")}`;
     }
   }
 
@@ -76,7 +82,7 @@ export default async function RequestDetailPage({
   // Kanonisk URL per locale-variant (11) — en gjettet/utdatert slug skal
   // aldri gi to indekserbare URL-er for samme forespørsel.
   if (request.slug && slug !== request.slug) {
-    redirect(`/${locale}/foresporsler/${request.id}/${request.slug}`);
+    redirect(requestDetailPath(locale, request.id, request.slug));
   }
 
   const dateFormatter = new Intl.DateTimeFormat(locale, {
@@ -143,7 +149,7 @@ export default async function RequestDetailPage({
 
       <div className={styles.actions}>
         {canRespond ? (
-          <Link href={`/${locale}/foresporsler/${request.id}/svar`} className={buttonClassName("primary")}>
+          <Link href={requestRespondPath(locale, request.id)} className={buttonClassName("primary")}>
             {t("request.respond_button")}
           </Link>
         ) : null}
