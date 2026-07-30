@@ -6082,3 +6082,40 @@ videre: (1) en tilsvarende diff av seksjon 15 (e-postmaltabellen) mot de
 faktiske malfilene i `src/lib/email/templates/`, samme teknikk anvendt på
 et annet inventar; (2) Brevo-integrasjon, resten av komponentbiblioteket,
 og OG-delingsbilde forblir alle korrekt blokkert.
+
+---
+
+## Fortsettelse av økt 7 — e-postmaltabellen (seksjon 15) diffet mot de faktiske malfilene: fullstendig ren
+
+Gjorde punkt (1) fra forrige "Neste økt": talte de 23 radene i seksjon
+15s tabell (24 rader totalt, ekskludert "Dagens forespørsler (digest)"
+som er en egen bulk-mal, `sendBulkEmail()`, ikke en del av
+`TransactionalTemplate`-unionen) mot de 23 verdiene i selve
+`TransactionalTemplate`-typen (`src/lib/email/send.ts`) — eksakt 1:1-match,
+ingen manglende, ingen ekstra. Kryssjekket deretter at hver av de 23
+faktisk KALLES fra reell forretningslogikk (ikke bare definert og aldri
+brukt) — et første grovt søk viste tilsynelatende 5 ubrukte maler
+(`confirm_email`, `magic_link`, `journalist_application_received`,
+`changes_requested`, `request_rejected`), men dette var et falskt
+alarmsignal fra et for naivt søkemønster (disse kalles via en variabel/
+ternær, f.eks. `notifyJournalist(..., "request_rejected", ...)` eller
+`user.emailVerifiedAt ? "magic_link" : firstEmailTemplate`, ikke det
+bokstavelige `template: "x"`-mønsteret jeg lette etter). Et bredere søk
+bekreftet at alle 23 faktisk er koblet til ekte kallsteder.
+
+E-postmaltabellen er dermed fullstendig ren — ingen hull av noen art
+funnet denne runden.
+
+### Neste økt
+
+Ingen nye kjente spec-vs-kode-hull igjen etter denne og forrige økts
+grundige gjennomgang av: alle `moderation/`-, `admin/`-, `registration/`-,
+`subscriptions/`-, `journalists/`- og `me/`-modulene (guard-asymmetri),
+hele API-ruteinventaret (seksjon 20), og hele e-postmaltabellen
+(seksjon 15). Videre arbeid bør trolig enten (a) plukke opp én av de
+lengre utestående, bevisst blokkerte postene (Brevo-integrasjon når en
+API-nøkkel finnes, resten av komponentbiblioteket ved konkret behov,
+OG-delingsbilde når visuell identitet er besluttet), eller (b) lete etter
+en HELT ANNEN klasse hull enn de tre allerede uttømte denne økten —
+f.eks. en diff av datamodellen (seksjon 19) mot det faktiske
+Drizzle-schemaet, samme teknikk anvendt på et tredje inventar.
