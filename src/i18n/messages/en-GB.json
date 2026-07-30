@@ -159,6 +159,25 @@
   "journalist.response_detail.contact_request_cancel": "Cancel",
   "journalist.response_detail.contact_request_sent_notice": "Contact request sent.",
 
+  "me.title": "My account",
+  "me.email_label": "Email",
+  "me.country_label": "Country",
+  "me.display_name_label": "Display name",
+  "me.locale_label": "Language",
+  "me.timezone_label": "Time zone",
+  "me.timezone_description": "Optional — inherits the country's time zone when left empty.",
+  "me.save": "Save",
+  "me.saved_notice": "Saved.",
+  "me.journalist_profile_title": "Journalist profile",
+  "me.verification_status_label": "Status",
+  "me.verification_status.pending_review": "Under review",
+  "me.verification_status.approved": "Approved",
+  "me.verification_status.rejected": "Rejected",
+  "me.delete_account_title": "Delete account",
+  "me.delete_account_description": "This permanently deletes your account. We'll send you a confirmation link by email first — the account isn't deleted until you click it.",
+  "me.delete_account_button": "Request account deletion",
+  "me.delete_account_requested_notice": "Check your inbox — we've sent you a confirmation link. The account isn't deleted until you click it.",
+
   "legal.journalist_terms_title": "Journalist terms",
 
   "digest.subject": "{count, plural, one {# new request today} other {# new requests today}}",
@@ -193,6 +212,20 @@
   "email.journalist_rejected.subject": "Your journalist application has been rejected",
   "email.journalist_rejected.heading": "Your journalist application has been rejected",
   "email.journalist_rejected.body": "Unfortunately, your application for a journalist account has not been approved. Reason: {reason}",
+
+  "email.confirm_account_deletion.subject": "Confirm deletion of your account",
+  "email.confirm_account_deletion.heading": "Confirm deletion of your account",
+  "email.confirm_account_deletion.body": "You've asked to delete your account. Click the link below to confirm. This action can't be undone.",
+  "email.confirm_account_deletion.cta": "Confirm deletion",
+  "email.confirm_account_deletion.ignore": "Didn't request this? You can safely ignore this email — your account won't be deleted unless you click the link.",
+
+  "email.account_deletion_confirmed.subject": "Your account has been deleted",
+  "email.account_deletion_confirmed.heading": "Your account has been deleted",
+  "email.account_deletion_confirmed.body": "Your account has now been deleted, as confirmed by you. This can't be undone.",
+
+  "me.confirm_deletion.pending": "Confirming deletion of your account…",
+  "me.confirm_deletion.success": "Your account has been deleted.",
+  "me.confirm_deletion.error": "This link is invalid or has expired. Request a new deletion from your account page if you still want to delete your account.",
 
   "email.response_submitted_receipt.subject": "Receipt: Your response has been sent",
   "email.response_submitted_receipt.heading": "Your response has been sent",

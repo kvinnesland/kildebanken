@@ -110,6 +110,35 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
     expect(loggedMessage).toContain("Journalistkontoen din er godkjent");
   });
 
+  it("logger den faktisk rendrede malen for confirm_account_deletion", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sendTransactionalEmail({
+      template: "confirm_account_deletion",
+      to: { email: "test@example.com", locale: "nb-NO" },
+      data: { token: "del-token-abc" },
+    });
+
+    const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
+    expect(loggedMessage).toContain("Bekreft sletting av kontoen din");
+    expect(loggedMessage).toContain("/me/slett-konto?token=del-token-abc");
+  });
+
+  it("logger den faktisk rendrede malen for account_deletion_confirmed (ingen data trengs)", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sendTransactionalEmail({
+      template: "account_deletion_confirmed",
+      to: { email: "test@example.com", locale: "nb-NO" },
+      data: {},
+    });
+
+    const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
+    expect(loggedMessage).toContain("Kontoen din er slettet");
+  });
+
   it("logger den faktisk rendrede malen for journalist_rejected, med begrunnelsen satt inn i teksten", async () => {
     vi.stubEnv("BREVO_API_KEY", "");
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});

@@ -21,7 +21,10 @@ export default async function JournalistLayout({
     <>
       <SiteHeader
         locale={locale}
-        navLinks={[{ href: `/${locale}/journalist/requests`, label: t("journalist.requests.title") }]}
+        navLinks={[
+          { href: `/${locale}/journalist/requests`, label: t("journalist.requests.title") },
+          { href: `/${locale}/me`, label: t("nav.my_account") },
+        ]}
       />
       {children}
     </>

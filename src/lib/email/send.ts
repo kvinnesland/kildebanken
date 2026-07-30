@@ -6,6 +6,8 @@ import { renderJournalistApprovedEmail } from "./templates/journalist-approved";
 import { renderJournalistRejectedEmail } from "./templates/journalist-rejected";
 import { renderResponseSubmittedReceiptEmail } from "./templates/response-submitted-receipt";
 import { renderNewResponseReceivedEmail } from "./templates/new-response-received";
+import { renderConfirmAccountDeletionEmail } from "./templates/confirm-account-deletion";
+import { renderAccountDeletionConfirmedEmail } from "./templates/account-deletion-confirmed";
 import type { RenderedEmail } from "./templates/simple-cta-email";
 
 // Tynt e-postgrensesnitt. Selve jobblogikken (src/lib/jobs/tick.ts) kaller
@@ -51,7 +53,7 @@ export interface SendTransactionalEmailInput {
 
 /**
  * Rendrer den faktiske mal-HTML-en/-teksten for de malene som har en ekte
- * mal bygget (foreløpig sju, økt 7 — de andre 16 malene i
+ * mal bygget (foreløpig ni, økt 7 — de andre 14 malene i
  * `TransactionalTemplate` er ennå bare navn uten innhold, se NATTLOGG.md).
  * `null` betyr "ingen mal bygget ennå for denne, ELLER dataene som kreves
  * mangler", ikke en feil — stubben under faller da tilbake til det gamle,
@@ -65,15 +67,22 @@ function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedE
   switch (input.template) {
     case "magic_link":
     case "confirm_email":
-    case "journalist_application_received": {
+    case "journalist_application_received":
+    case "confirm_account_deletion": {
       const token = input.data.token;
       if (typeof token !== "string") return null;
       if (input.template === "magic_link") return renderMagicLinkEmail(locale, token);
       if (input.template === "confirm_email") return renderConfirmEmailEmail(locale, token);
-      return renderJournalistApplicationReceivedEmail(locale, token);
+      if (input.template === "journalist_application_received") {
+        return renderJournalistApplicationReceivedEmail(locale, token);
+      }
+      return renderConfirmAccountDeletionEmail(locale, token);
     }
     case "journalist_approved":
-      return renderJournalistApprovedEmail(locale);
+    case "account_deletion_confirmed":
+      return input.template === "journalist_approved"
+        ? renderJournalistApprovedEmail(locale)
+        : renderAccountDeletionConfirmedEmail(locale);
     case "journalist_rejected": {
       const reason = input.data.reason;
       if (typeof reason !== "string") return null;

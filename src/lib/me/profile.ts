@@ -3,6 +3,40 @@ import { db } from "@/db/client";
 import { countries, users } from "@/db/schema";
 import { isValidTimezone } from "./validate";
 
+export interface MyProfileView {
+  email: string;
+  role: "recipient" | "journalist" | "moderator" | "admin";
+  displayName: string | null;
+  locale: string;
+  timezone: string | null;
+  countryCode: string;
+  countryNameKey: string;
+  availableLocales: string[];
+}
+
+// GET /[locale]/me (siden, ikke API-ruten — GET /me returnerer bare de fire
+// øktfeltene, se route.ts sin egen kommentar om hvorfor). Brukes direkte av
+// server-komponenten, samme mønster som resten av kodebasen i natt.
+export async function getMyProfile(userId: string): Promise<MyProfileView | null> {
+  const [row] = await db
+    .select({
+      email: users.email,
+      role: users.role,
+      displayName: users.displayName,
+      locale: users.locale,
+      timezone: users.timezone,
+      countryCode: users.countryCode,
+      countryNameKey: countries.nameKey,
+      availableLocales: countries.availableLocales,
+    })
+    .from(users)
+    .innerJoin(countries, eq(users.countryCode, countries.code))
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  return row ?? null;
+}
+
 export interface UpdateMyProfileInput {
   displayName?: string | null;
   locale?: string;

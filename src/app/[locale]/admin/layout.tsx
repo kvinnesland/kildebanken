@@ -22,6 +22,7 @@ export default async function AdminLayout({
         navLinks={[
           { href: `/${locale}/admin/journalists`, label: t("admin.journalists.title") },
           { href: `/${locale}/admin/requests`, label: t("admin.requests.title") },
+          { href: `/${locale}/me`, label: t("nav.my_account") },
         ]}
       />
       {children}

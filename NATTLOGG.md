@@ -4494,3 +4494,115 @@ oversatte-stinavn-hullet (3.7); (7) flere e-postmaler etter behov; (8)
 faktisk Brevo-integrasjon når en API-nøkkel finnes; (9) vurder en
 `/me`-side og hva som skal skje med de resterende ubrukte
 `nav.*`-nøklene (`nav.my_account`/`nav.requests`).
+
+---
+
+## Fortsettelse av økt 7 — `/me`-profilsiden, og fullførte kontosletting-flyten ende til ende
+
+Fortsatte punkt (9) fra forrige "Neste økt" — `nav.my_account` var den
+siste ubrukte navigasjonsnøkkelen uten en side å peke til, og
+kontosletting (steg 1 av 2, `POST /me/request-deletion`) var allerede
+bygget i en tidligere del av natten, men manglet en KNAPP noe sted i
+grensesnittet til å faktisk utløse den.
+
+### Bygget: selve profilsiden
+
+- `getMyProfile()` (ny, `src/lib/me/profile.ts`) — `GET /me`
+  (API-ruten) returnerer bare de fire øktfeltene (dokumentert i ruten sin
+  egen kommentar), ikke visningsnavn/tidssone/e-post/landets navnenøkkel.
+  Server-komponenten kaller derfor denne direkte, samme mønster som
+  resten av kodebasen. 2 nye integrasjonstester.
+- `src/app/[locale]/me/page.tsx` + `ProfileForm.tsx` (visningsnavn,
+  språk, tidssone → `PATCH /me`) + `JournalistProfileForm.tsx`
+  (fullt navn/stilling/redaksjon/lenke → `PATCH /journalists/me`, kun for
+  journalister, gjenbruker `journalist.apply.*`-nøklene i stedet for å
+  duplisere dem) + `DeleteAccountSection.tsx`.
+- `src/app/[locale]/me/layout.tsx` (ny) — `/me` er nåbar fra ALLE roller,
+  i motsetning til `/journalist`/`/admin` som er egne rolle-områder.
+  Nav-lenkene bygges derfor per rolle i selve layouten (journalist ser
+  "Mine forespørsler", moderator/administrator ser de to
+  modereringskøene) i stedet for én fast liste. `nav.my_account`-lenken
+  lagt til i alle tre layouter (journalist/admin/me selv).
+
+### Fullførte kontosletting-flyten i stedet for å legge til en halvferdig knapp
+
+`requestAccountDeletion()` (bygget for flere økter siden) sender
+`confirm_account_deletion`, men den malen var fortsatt bare et navn uten
+innhold — å legge til en "Be om sletting"-knapp NÅ ville gitt brukeren en
+e-post uten noen ekte lenke å klikke, samme "halvferdig implementasjon"-
+mønster som `journalist_application_received` var før den ble fullført
+tidligere i natt. Fullførte i stedet begge gjenstående deler:
+
+- `src/lib/email/templates/confirm-account-deletion.ts` (+ test) — peker
+  til `/[locale]/me/slett-konto?token=...`, IKKE
+  `GET /api/auth/verify` som magic_link/confirm_email, fordi
+  bekreftelsen ikke setter noen cookie (kommentert i filen).
+- `src/lib/email/templates/account-deletion-confirmed.ts` (+ test) —
+  ingen CTA, samme begrunnelse som `journalist_rejected`.
+- `src/app/[locale]/me/slett-konto/page.tsx` +
+  `ConfirmDeletionClient.tsx` — leser `?token=` via `useSearchParams()`
+  og kaller `POST /me/confirm-deletion` klientside (krever ingen aktiv
+  økt — se rutens egen kommentar: tokenet ALENE er autoriteten).
+  `useSearchParams()` krever en `<Suspense>`-grense i App Router — uten
+  den feiler produksjonsbygget. Fanget selv av `next build` (ikke av
+  `tsc`/`eslint`), som forventet.
+- `send.ts` utvidet med begge nye malene — `confirm_account_deletion`
+  slått sammen i samme switch-gren som `magic_link`/`confirm_email`/
+  `journalist_application_received` (alle fire trenger bare `token`).
+  Kommentaren øverst oppdatert fra "foreløpig sju" til "foreløpig ni".
+
+### Et ekte, ufarlig avvik oppdaget under nettleserverifisering (ikke rettet, ikke nødvendig)
+
+Testet med `TEST_COUNTRY_CODE` sin fixture-`nameKey`
+(`"country.test.name"`), som aldri har hatt en faktisk oversettelse (den
+er bare ment for integrasjonstester, ikke for å faktisk vises i en
+nettleser). Siden viste `"Land: …"` i stedet for et landnavn —
+BEKREFTET at dette er den allerede innebygde, tiltenkte graceful
+degradation-mekanismen i `resolveMessage()` (logger en `console.error`
+og returnerer `"…"` i stedet for å krasje eller vise en rå nøkkel), ikke
+en feil i den nye siden. Ekte land i produksjon (f.eks. `NO`) har en
+faktisk oversatt `nameKey` og ville vist riktig navn. Ikke rettet — det
+er testfixturen som mangler dekning for et felt den aldri før ble bedt
+om å vise, ikke noe produksjonskode trenger.
+
+### Verifisert ende til ende i en ekte nettleser
+
+To separate flyter, begge mot en produksjonsbygget instans: (1) en sådd
+journalist besøkte `/me`, redigerte visningsnavn/tidssone og
+journalistprofilfeltene, lagret begge deler, og ba om kontosletting —
+bekreftet riktig stubb-e-post logget for hvert steg; (2) en sådd
+mottaker ba om sletting via et faktisk API-kall, hentet den EKTE
+`confirm_account_deletion`-lenken fra loggen, besøkte den i en ekte
+nettleser, og fikk "Kontoen din er slettet." — bekreftet UAVHENGIG i
+databasen (`psql`) at `status = 'deleted'`, e-posten var hashet, og
+visningsnavnet var nullstilt. Skjermbilder tatt og sjekket visuelt.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler — fanget og rettet en reell
+`react-hooks/exhaustive-deps`-advarsel i `ConfirmDeletionClient.tsx`
+underveis, la `searchParams` til avhengighetslisten i stedet for å bare
+undertrykke advarselen), `vitest run` (**258 tester**, +8 nye),
+`i18n:check` (**283 nøkler**), `design:check-tokens` (34
+komponent-CSS-filer), `rm -rf .next && next build`, `test:integration`
+mot ekte lokal Postgres (43 tester, uendret), PLUSS begge
+ende-til-ende-nettleserverifiseringene beskrevet over.
+
+### Neste økt
+
+(1) den store testbarhets-refaktoreringen (`admin/`/`moderation/`-
+lib-laget) — fortsatt bevisst utsatt, se konkret plan tre deler tilbake;
+(2) resten av komponentbiblioteket (Dialog, Toast, Card, Alert, Tabs,
+Table, Pagination); (3) resten av 16.1-dashbordet; (4) den ubrukte
+`"approved"`-verdien i `request_status`-enumen; (5) OG-delingsbilde; (6)
+det oversatte-stinavn-hullet (3.7); (7) flere e-postmaler etter behov
+(nå 14 gjenstår uten innhold, ned fra 16 — `change-country`-flyten
+(SPEC-V1.md 7.3) har ingen UI ennå, bevisst utelatt fra denne økten,
+kunne vært punkt (10)); (8) faktisk Brevo-integrasjon når en API-nøkkel
+finnes; (9) den siste ubrukte `nav.*`-nøkkelen, `nav.requests` — bevisst
+UBRUKT (11: ingen offentlig bla-i-forespørsler-side skal finnes, se
+tidligere i økten), vurder om den bør fjernes fra i18n-filene i stedet
+for å forbli "ubrukt med vilje" for alltid; (10) UI for
+`changeCountry()` (SPEC-V1.md 7.3) — full backend finnes
+(`src/lib/me/change-country.ts`), men ingen side, samme mønster som de
+andre "backend uten UI"-hullene denne natten fant.

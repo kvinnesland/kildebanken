@@ -159,6 +159,25 @@
   "journalist.response_detail.contact_request_cancel": "Avbryt",
   "journalist.response_detail.contact_request_sent_notice": "Kontaktforespørsel sendt.",
 
+  "me.title": "Min konto",
+  "me.email_label": "E-post",
+  "me.country_label": "Land",
+  "me.display_name_label": "Visningsnavn",
+  "me.locale_label": "Språk",
+  "me.timezone_label": "Tidssone",
+  "me.timezone_description": "Valgfritt — arver landets tidssone når feltet er tomt.",
+  "me.save": "Lagre",
+  "me.saved_notice": "Lagret.",
+  "me.journalist_profile_title": "Journalistprofil",
+  "me.verification_status_label": "Status",
+  "me.verification_status.pending_review": "Til vurdering",
+  "me.verification_status.approved": "Godkjent",
+  "me.verification_status.rejected": "Avvist",
+  "me.delete_account_title": "Slett konto",
+  "me.delete_account_description": "Dette sletter kontoen din permanent. Vi sender deg en bekreftelseslenke på e-post først — kontoen slettes ikke før du klikker den.",
+  "me.delete_account_button": "Be om sletting av konto",
+  "me.delete_account_requested_notice": "Sjekk innboksen din — vi har sendt deg en bekreftelseslenke. Kontoen slettes ikke før du klikker den.",
+
   "legal.journalist_terms_title": "Journalistvilkår",
 
   "digest.subject": "{count, plural, one {# ny forespørsel i dag} other {# nye forespørsler i dag}}",
@@ -193,6 +212,20 @@
   "email.journalist_rejected.subject": "Journalistsøknaden din er avvist",
   "email.journalist_rejected.heading": "Journalistsøknaden din er avvist",
   "email.journalist_rejected.body": "Søknaden din om en journalistkonto er dessverre ikke godkjent. Begrunnelse: {reason}",
+
+  "email.confirm_account_deletion.subject": "Bekreft sletting av kontoen din",
+  "email.confirm_account_deletion.heading": "Bekreft sletting av kontoen din",
+  "email.confirm_account_deletion.body": "Du har bedt om å slette kontoen din. Klikk lenken under for å bekrefte. Denne handlingen kan ikke angres.",
+  "email.confirm_account_deletion.cta": "Bekreft sletting",
+  "email.confirm_account_deletion.ignore": "Ba du ikke om dette? Da kan du se bort fra denne e-posten — kontoen din slettes ikke uten at du klikker lenken.",
+
+  "email.account_deletion_confirmed.subject": "Kontoen din er slettet",
+  "email.account_deletion_confirmed.heading": "Kontoen din er slettet",
+  "email.account_deletion_confirmed.body": "Kontoen din er nå slettet, som bekreftet av deg. Dette kan ikke angres.",
+
+  "me.confirm_deletion.pending": "Bekrefter sletting av kontoen din …",
+  "me.confirm_deletion.success": "Kontoen din er slettet.",
+  "me.confirm_deletion.error": "Lenken er ugyldig eller har utløpt. Be om en ny sletting fra kontosiden din hvis du fortsatt ønsker å slette kontoen.",
 
   "email.response_submitted_receipt.subject": "Kvittering: Svaret ditt er sendt",
   "email.response_submitted_receipt.heading": "Svaret ditt er sendt",

@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { users } from "@/db/schema";
-import { createActiveRecipient, ensureTestCountry } from "@/db/integration/fixtures";
-import { updateMyProfile } from "./profile";
+import { createActiveRecipient, ensureTestCountry, TEST_COUNTRY_CODE } from "@/db/integration/fixtures";
+import { getMyProfile, updateMyProfile } from "./profile";
 
 describe("updateMyProfile mot ekte Postgres", () => {
   const createdUserIds: string[] = [];
@@ -52,5 +52,36 @@ describe("updateMyProfile mot ekte Postgres", () => {
     const result = await updateMyProfile(recipient.id, { locale: "fr-FR" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe("errors.invalid_locale");
+  });
+});
+
+describe("getMyProfile mot ekte Postgres", () => {
+  const createdUserIds: string[] = [];
+
+  beforeAll(async () => {
+    await ensureTestCountry();
+  });
+
+  afterAll(async () => {
+    for (const userId of createdUserIds) {
+      await db.delete(users).where(eq(users.id, userId));
+    }
+  });
+
+  it("inkluderer landets navnenøkkel og tilgjengelige locales, ikke bare brukerens egne felt", async () => {
+    const recipient = await createActiveRecipient();
+    createdUserIds.push(recipient.id);
+
+    const profile = await getMyProfile(recipient.id);
+    expect(profile?.email).toBe(recipient.email);
+    expect(profile?.role).toBe("recipient");
+    expect(profile?.countryCode).toBe(TEST_COUNTRY_CODE);
+    expect(profile?.availableLocales).toContain("nb-NO");
+    expect(typeof profile?.countryNameKey).toBe("string");
+  });
+
+  it("returnerer null for en ukjent bruker-id", async () => {
+    const profile = await getMyProfile("00000000-0000-0000-0000-000000000000");
+    expect(profile).toBeNull();
   });
 });
