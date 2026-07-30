@@ -341,7 +341,14 @@ export async function getOwnedRequestDetail(requestId: string, journalistUserId:
 const PUBLICLY_VISIBLE_STATUSES = ["published", "closed", "expired"] as const;
 
 /** 11: publiserte, lukkede og utløpte forespørsler er offentlig lesbare —
- * alt annet (inkl. `rejected`, som aldri var offentlig) er skjult. */
+ * alt annet (inkl. `rejected`, som aldri var offentlig) er skjult.
+ *
+ * Filtrerer også på at eierens `User.status = active` — 8.1: "Ved suspensjon
+ * skjules journalistens publiserte forespørsler umiddelbart." Dette er en
+ * SYNLIGHETSREGEL, ikke en tilstandsendring på selve forespørselen (bevisst
+ * IKKE det samme som `closeRequest()`) — reverseres derfor automatisk når
+ * suspensjonen oppheves, uten noen egen "vis igjen"-handling.
+ */
 export async function getPublicRequest(requestId: string) {
   const [row] = await db
     .select({
@@ -364,10 +371,12 @@ export async function getPublicRequest(requestId: string) {
     })
     .from(requests)
     .innerJoin(journalistProfiles, eq(requests.journalistId, journalistProfiles.userId))
+    .innerJoin(users, eq(requests.journalistId, users.id))
     .where(
       and(
         eq(requests.id, requestId),
-        inArray(requests.status, [...PUBLICLY_VISIBLE_STATUSES])
+        inArray(requests.status, [...PUBLICLY_VISIBLE_STATUSES]),
+        eq(users.status, "active")
       )
     )
     .limit(1);

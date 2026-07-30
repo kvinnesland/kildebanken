@@ -1354,6 +1354,7 @@ GET    /admin/journalists
 POST   /admin/journalists/:id/approve
 POST   /admin/journalists/:id/reject
 POST   /admin/users/:id/suspend
+POST   /admin/users/:id/unsuspend
 GET    /admin/moderation/requests
 POST   /admin/requests/:id/publish
 POST   /admin/requests/:id/reject
@@ -1371,6 +1372,12 @@ POST   /admin/legal-documents
 
 Administrative listeendepunkter filtreres automatisk på innlogget moderators
 tildelte land. Filtreringen skjer i spørringen, ikke i responsen.
+
+`POST /admin/users/:id/unsuspend` er lagt til under autonomt arbeid (økt 7,
+se `NATTLOGG.md`) — 8.1s tilstandsdiagram viser eksplisitt
+`suspended → active`, og 16.2 lister "opphev suspensjon" som en egen
+moderatorhandling for journalister, men ruten manglet i denne listen. Et
+reelt hull mellom to deler av spec-en, ikke en ny beslutning.
 
 ---
 

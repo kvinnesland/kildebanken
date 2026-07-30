@@ -125,14 +125,19 @@ async function runDigestTick(dbase: Database): Promise<TickResult> {
 
       if (existing.length > 0) continue; // allerede sendt for i dag i dette landet
 
+      // Innerjoin mot users og filter på status "active" — 8.1: en suspendert
+      // journalists publiserte forespørsler skal ikke tas med i en NY digest
+      // heller (samme synlighetsregel som getPublicRequest()).
       const publishable = await dbase
         .select({ id: requests.id })
         .from(requests)
+        .innerJoin(users, eq(requests.journalistId, users.id))
         .where(
           and(
             eq(requests.countryCode, country.code),
             eq(requests.status, "published"),
-            isNull(requests.includedInDigestAt)
+            isNull(requests.includedInDigestAt),
+            eq(users.status, "active")
           )
         );
 

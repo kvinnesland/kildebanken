@@ -1228,3 +1228,87 @@ et sammenhengende "landadministrasjon for administrator"-sett (16.2, siste
 kulepunkt), naturlig neste byggeblokk. Ellers: faktisk Brevo-integrasjon når
 en API-nøkkel finnes, og flere integrasjonstester for kritiske invarianter
 nå som riggen finnes.
+
+---
+
+## Fortsettelse av økt 7 — `POST /admin/users/:id/suspend` (+ ny `unsuspend`)
+
+Samme arbeidsøkt.
+
+### Ekte hull funnet: seksjon 20 manglet en "opphev suspensjon"-rute
+
+8.1s tilstandsdiagram viser eksplisitt `suspended → active`, og 16.2 lister
+"opphev suspensjon" som en egen moderatorhandling for journalister — men
+seksjon 20s rute-liste hadde bare `POST /admin/users/:id/suspend`, aldri
+det motsatte. Rettet spec-en først: lagt til
+`POST /admin/users/:id/unsuspend`, med forklarende merknad rett under
+API-blokken (samme mønster som de tidligere tilføyelsene i økt 7).
+
+### `src/lib/moderation/users.ts` — `suspendUser()` / `unsuspendUser()`
+
+8.1: "Ved suspensjon skjules journalistens publiserte forespørsler
+umiddelbart." Bevisst IKKE implementert som en tilstandsendring på selve
+`requests`-raden (det ville vært det samme som `closeRequest()`, og
+spec-en bruker et annet ord — "skjules", ikke "lukkes" — nettopp fordi det
+er midlertidig og reversibelt). Implementert i stedet som en
+SYNLIGHETSREGEL på lesesiden:
+
+- `getPublicRequest()` (`src/lib/requests/requests.ts`) joiner nå også mot
+  `users` og krever `status = active` hos eieren.
+- `runDigestTick()`s spørring etter nye, digest-klare forespørsler
+  (`src/lib/jobs/tick.ts`) filtrerer på det samme, slik at en suspendert
+  journalists forespørsler heller ikke tas med i en NY digest.
+
+Begge reverseres derfor AUTOMATISK når `unsuspendUser()` setter status
+tilbake til `active` — ingen egen "vis igjen"-handling nødvendig, og ingen
+risiko for at de to stedene kommer ut av synk siden begge leser samme felt.
+
+`suspendUser()` kansellerer i tillegg journalistens egne PENDING
+kontaktforespørsler (8.1: "åpne kontaktforespørsler kanselleres") og
+tilbakekaller alle økter (samme `revokeAllSessionsForUser()` som
+kontosletting bruker). `unsuspendUser()` rører bevisst IKKE
+`verification_status` (8.1, siste setning: forblir `approved` uten ny
+moderatorbehandling).
+
+Begge funksjonene følger samme mønster som resten av
+`src/lib/moderation/`: autorisasjonssjekken
+(`requireModeratorForCountry()`) skjer INNE i biblioteksfunksjonen, ikke i
+ruten — og importerer dermed transitivt `"server-only"` via `session.ts`.
+Det betyr, som for resten av modereringsmodulen, at disse to funksjonene
+IKKE kan integrasjonstestes direkte (samme begrensning som
+`approveJournalist()` m.fl. — udekket fra før, ikke en ny svakhet).
+
+**Fant og rettet et fixture-hull i samme slengen:** `createActiveJournalist()`
+i `src/db/integration/fixtures.ts` opprettet en bruker med `role =
+journalist` UTEN noen tilhørende `JournalistProfile`-rad — en tilstand som
+aldri kan oppstå i ekte drift (19.5: én-til-én, opprettet atomisk). Dette
+var usynlig helt til den nye `getPublicRequest()`-testen under (som
+innerjoiner mot `journalist_profiles`) rett og slett ikke fant noen rad i
+det hele tatt. Rettet: fixture-en oppretter nå alltid en godkjent profil i
+samme kall.
+
+### Ny, faktisk verifisert integrasjonstestdekning
+
+- `src/lib/requests/requests.integration.test.ts` (2 tester): en publisert
+  forespørsel er synlig så lenge eieren er aktiv; skjules umiddelbart ved
+  suspensjon og blir synlig igjen når suspensjonen oppheves — verifiserer
+  selve synlighetsregelen `suspendUser()`/`unsuspendUser()` er bygget på,
+  siden funksjonene selv ikke kan testes direkte (se over).
+
+Alle 23 integrasjonstester (8 testfiler) grønne.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (56 tester,
+uendret), `i18n:check`, `next build` (**38 API-ruter totalt**), OG
+`npx vitest run -c vitest.integration.config.ts` mot ekte lokal Postgres
+(23 tester, alle grønne).
+
+### Neste økt
+
+Gjenstår av seksjon 20: kun det administrative "landstyrings"-settet for
+administrator (`GET /admin/digests`, `POST /admin/digests/:id/retry`,
+`GET/POST /admin/countries`, `PATCH /admin/countries/:code`,
+`POST /admin/countries/:code/moderators`, `POST /admin/legal-documents`) og
+`POST /admin/requests/:id/close` (admin-variant, adskilt fra journalistens
+egen). Ellers: faktisk Brevo-integrasjon når en API-nøkkel finnes.

@@ -11,7 +11,7 @@
 
 import { randomUUID } from "node:crypto";
 import { db } from "@/db/client";
-import { countries, legalDocuments, users } from "@/db/schema";
+import { countries, journalistProfiles, legalDocuments, users } from "@/db/schema";
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -101,6 +101,11 @@ export async function createActiveRecipient(): Promise<{ id: string; email: stri
   return { id: user.id, email };
 }
 
+/** Oppretter en aktiv journalistkonto MED en tilhørende, godkjent
+ * JournalistProfile-rad — en journalist uten profil er ikke en gyldig
+ * tilstand (19.5: én-til-én, opprettet atomisk ved søknad), og flere
+ * spørringer (bl.a. `getPublicRequest()`) forutsetter en innerjoin mot
+ * `journalist_profiles`. */
 export async function createActiveJournalist(): Promise<{ id: string; email: string }> {
   const email = uniqueTestEmail("journalist");
   const [user] = await db
@@ -115,5 +120,15 @@ export async function createActiveJournalist(): Promise<{ id: string; email: str
     })
     .returning({ id: users.id });
   if (!user) throw new Error("Kunne ikke opprette test-journalist");
+
+  await db.insert(journalistProfiles).values({
+    userId: user.id,
+    fullName: "Test Journalist",
+    jobTitle: "Journalist",
+    organizationName: "Testavisen",
+    organizationUrl: "https://example.invalid",
+    verificationStatus: "approved",
+  });
+
   return { id: user.id, email };
 }
