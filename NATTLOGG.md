@@ -3531,3 +3531,101 @@ innhold; (2) flere e-postmaler etter behov (kvittering på innsendt svar er
 trolig neste naturlige, siden svarskjemaet vil trenge den); (3) resten av
 komponentbiblioteket; (4) OG-delingsbilde; (5) det oversatte-stinavn-hullet
 (3.7); (6) `prefers-color-scheme` for e-postmaler, når/hvis prioritert.
+
+Bekreftet: CI for `b91d463` (e-postmaler) er grønn.
+
+---
+
+## Fortsettelse av økt 7 — selve svarskjemaet (SPEC-V1.md 12), verifisert ende-til-ende mot ekte Postgres
+
+Bygget `/[locale]/foresporsler/[id]/svar` — punkt (1) fra forrige "Neste
+økt", og den siste brikken i mottakerens hele reise (5.2) fra registrering
+til svar.
+
+### Sideoppsett (server-komponent) og selve skjemaet (klientkomponent)
+
+`page.tsx` sjekker `getCurrentSession()` FØRST: ingen økt eller feil rolle
+→ viser en tydelig forklaring PLUSS en lenke til `/logg-inn` (ingen
+`?to=`-tilbake-mekanisme ennå, se tidligere del av økten — notert som en
+naturlig utvidelse senere). `request.status !== "published"` → viser at
+forespørselen ikke lenger tar imot svar, ingen skjema. Ellers: viser
+innlogget-som-e-post (SPEC-V1.md 6.2) og selve `ResponseForm`.
+
+`ResponseForm.tsx` er en to-stegs klientkomponent (`form` → `confirm` →
+`submitting`/`success`/`error`), ikke en enkelt lang side — SPEC-V1.md 12.3
+sier eksplisitt at bekreftelsesskjermen "skal være rolig og fullstendig,
+ikke en hurtigdialog", og DESIGN.md 8 kaller den "den viktigste skjermen i
+tjenesten". `TextArea`×3 (relevans 2000, svar 4000, kort presentasjon 500),
+`TextField` (visningsnavn 80), `RadioGroup` (kontaktdeling, "ikke del" som
+STANDARDVALG per 12.2 — i kontrast til samtykkene i registreringsskjemaet,
+som ALDRI forhåndsvelges; dette er en av de få stedene et forhåndsvalg
+faktisk er spec-pålagt). Bekreftelsesskjermen lister alle sju punktene
+12.3 krever ordrett, inkludert de mer juridisk formulerte (se eget avsnitt
+under).
+
+**Om den juridisk sensitive bekreftelsesteksten:** SPEC-V1.md 12.3 sier
+teksten "skal gjennomgås av jurist i hvert språk... faller ikke tilbake
+til et annet språk." De nye `response.confirm.*`-nøklene er skrevet så
+presist jeg kan ut fra selve spec-teksten, MEN er ikke juridisk gjennomgått
+— samme flaggede forbehold som ble notert FØR dette ble bygget (se
+tidligere i økten). Ikke bygget som en egen `legalDocumentType` ennå
+(ville krevd en skjemamigrasjon og en beslutning om hvordan den kobles til
+land/locale-kombinasjonen) — en bevisst utsatt arkitekturbeslutning, ikke
+en forglemmelse.
+
+### Verifisert ende-til-ende mot EKTE Postgres i en ekte nettleser
+
+Satte inn en ekte journalist + publisert forespørsel + mottaker MED en
+ekte, gyldig øktcookie (ikke en mock) i `kildebanken_test`. Bekreftet med
+Playwright: (1) uten innlogging vises riktig forklaring+lenke, ingen
+skjema; (2) med en ekte økt-cookie vises hele skjemaet riktig, tegntellerne
+fungerer, "ikke del e-post" er forhåndsvalgt; (3) bekreftelsesskjermen
+viser riktig journalist/redaksjon og riktig delingstekst avhengig av valget
+(sjekket begge grener); (4) innsending oppretter FAKTISK en rad i
+`responses`-tabellen (sjekket direkte med en spørring, ikke bare at
+API-et svarte 201) med riktig `contactSharing`; (5) et ANDRE forsøk på
+samme forespørsel avvises tydelig med `errors.already_responded`
+(FR-041, den betingede unike indeksen) — bekreftelsesskjermen forblir
+brukbar med feilbanneret øverst, ikke en blank feiltilstand.
+
+**Liten, ekte Playwright-observasjon (ikke en kodefeil):** et vanlig
+`.click()` på selve radio-inputen feilet gjentatte ganger med "element
+intercepts pointer events" — React Aria skjuler selve `<input>`-elementet
+visuelt (samme mønster som `Checkbox` fra tidligere i natt) og lar en
+`<label>` fange klikket i stedet. Løst i testskriptet med
+`.click({ force: true })` på selve teksten. Ikke noe å rette i
+komponenten — dette er riktig, tilgjengelig oppførsel, bare en kjent
+Playwright-firkant mot dette mønsteret.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**193
+tester**, +7 nye for `ResponseForm`), `i18n:check` (117 nøkler),
+`design:check-tokens` (OK, 18 komponent-CSS-filer), `rm -rf .next &&
+next build`, `test:integration` mot ekte lokal Postgres (40 tester), OG
+en full ende-til-ende-verifisering i en ekte nettleser mot ekte Postgres
+(se over) — den mest grundige verifiseringen av noen enkelt side bygget i
+natt, tilsvarende hvor sentral denne siden er i hele produktet.
+
+### Antagelser tatt
+
+- Ingen redirect til `/logg-inn` ved manglende innlogging — siden viser en
+  forklaring OG en lenke i stedet, siden ingen `?to=`-tilbake-mekanisme
+  finnes ennå (samme antagelse som forrige del av økten).
+- `response.confirm.*`-tekstene er UANMELDT juridisk innhold — se eget
+  avsnitt over. Skal ikke tolkes som ferdig, juryst-godkjent tekst.
+- Ingen kvittering-på-e-post-mal bygget ennå (`response_submitted_receipt`)
+  — `sendResponse()` kaller allerede `sendTransactionalEmail` med dette
+  malnavnet (fantes fra før), men faller foreløpig tilbake til det
+  generiske loggformatet siden ingen mal er bygget for den ennå.
+
+### Neste økt
+
+(1) `response_submitted_receipt`/`new_response_received`-e-postmalene
+(nå brukt av en ekte, fungerende flyt — mer motivert enn før); (2) resten
+av komponentbiblioteket (Dialog, Toast, Card, Alert, Tabs, Table,
+Pagination, EmptyState, SkeletonLoader, LanguageSwitcher); (3)
+journalistens svarinnboks (SPEC-V1.md 13) — nå som svar faktisk kan
+opprettes, er dette den naturlige måten en journalist ser dem; (4)
+OG-delingsbilde; (5) det oversatte-stinavn-hullet (3.7); (6)
+`prefers-color-scheme` for e-postmaler.
