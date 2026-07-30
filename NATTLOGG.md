@@ -1994,3 +1994,78 @@ FR-028 og FR-052). Fortsett gjerne den systematiske gjennomgangen for de
 gjenværende FR-punktene, men metoden har nå funnet åtte reelle hull totalt
 i natt og tre bekreftelser — avtagende treffrate, så det kan snart være
 verdt å bytte fokus til frontend eller faktisk Brevo-integrasjon i stedet.
+
+---
+
+## Fortsettelse av økt 7 — retensjonsjobbens fem kategorier fikk ekte integrasjonstester
+
+Samme arbeidsøkt. Vurderte frontend-arbeid (komponentbibliotek,
+token-eksport til e-postmaler) som neste steg, men to grunner talte imot å
+starte det nå: (1) `DESIGN.md` er riktignok svært presist (eksakte
+OKLCH-verdier, eksakt lagarkitektur) så det er IKKE et rent smaksspørsmål,
+men en fullverdig implementasjon krever enten fargekonvertering
+(OKLCH→hex for e-postklienter som ikke støtter `oklch()`, f.eks. Outlook)
+eller en omstrukturering av selve token-kildefilene — begge er egne,
+større arbeidsstykker jeg ikke vil gjøre forhastet; (2) brukerens
+EKSPLISITTE opprinnelige instruks fra i går kveld fremhevet retensjonsjobben
+spesifikt som noe som krevde "egne tester FØR den kobles til noe som
+ligner ekte data, siden den sletter/anonymiserer persondata" — og denne
+testdekningen manglet FORTSATT. Kun de rene dato-/flagg-funksjonene var
+testet (`retention.test.ts`); ingen av de fem faktiske SQL-kategoriene
+hadde noensinne kjørt mot en ekte database. Nå som en lokal Postgres finnes
+i sandkassen (i motsetning til resten av natten), er dette den tydeligste
+gjenværende etterlevelsen av en eksplisitt brukerinstruks — prioritert
+foran nye, ferskere hull.
+
+### `src/lib/jobs/retention.integration.test.ts` (6 tester)
+
+`runRetention()` tar en `Database`-parameter (ingen `session.ts`-avhengighet)
+og kunne derfor testes direkte mot ekte Postgres, som resten av
+`src/lib/jobs/` og `src/lib/requests/` — i motsetning til hele
+`src/lib/admin/`.
+
+- **Innsendte svar** (12 mnd etter lukking): dry run teller men sletter
+  ingenting; ekte kjøring sletter et svar 13 måneder forbi fristen, lar et
+  1 måned gammelt stå urørt.
+- **Kontaktforespørsler** (12 mnd etter avslutning): sletter en gammel
+  AVGJORT (`declined`) rad, men rører ALDRI en like gammel `pending`-rad
+  (19.8: kun terminale statuser regnes) eller en nylig avgjort rad.
+- **Avviste journalistsøknader** (6 mnd): bekreftet at denne kategorien
+  fortsatt KUN teller og ALDRI sletter, selv med
+  `RETENTION_DRY_RUN=false` — `dryRun` er hardkodet `true` i selve
+  returverdien for denne ene kategorien (bevisst ufullstendig, se
+  filkommentaren i `retention.ts` fra tidligere i natt: krever samme
+  anonymiseringsrutine som kontosletting, 17.5, ikke bygget som en egen,
+  parallell sti). Testen bekrefter både at brukeren OG profilen fortsatt
+  finnes etterpå, og at feilmeldingen forklarer hvorfor.
+- **Revisjonslogg** (3 år): sletter en logglinje 4 år gammel, lar en 1 år
+  gammel stå.
+- **Digest og leveringsstatus** (12 mnd): sletter `DigestDelivery` FØR
+  `Digest` (FK-rekkefølge), bekreftet ved at begge radene faktisk er borte
+  etterpå, mens en nyere digest med sin leveranserad står urørt.
+
+Alle testene bruker ekte, tidsforskjøvne rader (13 måneder/7 måneder/4 år
+tilbake vs. 1 måned/1 år tilbake) — ingen mocking av `Date.now()`, siden
+`monthsAgo()`/`yearsAgo()` allerede er rene, testbare funksjoner som tar en
+`from`-parameter, men selve `runRetention()` bruker `new Date()` internt,
+så cutoff-punktene beregnes på ekte kalenderdatoer relativt til NÅ ved
+hver testkjøring.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (59 tester,
+uendret — nytt filnavn korrekt ekskludert fra standardsuiten), `i18n:check`,
+`next build` (46 API-ruter, uendret), OG
+`npx vitest run -c vitest.integration.config.ts` mot ekte lokal Postgres
+(**38 tester**, +6 nye, **10 testfiler**).
+
+### Neste økt
+
+Retensjonsjobbens fem kategorier har nå ekte dekning mot en ekte database —
+den forsiktighets-forpliktelsen fra i går kveld er innfridd. Gjenstående
+kjente, IKKE bygget del av 17.4: avviste journalistsøknader slettes
+fortsatt aldri (krever samme anonymiseringsrutine som kontosletting, se
+over) — verdt å bygge FERDIG en senere økt, med samme forsiktighet. Ellers:
+frontend (nå med en klarere forståelse av at token-eksport til e-post
+krever fargekonvertering som egen oppgave), eller faktisk Brevo-integrasjon
+når en API-nøkkel finnes.
