@@ -1883,3 +1883,37 @@ sjekk `publishRequest()` sin forutsetning eksplisitt), og FR-052
 (kodegjennomgang: bekreft at det virkelig ikke finnes noen
 tvers-av-forespørsler-svarvisning). Ellers: frontend, eller faktisk
 Brevo-integrasjon.
+
+---
+
+## Fortsettelse av økt 7 — sjekket FR-028 og FR-052 (kodegjennomgang, ingen kode endret)
+
+Samme arbeidsøkt. Begge var kodegjennomgangs-krav (ikke automatisert
+testbare), sjekket manuelt mot faktisk kode:
+
+- **FR-028** ("skal ikke publisere en forespørsel som ikke har vært innom
+  `submitted` og en moderatorhandling"): `publishRequest()`
+  (`src/lib/moderation/requests.ts`) er DEN ENESTE koden i hele kodebasen
+  som setter `status = "published"`, og den krever eksplisitt
+  `request.status === "submitted"` FØR den gjør det (ellers
+  `errors.request_not_editable`). Bekreftet grepet mot `"published"` i hele
+  `src/`. Ingen hull — tilfredsstilt ved design.
+- **FR-052** ("ingen visning som lister svar på tvers av forespørsler"):
+  gikk gjennom ALLE steder som spør mot `responses`-tabellen. Alle
+  journalist-/admin-vendte spørringer er skalert til ÉN forespørsel eller
+  ÉN respons om gangen (`journalist-inbox.ts`, `admin/responses.ts`,
+  `contact-requests.ts`, `reports.ts`). Det ENESTE stedet som henter FLERE
+  responser på tvers av forespørsler er `listMineResponses()` — men den er
+  skopet til ÉN respondents EGNE innsendte svar (`GET /responses/mine`), som
+  er noe helt annet enn en journalist/moderator som browser andres svar.
+  Ingen hull.
+
+Begge bekreftet uten kodeendring — ingen commit nødvendig for selve
+sjekken, men notert her for å unngå å gjenta arbeidet en senere økt.
+
+### Neste økt
+
+Gjenstår av den systematiske FR-gjennomgangen: FR-013 (aktivere et land
+ende-til-ende mot ekte data — kunne faktisk KJØRES nå som en lokal Postgres
+finnes i sandkassen, i motsetning til resten av natten). Ellers: frontend,
+eller faktisk Brevo-integrasjon når en API-nøkkel finnes.
