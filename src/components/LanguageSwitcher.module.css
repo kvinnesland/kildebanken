@@ -1,0 +1,21 @@
+/*
+ * Lag 3 — komponent. Se Button.module.css for regelen (kun semantiske
+ * tokens, aldri en farge-/avstands-/radiusverdi direkte).
+ */
+
+.switcher {
+  display: inline-flex;
+  gap: var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+}
+
+.link {
+  color: var(--color-link);
+}
+
+.active {
+  color: var(--color-text);
+  font-weight: 600;
+  text-decoration: underline;
+}

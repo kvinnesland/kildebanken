@@ -1,0 +1,32 @@
+/*
+ * Lag 3 — komponent. Se Button.module.css for regelen (kun semantiske
+ * tokens, aldri en farge-/avstands-/radiusverdi direkte).
+ */
+
+.header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.homeLink {
+  font-family: var(--font-editorial);
+  font-size: var(--text-lg);
+  color: var(--color-text);
+  margin-right: auto;
+}
+
+.nav {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.navLink {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--color-link);
+}

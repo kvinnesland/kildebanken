@@ -4228,3 +4228,104 @@ utsendelsesstatus); (3) rett testbarhetshullet i `moderation/*.ts`/
 OG-delingsbilde; (6) det oversatte-stinavn-hullet (3.7); (7)
 `prefers-color-scheme` for e-postmaler; (8) flere e-postmaler etter
 behov; (9) faktisk Brevo-integrasjon når en API-nøkkel finnes.
+
+---
+
+## Fortsettelse av økt 7 — `LanguageSwitcher` + en delt topptekst for de innloggede områdene, et hull oppdaget FØR bygging
+
+Vurderte først den store testbarhets-refaktoreringen (`moderation/*.ts`,
+punkt 3 over) som neste steg, men fant at den faktisk sprer seg mye
+bredere enn antatt da den ble notert — `grep` viste at HELE
+`admin/`- og `moderation/`-lib-laget (`admin/legal-documents.ts`,
+`admin/countries.ts`, `admin/responses.ts`, `moderation/users.ts`, i
+tillegg til de to allerede kjente) deler samme mønster. En refaktorering
+av den størrelsen, som rører mye allerede fungerende
+autorisasjonskode uten egen rutetest-dekning å verifisere mot, er ikke
+noe å gjøre raskt i én autonom runde — utsatt bevisst, notert på nytt
+under.
+
+I stedet, mens jeg sjekket hvilke `common.*`/`nav.*`-i18n-nøkler som
+faktisk var i bruk (for å vurdere om `Card`/`Alert`/`EmptyState` hadde
+noen reell bruker å bygges mot), fant jeg noe mer grunnleggende: HELE
+appen mangler navigasjon. `nav.home`/`nav.log_out`/
+`common.language_switcher.label`-nøklene har ligget klare siden økt 1
+uten å bli brukt noe sted, og rot-layouten (`src/app/[locale]/layout.tsx`)
+er fortsatt bare `<body>{children}</body>` — hver eneste side bygget i
+natt (journalistens forespørsler, svarinnboks, moderatorkøene) er kun
+nåbar ved å taste URL-en direkte, ingen lenke, ingen språkbytte, ingen
+utloggingsknapp noe sted.
+
+**Bevisst avgrenset til de INNLOGGEDE områdene** (`/journalist`,
+`/admin`), IKKE rot-layouten/den offentlige forsiden — `page.tsx` sin
+egen kommentar sier eksplisitt at forsiden er en plassholder frem til
+Fase 2-forsidedesignet (SPEC-V1.md 24), og `nav.requests`/
+`nav.my_account` (også ubrukte fra økt 1) passer ikke faktisk
+informasjonsarkitektur: det finnes bevisst INGEN offentlig
+bla-i-forespørsler-side (11: oppdagelse skjer kun via digesten), og
+ingen `/me`-side er bygget. Brukte derfor bare `nav.home`/`nav.log_out`
++ en ny, egen tittel-per-side-nøkkel for navigasjonslenkene, i stedet for
+å tvinge de to resterende nøklene inn i noe de ikke passer til.
+
+### Bygget
+
+- `src/components/LanguageSwitcher.tsx` (+ test) — det siste konkrete
+  DESIGN.md 6-komponentnavnet som hadde en tydelig, allerede
+  identifisert bruker (den ubrukte i18n-nøkkelen). Bytter BARE
+  locale-segmentet i gjeldende sti (riktig i dag pga. 3.7 — rute-segmenter
+  er ikke oversatt ennå — kommentert i filen for når 3.7 lukkes).
+  Første komponent i kodebasen som bruker `next/navigation`'s
+  `usePathname()` — satte opp `vi.mock("next/navigation", ...)`-mønsteret
+  siden ingen eksisterende test gjorde det fra før.
+- `src/components/LogoutButton.tsx` — `POST /api/auth/logout` + redirect
+  til `/logg-inn`, PÅ SAMME locale brukeren sto på (bruker samme
+  `locale`-prop som resten av headeren, ikke plattformens standardspråk).
+- `src/components/SiteHeader.tsx` — delt topptekst: hjem-lenke, valgfrie
+  `navLinks` (per område), `LanguageSwitcher`, `LogoutButton`. Tar
+  IKKE en `session`-prop og sjekker IKKE autorisasjon selv — det gjør
+  hver enkelt `page.tsx` allerede, duplisert sjekk ville vært feil sted
+  å legge logikken.
+- `src/app/[locale]/journalist/layout.tsx` og `admin/layout.tsx` (nye) —
+  wrapper alle undersider med `SiteHeader`, med hvert sitt sett
+  `navLinks` (henholdsvis "Mine forespørsler" og de to
+  modereringskø-titlene, gjenbrukt fra de eksisterende page-titlene i
+  stedet for nye, duplikate strenger).
+
+### Verifisert ende til ende i en ekte nettleser
+
+Produksjonsbygget instans, sådd en journalist- og en moderatorøkt.
+Bekreftet for BEGGE roller: riktige navigasjonslenker vises, klikk på
+"Engelsk" bytter faktisk URL-ens locale-segment OG rendrer HELE siden
+(header og innhold) på engelsk umiddelbart, og "Log out" tilbakekaller
+økten og sender brukeren til `/logg-inn` PÅ SAMME locale som ble byttet
+til. Skjermbilde tatt og sjekket visuelt — ren styling, riktig
+fokus-/aktiv-markering på gjeldende locale.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**237
+tester**, +2 nye), `i18n:check` (**240 nøkler**), `design:check-tokens`
+(30 komponent-CSS-filer), `rm -rf .next && next build`,
+`test:integration` mot ekte lokal Postgres (41 tester, uendret), PLUSS
+ende-til-ende-nettleserverifiseringen beskrevet over.
+
+### Neste økt
+
+(1) resten av komponentbiblioteket (Dialog, Toast, Card, Alert, Tabs,
+Table, Pagination, EmptyState, SkeletonLoader) — ingen av disse har en
+like tydelig, allerede identifisert bruker som `LanguageSwitcher` hadde,
+så neste økt bør enten finne en konkret bruksgrunn FØRST (som denne
+delen av natten gjorde) eller bevisst bygge dem uten en ennå, med en
+kommentar om det; (2) rett testbarhetshullet i hele `admin/`-/
+`moderation/`-lib-laget (viste seg å være STØRRE enn antatt — fem filer,
+ikke to, se over) — planlegg denne skikkelig FØR neste autonome runde
+gjør den, siden den rører mye eksisterende, fungerende
+autorisasjonskode; (3) resten av 16.1-dashbordet; (4) den ubrukte
+`"approved"`-verdien i `request_status`-enumen; (5) OG-delingsbilde; (6)
+det oversatte-stinavn-hullet (3.7) — ville også gjort
+`LanguageSwitcher` sin nåværende "bare bytt segment 1"-antagelse
+foreldet; (7) `prefers-color-scheme` for e-postmaler; (8) flere
+e-postmaler etter behov; (9) faktisk Brevo-integrasjon når en
+API-nøkkel finnes; (10) vurder om `/me`-en side (profilvisning) og evt.
+en offentlig informasjonsside burde bygges, siden `nav.my_account`/
+`nav.requests` fortsatt er ubrukte i18n-nøkler uten noen side å peke
+til.
