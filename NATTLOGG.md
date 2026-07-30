@@ -5758,3 +5758,66 @@ gode bruk av tiden er trolig et nytt, bredt søk etter spec-vs-kode-hull
 gjenværende hjørnene av kodebasen (spesielt andre steder som speiler en
 etablert sjekk uten selv å ha den) kan være mer verdifullt enn ren
 dekningsjakt.
+
+---
+
+## Fortsettelse av økt 7 — den flakete `dashboard.integration.test.ts` fikset for godt (var faktisk TO uavhengige race conditions, ikke én)
+
+Tok fatt på punkt (1) fra forrige "Neste økt". Kjørte `test:integration`
+gjentatte ganger for å reprodusere flaket fra forrige runde, og fant at det
+faktisk var TO separate, uavhengige race conditions i samme fil — begge
+forårsaket av at testene delte `TEST_COUNTRY_CODE` med resten av
+testsuiten, som (bevisst, se `fixtures.ts`) ikke rydder opp alt den
+oppretter:
+
+1. **"teller ventende journalistsøknader"**: en `afterFixtureJournalist`-
+   lesning rett etter `before`, med INGENTING som skjer mellom dem — en
+   vacuous sammenligning som feilet hver gang en annen parallell fil
+   (typisk `registration/journalist.integration.test.ts`, som oppretter en
+   `pending_review`-journalistprofil for `TEST_COUNTRY_CODE` som en del av
+   sin egen, helt legitime test) traff akkurat det vinduet. Fjernet den
+   vacuous lesningen først — avdekket UMIDDELBART en ANNEN, dypere versjon
+   av samme problem: selve før/etter-DELTA-en (`+1`) er også skjør mot en
+   HVILKEN SOM HELST samtidig skriving til samme land i det litt lengre
+   vinduet mellom `before` og `after`. Løsningen var å slutte å dele land i
+   det hele tatt — testen oppretter nå to HELT EGNE, engangs testland
+   (`Z${randomUUID()...}`) som ingen annen fil vet om, og gjør deretter
+   eksakte (ikke delta-baserte) påstander (`0`, så `1`) mot dem — fullstendig
+   immun mot alt annet som skjer i databasen samtidig.
+2. **"returnerer siste utsendelse med antall feilede leveranser"**: en
+   hardkodet `scheduledFor: "2026-07-30"` (dagens dato, ved en ren
+   tilfeldighet — men problemet var strengen selv, ikke datoen) kolliderte
+   med en rad en TIDLIGERE, mislykket kjøring hadde latt stå igjen for godt
+   — testens opprydding sto etter assertion-en, uten `try/finally`, så en
+   ENESTE feilet kjøring (uansett årsak) forgiftet ALLE senere kjøringer av
+   hele testsuiten permanent via den unike indeksen på
+   `(country_code, scheduled_for)`. Fant og slettet den faktiske forgiftede
+   raden manuelt (`12a7af90-...`, opprettet av en tidligere økt). Rettet
+   testen til samme mønster: eget engangs testland, PLUSS `try/finally`
+   rundt hele testkroppen, slik at opprydding kjører uansett om en
+   assertion feiler — én fremtidig feil kan ikke lenger forgifte
+   testsuiten for godt.
+
+Bekreftet fiksen med **8 påfølgende kjøringer** av hele
+`test:integration`-pakken (203 tester hver gang) — alle grønne, ingen
+gjentatt av noen av de to tidligere flakene.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**335
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next
+&& next build` (grønn), `test:integration` mot ekte lokal Postgres (**203
+tester**, uendret i antall — kjørt 8 ganger på rad, alle grønne).
+
+### Neste økt
+
+Testsuiten (både enhets- og integrasjonstester) er nå, så langt kjent,
+fullstendig deterministisk uansett kjørerekkefølge/parallellitet. Neste
+gode bruk av tiden: et bredt søk etter flere spec-vs-kode-hull av samme
+type som sperrelistehullet (økt 7, forrige runde) — se etter steder der én
+modul har en sjekk/regel en STRUKTURELT lignende modul mangler (f.eks.
+sammenlign alle `registration/*.ts`-, `moderation/*.ts`- og
+`admin/*.ts`-filene parvis for asymmetriske sjekker). Brevo-integrasjon,
+resten av komponentbiblioteket, og OG-delingsbilde forblir alle korrekt
+blokkert (se punktene notert i tidligere økter).
