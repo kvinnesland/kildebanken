@@ -1038,29 +1038,32 @@ atskilt fra `User.status` med hensikt — se 8.1 for begrunnelsen.
 id
 journalist_id
 country_code                FK Country, kopiert fra journalisten ved opprettelse
-content_language            BCP-47, språket teksten er skrevet på
-slug                        generert fra tittelen på content_language
-title
-summary
-description
-target_person_description
+content_language            BCP-47, språket teksten er skrevet på – settes
+                             ved opprettelse (landets default_locale), derfor
+                             ALDRI tom, selv i draft
+slug                        nullable inntil title finnes – se merknad under
+title                       nullable inntil innsending – se merknad under
+summary                     nullable inntil innsending
+description                 nullable inntil innsending
+target_person_description   nullable inntil innsending
 topic                       nullable, fast nøkkel – aldri en visningsstreng
 geographic_note             nullable
 internal_reference          nullable
-response_deadline           UTC
+response_deadline           nullable inntil innsending, UTC når satt
 status                      draft | submitted | changes_requested | approved
                             | published | closed | expired | rejected | deleted
-allows_anonymous_participation
-may_be_recorded
-may_involve_photo_video
-moderator_comment           nullable
-moderated_by                nullable
-moderated_at                nullable
-published_at                nullable
-included_in_digest_at       nullable
-closed_at                   nullable, settes ved både closed og expired
-deadline_reminder_sent_at   nullable – lagt til i økt 2 (NATTLOGG.md)
-stale_reminder_sent_at      nullable – lagt til i økt 2 (NATTLOGG.md)
+allows_anonymous_participation   nullable inntil innsending (boolsk – kan
+                                 IKKE default til false, se merknad)
+may_be_recorded                  nullable inntil innsending
+may_involve_photo_video           nullable inntil innsending
+moderator_comment            nullable
+moderated_by                 nullable
+moderated_at                 nullable
+published_at                 nullable
+included_in_digest_at        nullable
+closed_at                    nullable, settes ved både closed og expired
+deadline_reminder_sent_at    nullable – lagt til i økt 2 (NATTLOGG.md)
+stale_reminder_sent_at       nullable – lagt til i økt 2 (NATTLOGG.md)
 created_at
 updated_at
 ```
@@ -1069,6 +1072,27 @@ De to `_sent_at`-feltene ble lagt til under autonomt arbeid: uten dem ville
 `deadline-reminder` og `stale-request-reminder` (`INFRASTRUCTURE.md` 5.1)
 sendt samme påminnelse på nytt ved hver jobbkjøring innenfor sitt tidsvindu,
 ikke bare én gang.
+
+**Rettet under autonomt arbeid** (økt 6, se `NATTLOGG.md`): denne tabellen
+merket tidligere `title`, `summary`, `description`,
+`target_person_description`, `response_deadline`,
+`allows_anonymous_participation`, `may_be_recorded` og
+`may_involve_photo_video` som om de var obligatoriske på databasenivå — men
+FR-020 krever eksplisitt at "Journalisten skal kunne lagre en forespørsel som
+`draft` uten at obligatoriske felter er utfylt." En databasekolonne kan ikke
+være både `NOT NULL` og tillate at feltet mangler i draft; de to kravene
+motsa hverandre direkte. Løsningen er at "obligatorisk" i 9.1 betyr
+obligatorisk **for å sende til moderering** (FR-021, håndhevet i
+applikasjonslaget ved `draft → submitted`), ikke obligatorisk i databasen fra
+opprettelsen. Alle åtte feltene er derfor nullable i skjemaet.
+
+De tre boolske feltene (`allows_anonymous_participation` m.fl.) kan av samme
+grunn ikke ha en `NOT NULL DEFAULT false` — en uutfylt boolsk verdi i et
+utkast er reelt "ikke besvart ennå", ikke "nei", og å la databasen stille
+anta `false` ville skjult at journalisten aldri tok stilling. `slug`
+genereres første gang `title` finnes (ved lagring av utkast eller ved
+innsending), og regenereres ikke etter publisering (11: "slug … endres aldri
+etter publisering").
 
 `country_code` kopieres bevisst i stedet for å utledes fra journalisten, slik at
 en senere endring av journalistens marked ikke flytter historiske forespørsler.

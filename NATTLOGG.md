@@ -514,3 +514,82 @@ kontosletting (`DELETE /me`, SPEC-V1.md 17.5) — deler anonymiseringslogikk
 med den utsatte "avvist journalistsøknad"-kategorien i retention; (3)
 `POST /requests` og resten av forespørsel-CRUD-en fra seksjon 20; (4) faktisk
 Brevo-integrasjon når en API-nøkkel finnes.
+
+---
+
+## Økt 6 — 2026-07-30, natt (`create_trigger` fyrte presist, 00:39 UTC)
+
+### Reelt skjemaproblem oppdaget FØR koding kunne starte: NOT NULL mot FR-020
+
+Før forespørsel-CRUD-en kunne bygges, måtte den faktisk teste antagelsen om
+at et utkast kan lagres delvis utfylt — og da viste det seg at åtte
+kolonner på `requests` (`title`, `summary`, `description`,
+`target_person_description`, `response_deadline`,
+`allows_anonymous_participation`, `may_be_recorded`,
+`may_involve_photo_video`) var `NOT NULL` i skjemaet fra Fase 1-scaffoldet
+(økt 1). FR-020 sier eksplisitt: "Journalisten skal kunne lagre en
+forespørsel som `draft` uten at obligatoriske felter er utfylt." En
+databasekolonne kan ikke være både `NOT NULL` og tillate et manglende felt i
+et utkast — de motsa hverandre direkte, og ingen kunne ha oppdaget det uten
+faktisk å prøve å implementere `createDraft()`.
+
+**Rettet spec-en først** (`SPEC-V1.md` 19.6): alle åtte feltene er nå
+eksplisitt merket "nullable inntil innsending", med en forklarende merknad om
+at "obligatorisk" i 9.1 betyr obligatorisk for `submit` (FR-021, håndhevet i
+applikasjonslaget), ikke i databasen. De tre boolske feltene fikk en egen
+begrunnelse: en `NOT NULL DEFAULT false` ville latt databasen stille anta
+"nei" for et felt journalisten aldri tok stilling til — `boolean | null` er
+riktig, ikke en tilfeldig løshet. Deretter rettet i `schema.ts` og migrert
+(`0004`). Én følgefeil i `tick.ts` (typene `DigestRequestItem` krevde
+non-null der databasen nå tillater null) rettet med en eksplisitt
+null-sjekk og feilmelding i stedet for en antagelse — raden hopper over og
+logges dersom en publisert forespørsel mot formodning mangler et påkrevd
+felt, i stedet for at koden bare stoler blindt på invarianten.
+
+### Bygget full forespørsel-CRUD (prioritet 3 fra økt 5)
+
+- `src/lib/requests/slug.ts` — `slugify()` transkriberer æøå (ikke fjerner
+  dem) og produserer lesbare slugs; `withDisambiguator()` for kollisjoner.
+  7 enhetstester.
+- `src/lib/requests/validate.ts` — `validateForSubmit()` er selve
+  FR-021-logikken (én feilkode per manglende/ugyldig felt, aldri bare "noe
+  mangler"), `validatePatchedFields()` er den lettere sjekken som kjører ved
+  HVER lagring av utkast (håndhever lengdegrenser og fristvindu på felter
+  som faktisk er oppgitt, uten å kreve fullstendighet). 12 enhetstester,
+  inkludert én som eksplisitt beviser at `false` telles som besvart, ikke
+  som manglende — det var jo hele poenget med `boolean | null`-fikset over.
+- `src/lib/requests/requests.ts` — `createDraft`, `updateDraft` (kun
+  `draft`/`changes_requested`, genererer slug første gang tittel finnes),
+  `submitRequest` (FR-005-sjekk mot `verification_status`, FR-029-grensen på
+  5 samtidig publiserte, varsler alle moderatorer tildelt landet),
+  `closeRequest` (eier ELLER moderator/administrator), `deleteDraft` (soft
+  delete, kun før publisering), `listMineRequests`, `getPublicRequest`
+  (kun `published`/`closed`/`expired` — aldri `rejected`),
+  `getOwnedRequestDetail`.
+- Seks route handlers: `POST /api/requests`, `GET /api/requests/mine`,
+  `GET|PATCH|DELETE /api/requests/[id]`, `POST /api/requests/[id]/submit`,
+  `POST /api/requests/[id]/close`. `GET /api/requests/:id` gjør dobbel
+  jobb bevisst — offentlig visning for publiserte/lukkede/utløpte, eierens
+  egen (autentiserte) visning for alt annet — siden spec-en ikke definerer
+  et eget endepunkt for journalistens detaljvisning av egne utkast.
+
+**Kjent, ikke lukket:** FR-029s samtidighetsgrense sjekkes ved `submit`
+(teller `published`), men ingen publiseringsendepunkt finnes ennå som
+re-håndhever grensen idet moderator faktisk godkjenner. Flere innsendte
+forespørsler kunne i prinsippet bli godkjent omtrent samtidig og midlertidig
+bryte 5-grensen før neste sjekk. Notert i kode-kommentar — må lukkes når
+`POST /admin/requests/:id/publish` bygges.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (48 tester — 19
+nye), `i18n:check`, `next build` (16 API-ruter kompilerer totalt),
+`drizzle-kit generate` for skjemarettelsen (migrasjon `0004`).
+
+### Neste økt
+
+(1) `POST /admin/requests/:id/publish` (+ `reject`/`request-changes`) —
+lukker FR-029-hullet over samtidig; (2) svarinnsending
+(`POST /requests/:id/responses`) og `withdraw`; (3) `DELETE /me`
+(kontosletting, 17.5); (4) faktisk Brevo-integrasjon når en API-nøkkel
+finnes.

@@ -77,5 +77,9 @@
   "errors.email_already_registered": "This email address is already registered.",
   "errors.not_found": "We couldn't find what you were looking for.",
   "errors.not_authorized": "You don't have access to do this.",
-  "errors.reason_required": "You must provide a reason."
+  "errors.reason_required": "You must provide a reason.",
+  "errors.request_not_editable": "This request can't be edited right now.",
+  "errors.request_not_open": "This request isn't open.",
+  "errors.validation_failed": "One or more fields are missing or invalid.",
+  "errors.too_many_published_requests": "You already have too many open requests. Close one before submitting a new one."
 }

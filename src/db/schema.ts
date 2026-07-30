@@ -269,20 +269,26 @@ export const requests = pgTable(
     journalistId: uuid("journalist_id").notNull().references(() => users.id),
     // Kopiert bevisst fra journalisten ved opprettelse — se SPEC-V1.md 19.6.
     countryCode: text("country_code").notNull().references(() => countries.code),
-    contentLanguage: text("content_language").notNull(), // BCP-47
-    slug: text("slug").notNull(),
-    title: text("title").notNull(),
-    summary: text("summary").notNull(),
-    description: text("description").notNull(),
-    targetPersonDescription: text("target_person_description").notNull(),
+    contentLanguage: text("content_language").notNull(), // BCP-47 — satt ved opprettelse, aldri tom
+    // De åtte feltene under er nullable INNTIL INNSENDING (FR-020/FR-021) —
+    // "obligatorisk" i 9.1 betyr obligatorisk for å sende til moderering,
+    // ikke i databasen fra opprettelsen. Se SPEC-V1.md 19.6, rettet økt 6.
+    slug: text("slug"),
+    title: text("title"),
+    summary: text("summary"),
+    description: text("description"),
+    targetPersonDescription: text("target_person_description"),
     topic: text("topic"), // fast nøkkel, aldri en visningsstreng
     geographicNote: text("geographic_note"),
     internalReference: text("internal_reference"),
-    responseDeadline: timestamp("response_deadline", { withTimezone: true }).notNull(),
+    responseDeadline: timestamp("response_deadline", { withTimezone: true }),
     status: requestStatus("status").notNull().default("draft"),
-    allowsAnonymousParticipation: boolean("allows_anonymous_participation").notNull(),
-    mayBeRecorded: boolean("may_be_recorded").notNull(),
-    mayInvolvePhotoVideo: boolean("may_involve_photo_video").notNull(),
+    // Boolsk + nullable med hensikt: "ikke besvart ennå" i et utkast skal
+    // aldri stille bli tolket som `false` (en NOT NULL DEFAULT false ville
+    // skjult at journalisten aldri tok stilling).
+    allowsAnonymousParticipation: boolean("allows_anonymous_participation"),
+    mayBeRecorded: boolean("may_be_recorded"),
+    mayInvolvePhotoVideo: boolean("may_involve_photo_video"),
     moderatorComment: text("moderator_comment"),
     moderatedBy: uuid("moderated_by").references(() => users.id),
     moderatedAt: timestamp("moderated_at", { withTimezone: true }),

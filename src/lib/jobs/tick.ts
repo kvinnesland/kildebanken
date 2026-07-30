@@ -203,16 +203,29 @@ async function sendDigestToRecipients(
     .innerJoin(journalistProfiles, eq(requests.journalistId, journalistProfiles.userId))
     .where(inArray(requests.id, args.requestIds));
 
-  const digestItems: DigestRequestItem[] = requestRows.map((r) => ({
-    id: r.id,
-    slug: r.slug,
-    title: r.title,
-    summary: r.summary,
-    organizationName: r.organizationName,
-    responseDeadline: r.responseDeadline,
-    geographicNote: r.geographicNote,
-    contentLanguage: r.contentLanguage,
-  }));
+  // Feltene under er nullable i skjemaet (kun påkrevd fra innsending,
+  // FR-021 — se SPEC-V1.md 19.6), men enhver rad her har status `published`,
+  // som ikke er nåbart uten å ha bestått nettopp den valideringen. Ikke-null
+  // er derfor en reell invariant her, ikke en antagelse — men brytes den
+  // likevel (f.eks. ved en fremtidig kode-feil), skal vi hoppe over raden
+  // og feile synlig i stedet for å sende en tom digest-post.
+  const digestItems: DigestRequestItem[] = [];
+  for (const r of requestRows) {
+    if (!r.slug || !r.title || !r.summary || !r.responseDeadline) {
+      errors.push(`forespørsel ${r.id}: mangler påkrevde felt til tross for status published`);
+      continue;
+    }
+    digestItems.push({
+      id: r.id,
+      slug: r.slug,
+      title: r.title,
+      summary: r.summary,
+      organizationName: r.organizationName,
+      responseDeadline: r.responseDeadline,
+      geographicNote: r.geographicNote,
+      contentLanguage: r.contentLanguage,
+    });
+  }
 
   // Aktivt abonnement OG aktiv konto, i riktig land (FR-031, FR-035).
   const recipients = await dbase
