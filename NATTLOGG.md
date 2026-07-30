@@ -4890,3 +4890,80 @@ Table, Pagination); (5) resten av 16.1-dashbordet; (6) den ubrukte
 (8) det oversatte-stinavn-hullet (3.7); (9) faktisk Brevo-integrasjon
 når en API-nøkkel finnes; (10) den siste ubrukte `nav.*`-nøkkelen,
 `nav.requests`.
+
+## Fortsettelse av økt 7 — seks e-postmaler til (nitten av tjuetre), pluss to reelle hull rettet underveis
+
+Bygget de seks neste malene fra forrige "Neste økt": `request_approved_published`,
+`changes_requested`, `request_rejected` (alle tre i
+`src/lib/moderation/requests.ts`, samme fil som `notifyJournalist()`-
+helperen), `deadline_approaching_24h`/`stale_request_reminder_30d`
+(begge i `runDeadlineReminders()`/`runStaleRequestReminders()`,
+`src/lib/jobs/tick.ts`), og `response_request_closed`
+(`closeJournalistContentOnDeletion()`, `src/lib/auth/account-deletion.ts`).
+Utvidet `findSubmitted()` med `slug`/`title`, og begge tick-jobbene med
+`title`, slik at malene har reelt innhold å vise, ikke bare en ID.
+`send.test.ts`s fallback-test flyttet til `legal_terms_material_change`
+(den eneste ennå ubygde malen jeg er sikker vil forbli det en stund —
+se under). 19 av 23 maler i `TransactionalTemplate` har nå ekte
+innhold.
+
+To reelle hull oppdaget og rettet underveis, ingen av dem nye
+beslutninger:
+
+- **`new_response_received` lenket til feil side.** Kommentaren over
+  denne malen sa eksplisitt "midlertidig destinasjon... oppdater denne
+  lenken til den faktiske innboksen den dagen den finnes" —
+  svarinnboksen (`/journalist/requests/:id/responses`, SPEC-V1.md 13)
+  har eksistert siden en tidligere økt, men lenken var aldri
+  oppdatert. Rettet: lenker nå til innboksen, ikke forespørselens
+  offentlige side. `requestSlug` er dermed ikke lenger nødvendig for
+  denne malen (fortsatt påkrevd for `response_submitted_receipt`, som
+  IKKE kan lenke til journalistens innboks — respondenten er ikke
+  journalisten).
+- **Kontosletting lukket forespørsler UTEN å utløpe ventende
+  kontaktforespørsler.** `closeJournalistContentOnDeletion()`
+  (17.5, sist avsnitt) dupliserer `closeRequest()`s `published →
+  closed`-overgang direkte i stedet for å kalle den — og manglet
+  dermed 14.3-regelen ("utløper... når forespørselen lukkes") som ble
+  lagt til `closeRequest()` i en tidligere økt. Rettet ved å kopiere
+  samme utløps-spørring inn i kontosletting-stien.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**288
+tester**, +12 nye), `i18n:check` (**358 nøkler**), `design:check-tokens`
+(38 komponent-CSS-filer), `rm -rf .next && next build`,
+`test:integration` mot ekte lokal Postgres (47 tester, uendret — ingen
+regresjon fra `new_response_received`-lenkeendringen eller
+kontosletting-rettelsen). `moderation/requests.ts`, `tick.ts`s
+jobbfunksjoner og `account-deletion.ts` har fortsatt INGEN egen
+test-dekning (verken enhets- eller integrasjonstester) — samme
+pre-eksisterende testbarhetshull som (2) i forrige "Neste økt", ikke
+noe jeg har forverret. `requireModeratorForCountry()` (og dermed
+`publishRequest()`/`rejectRequest()`/`requestChanges()`) er avhengig av
+`getCurrentSession()`s request-skopede cookie-kontekst og kan derfor
+ikke enkelt kalles fra et frittstående skript — bekrefter hvorfor denne
+testbarhets-refaktoreringen er en egen, større oppgave, ikke noe som
+kan gjøres i forbifarten her.
+
+### Neste økt
+
+(1) fire maler gjenstår: `contact_request_cancelled_account_deleted`,
+`legal_terms_material_change`, `new_request_for_moderation` (allerede
+har en kaller i `submitRequest()`, `src/lib/requests/requests.ts`),
+`content_reported` (allerede har en kaller i `reports.ts`) — sjekk
+særlig om `legal_terms_material_change`s kallende funksjonalitet
+(varsel ved vesentlig endring i vilkår/personvernerklæring) faktisk er
+bygget ennå, eller om den selv er et "backend uten UI"-hull; oppdater
+`send.test.ts`s fallback-test igjen når `legal_terms_material_change`
+bygges; (2) den store testbarhets-refaktoreringen
+(`admin/`/`moderation/`-lib-laget, pluss nå bekreftet `tick.ts` og
+`account-deletion.ts`) — fortsatt bevisst utsatt, men voksende i omfang;
+(3) vurder om `contact_approved`/`contact_declined` bør bli egne
+`displayStatus`-verdier i 12.6; (4) resten av komponentbiblioteket
+(Dialog, Toast, Card, Alert, Tabs, Table, Pagination); (5) resten av
+16.1-dashbordet; (6) den ubrukte `"approved"`-verdien i
+`request_status`-enumen; (7) OG-delingsbilde; (8) det
+oversatte-stinavn-hullet (3.7); (9) faktisk Brevo-integrasjon når en
+API-nøkkel finnes; (10) den siste ubrukte `nav.*`-nøkkelen,
+`nav.requests`.

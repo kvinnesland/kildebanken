@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   auditLogs,
@@ -181,7 +181,7 @@ async function anonymizeRecipientContent(respondentUserId: string): Promise<void
  */
 async function closeJournalistContentOnDeletion(journalistUserId: string): Promise<void> {
   const openRequests = await db
-    .select({ id: requests.id })
+    .select({ id: requests.id, title: requests.title, slug: requests.slug })
     .from(requests)
     .where(and(eq(requests.journalistId, journalistUserId), eq(requests.status, "published")));
 
@@ -190,6 +190,23 @@ async function closeJournalistContentOnDeletion(journalistUserId: string): Promi
       .update(requests)
       .set({ status: "closed", closedAt: new Date() })
       .where(eq(requests.id, r.id));
+
+    // 14.3: pending kontaktforespørsler skal utløpe "når forespørselen
+    // lukkes" — også når lukkingen skjer via kontosletting, ikke bare via
+    // closeRequest() (src/lib/requests/requests.ts). Manglet her frem til
+    // nå, et reelt hull mellom to steder som begge lukker en forespørsel
+    // (rettet samme økt som `request_closed`, se NATTLOGG.md).
+    const responseIdsForRequest = db
+      .select({ id: responses.id })
+      .from(responses)
+      .where(eq(responses.requestId, r.id));
+
+    await db
+      .update(contactRequests)
+      .set({ status: "expired" })
+      .where(
+        and(eq(contactRequests.status, "pending"), inArray(contactRequests.responseId, responseIdsForRequest))
+      );
 
     const respondents = await db
       .select({ email: users.email, locale: users.locale })
@@ -201,7 +218,7 @@ async function closeJournalistContentOnDeletion(journalistUserId: string): Promi
       await sendTransactionalEmail({
         template: "response_request_closed",
         to: { email: respondent.email, locale: respondent.locale },
-        data: { requestId: r.id },
+        data: { requestId: r.id, title: r.title, slug: r.slug },
       });
     }
   }

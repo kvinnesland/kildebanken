@@ -231,6 +231,30 @@
   "email.journalist_rejected.heading": "Your journalist application has been rejected",
   "email.journalist_rejected.body": "Unfortunately, your application for a journalist account has not been approved. Reason: {reason}",
 
+  "email.request_approved_published.subject": "Your request is now published",
+  "email.request_approved_published.heading": "Your request is now published",
+  "email.request_approved_published.body": "The request \"{title}\" has been approved and is now published. Click the link below to view it.",
+  "email.request_approved_published.cta": "View the request",
+
+  "email.changes_requested.subject": "Changes are needed for your request",
+  "email.changes_requested.heading": "Changes are needed for your request",
+  "email.changes_requested.body": "A moderator has asked for changes before your request can be published. Comment: {comment}",
+  "email.changes_requested.cta": "Edit the request",
+
+  "email.request_rejected.subject": "Your request has been rejected",
+  "email.request_rejected.heading": "Your request has been rejected",
+  "email.request_rejected.body": "Unfortunately, your request has not been approved for publication. Reason: {reason}",
+
+  "email.deadline_approaching_24h.subject": "Your request expires in 24 hours",
+  "email.deadline_approaching_24h.heading": "Your request expires in 24 hours",
+  "email.deadline_approaching_24h.body": "The response deadline for the request \"{title}\" expires in 24 hours.",
+  "email.deadline_approaching_24h.cta": "View the request",
+
+  "email.stale_request_reminder_30d.subject": "Your request has been open for a while",
+  "email.stale_request_reminder_30d.heading": "Your request has been open for a while",
+  "email.stale_request_reminder_30d.body": "The request \"{title}\" has been published for 30 days. If it's no longer relevant, you can close it.",
+  "email.stale_request_reminder_30d.cta": "View the request",
+
   "email.confirm_account_deletion.subject": "Confirm deletion of your account",
   "email.confirm_account_deletion.heading": "Confirm deletion of your account",
   "email.confirm_account_deletion.body": "You've asked to delete your account. Click the link below to confirm. This action can't be undone.",
@@ -259,6 +283,11 @@
   "email.request_closed.heading": "Your request is now closed",
   "email.request_closed.body": "The request \"{title}\" is now closed and no longer accepts new responses.",
   "email.request_closed.cta": "View the request",
+
+  "email.response_request_closed.subject": "The request you responded to is closed",
+  "email.response_request_closed.heading": "The request you responded to is closed",
+  "email.response_request_closed.body": "The request \"{title}\", which you responded to, is now closed.",
+  "email.response_request_closed.cta": "View the request",
 
   "contact_request.title": "Request for further contact",
   "contact_request.message_label": "Message from the journalist",

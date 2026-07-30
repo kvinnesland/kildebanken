@@ -231,6 +231,30 @@
   "email.journalist_rejected.heading": "Journalistsøknaden din er avvist",
   "email.journalist_rejected.body": "Søknaden din om en journalistkonto er dessverre ikke godkjent. Begrunnelse: {reason}",
 
+  "email.request_approved_published.subject": "Forespørselen din er publisert",
+  "email.request_approved_published.heading": "Forespørselen din er publisert",
+  "email.request_approved_published.body": "Forespørselen «{title}» er nå godkjent og publisert. Klikk lenken under for å se den.",
+  "email.request_approved_published.cta": "Se forespørselen",
+
+  "email.changes_requested.subject": "Endringer kreves for forespørselen din",
+  "email.changes_requested.heading": "Endringer kreves for forespørselen din",
+  "email.changes_requested.body": "En moderator har bedt om endringer før forespørselen din kan publiseres. Kommentar: {comment}",
+  "email.changes_requested.cta": "Rediger forespørselen",
+
+  "email.request_rejected.subject": "Forespørselen din er avvist",
+  "email.request_rejected.heading": "Forespørselen din er avvist",
+  "email.request_rejected.body": "Forespørselen din er dessverre ikke godkjent for publisering. Begrunnelse: {reason}",
+
+  "email.deadline_approaching_24h.subject": "Forespørselen din utløper om 24 timer",
+  "email.deadline_approaching_24h.heading": "Forespørselen din utløper om 24 timer",
+  "email.deadline_approaching_24h.body": "Svarfristen for forespørselen «{title}» går ut om 24 timer.",
+  "email.deadline_approaching_24h.cta": "Se forespørselen",
+
+  "email.stale_request_reminder_30d.subject": "Forespørselen din har vært åpen lenge",
+  "email.stale_request_reminder_30d.heading": "Forespørselen din har vært åpen lenge",
+  "email.stale_request_reminder_30d.body": "Forespørselen «{title}» har vært publisert i 30 dager. Hvis den ikke lenger er aktuell, kan du lukke den.",
+  "email.stale_request_reminder_30d.cta": "Se forespørselen",
+
   "email.confirm_account_deletion.subject": "Bekreft sletting av kontoen din",
   "email.confirm_account_deletion.heading": "Bekreft sletting av kontoen din",
   "email.confirm_account_deletion.body": "Du har bedt om å slette kontoen din. Klikk lenken under for å bekrefte. Denne handlingen kan ikke angres.",
@@ -259,6 +283,11 @@
   "email.request_closed.heading": "Forespørselen din er lukket",
   "email.request_closed.body": "Forespørselen «{title}» er nå lukket og tar ikke imot flere svar.",
   "email.request_closed.cta": "Se forespørselen",
+
+  "email.response_request_closed.subject": "Forespørselen du svarte på er lukket",
+  "email.response_request_closed.heading": "Forespørselen du svarte på er lukket",
+  "email.response_request_closed.body": "Forespørselen «{title}», som du har svart på, er nå lukket.",
+  "email.response_request_closed.cta": "Se forespørselen",
 
   "contact_request.title": "Forespørsel om videre kontakt",
   "contact_request.message_label": "Melding fra journalisten",

@@ -387,7 +387,7 @@ async function runDeadlineReminders(dbase: Database): Promise<TickResult> {
   // 15. minutt uten å sende samme påminnelse flere ganger — erstatter det
   // tidligere tidsvindu-hacket.
   const soon = await dbase
-    .select({ id: requests.id, journalistId: requests.journalistId })
+    .select({ id: requests.id, journalistId: requests.journalistId, title: requests.title })
     .from(requests)
     .where(
       and(
@@ -408,7 +408,7 @@ async function runDeadlineReminders(dbase: Database): Promise<TickResult> {
       await sendTransactionalEmail({
         template: "deadline_approaching_24h",
         to: { email: journalist.email, locale: journalist.locale },
-        data: { requestId: r.id },
+        data: { requestId: r.id, title: r.title },
       });
       await dbase
         .update(requests)
@@ -437,7 +437,7 @@ async function runStaleRequestReminders(dbase: Database): Promise<TickResult> {
   // deadlineReminderSentAt over. Sendes én gang per forespørsel, ikke
   // gjentatt frem til den lukkes.
   const stale = await dbase
-    .select({ id: requests.id, journalistId: requests.journalistId })
+    .select({ id: requests.id, journalistId: requests.journalistId, title: requests.title })
     .from(requests)
     .where(
       and(
@@ -458,7 +458,7 @@ async function runStaleRequestReminders(dbase: Database): Promise<TickResult> {
       await sendTransactionalEmail({
         template: "stale_request_reminder_30d",
         to: { email: journalist.email, locale: journalist.locale },
-        data: { requestId: r.id },
+        data: { requestId: r.id, title: r.title },
       });
       await dbase
         .update(requests)

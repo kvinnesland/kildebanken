@@ -73,7 +73,7 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
     await sendTransactionalEmail({
       template: "new_response_received",
       to: { email: "journalist@example.com", locale: "nb-NO" },
-      data: { requestId: "req-1", requestTitle: "En testforespørsel", requestSlug: "en-testforesporsel" },
+      data: { requestId: "req-1", requestTitle: "En testforespørsel" },
     });
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
@@ -207,13 +207,13 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     await sendTransactionalEmail({
-      template: "request_approved_published",
+      template: "legal_terms_material_change",
       to: { email: "test@example.com", locale: "nb-NO" },
       data: { requestId: "some-id" },
     });
 
     expect(warnSpy).toHaveBeenCalledWith(
-      "[email:stub] request_approved_published → test@example.com (nb-NO)",
+      "[email:stub] legal_terms_material_change → test@example.com (nb-NO)",
       { requestId: "some-id" }
     );
   });

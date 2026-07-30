@@ -12,6 +12,12 @@ import { renderContactRequestReceivedEmail } from "./templates/contact-request-r
 import { renderContactApprovedEmail } from "./templates/contact-approved";
 import { renderContactDeclinedEmail } from "./templates/contact-declined";
 import { renderRequestClosedEmail } from "./templates/request-closed";
+import { renderRequestApprovedPublishedEmail } from "./templates/request-approved-published";
+import { renderChangesRequestedEmail } from "./templates/changes-requested";
+import { renderRequestRejectedEmail } from "./templates/request-rejected";
+import { renderDeadlineApproaching24hEmail } from "./templates/deadline-approaching-24h";
+import { renderStaleRequestReminder30dEmail } from "./templates/stale-request-reminder-30d";
+import { renderResponseRequestClosedEmail } from "./templates/response-request-closed";
 import type { RenderedEmail } from "./templates/simple-cta-email";
 
 // Tynt e-postgrensesnitt. Selve jobblogikken (src/lib/jobs/tick.ts) kaller
@@ -57,13 +63,14 @@ export interface SendTransactionalEmailInput {
 
 /**
  * Rendrer den faktiske mal-HTML-en/-teksten for de malene som har en ekte
- * mal bygget (foreløpig tretten, økt 7 — de andre 10 malene i
+ * mal bygget (foreløpig nitten, økt 7 — de andre 4 malene i
  * `TransactionalTemplate` er ennå bare navn uten innhold, se NATTLOGG.md).
  * `null` betyr "ingen mal bygget ennå for denne, ELLER dataene som kreves
  * mangler", ikke en feil — stubben under faller da tilbake til det gamle,
  * generiske loggformatet. Grenene sjekker BARE de feltene sin egen mal
- * faktisk trenger, ikke en felles "token"-forutsetning for alle — de nye
- * svar-malene bruker `requestId`/`requestTitle`/`requestSlug`, ikke `token`.
+ * faktisk trenger, ikke en felles "token"-forutsetning for alle — svar-
+ * malene bruker `requestId`/`requestTitle` (og `requestSlug` for den som
+ * lenker til den offentlige siden), ikke `token`.
  */
 function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedEmail | null {
   const locale = isSupportedLocale(input.to.locale) ? input.to.locale : PLATFORM_DEFAULT_LOCALE;
@@ -92,8 +99,7 @@ function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedE
       if (typeof reason !== "string") return null;
       return renderJournalistRejectedEmail(locale, reason);
     }
-    case "response_submitted_receipt":
-    case "new_response_received": {
+    case "response_submitted_receipt": {
       const { requestId, requestTitle, requestSlug } = input.data;
       if (
         typeof requestId !== "string" ||
@@ -102,9 +108,12 @@ function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedE
       ) {
         return null;
       }
-      return input.template === "response_submitted_receipt"
-        ? renderResponseSubmittedReceiptEmail(locale, requestId, requestTitle, requestSlug)
-        : renderNewResponseReceivedEmail(locale, requestId, requestTitle, requestSlug);
+      return renderResponseSubmittedReceiptEmail(locale, requestId, requestTitle, requestSlug);
+    }
+    case "new_response_received": {
+      const { requestId, requestTitle } = input.data;
+      if (typeof requestId !== "string" || typeof requestTitle !== "string") return null;
+      return renderNewResponseReceivedEmail(locale, requestId, requestTitle);
     }
     case "contact_request_received": {
       const { contactRequestId, requestTitle, journalistName, organizationName } = input.data;
@@ -135,6 +144,40 @@ function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedE
       const { requestId, title } = input.data;
       if (typeof requestId !== "string" || typeof title !== "string") return null;
       return renderRequestClosedEmail(locale, requestId, title);
+    }
+    case "request_approved_published": {
+      const { requestId, title, slug } = input.data;
+      if (typeof requestId !== "string" || typeof title !== "string" || typeof slug !== "string") {
+        return null;
+      }
+      return renderRequestApprovedPublishedEmail(locale, requestId, title, slug);
+    }
+    case "changes_requested": {
+      const { requestId, comment } = input.data;
+      if (typeof requestId !== "string" || typeof comment !== "string") return null;
+      return renderChangesRequestedEmail(locale, requestId, comment);
+    }
+    case "request_rejected": {
+      const reason = input.data.reason;
+      if (typeof reason !== "string") return null;
+      return renderRequestRejectedEmail(locale, reason);
+    }
+    case "deadline_approaching_24h": {
+      const { requestId, title } = input.data;
+      if (typeof requestId !== "string" || typeof title !== "string") return null;
+      return renderDeadlineApproaching24hEmail(locale, requestId, title);
+    }
+    case "stale_request_reminder_30d": {
+      const { requestId, title } = input.data;
+      if (typeof requestId !== "string" || typeof title !== "string") return null;
+      return renderStaleRequestReminder30dEmail(locale, requestId, title);
+    }
+    case "response_request_closed": {
+      const { requestId, title, slug } = input.data;
+      if (typeof requestId !== "string" || typeof title !== "string" || typeof slug !== "string") {
+        return null;
+      }
+      return renderResponseRequestClosedEmail(locale, requestId, title, slug);
     }
     default:
       return null;

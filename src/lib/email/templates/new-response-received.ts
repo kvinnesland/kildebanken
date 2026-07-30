@@ -5,20 +5,19 @@ import { renderSimpleCtaEmail, type RenderedEmail } from "./simple-cta-email";
 
 /**
  * "Nytt svar mottatt" (SPEC-V1.md 15) — sendes til JOURNALISTEN rett etter
- * `submitResponse()`. Lenker til forespørselens EGEN offentlige side som en
- * midlertidig destinasjon — journalistens svarinnboks (SPEC-V1.md 13, "per
- * forespørsel vises antall svar, antall uleste og status/frist") er IKKE
- * bygget ennå, se NATTLOGG.md. Oppdater denne lenken til den faktiske
- * innboksen den dagen den finnes.
+ * `submitResponse()`. Lenker til journalistens egen svarinnboks for
+ * forespørselen (SPEC-V1.md 13, `/journalist/requests/:id/responses`), ikke
+ * forespørselens offentlige side — den lenken ble brukt midlertidig før
+ * innboksen var bygget, se NATTLOGG.md (rettet her, samme økt som
+ * `request_closed`).
  */
 export function renderNewResponseReceivedEmail(
   locale: SupportedLocale,
   requestId: string,
-  requestTitle: string,
-  requestSlug: string
+  requestTitle: string
 ): RenderedEmail {
   const t = createTranslator(locale);
-  const requestUrl = `${SITE_ORIGIN}/${locale}/foresporsler/${requestId}/${requestSlug}`;
+  const requestUrl = `${SITE_ORIGIN}/${locale}/journalist/requests/${requestId}/responses`;
 
   return renderSimpleCtaEmail({
     locale,

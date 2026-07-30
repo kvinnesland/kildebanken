@@ -86,7 +86,7 @@ export async function submitResponse(
       await sendTransactionalEmail({
         template: "new_response_received",
         to: { email: journalist.email, locale: journalist.locale },
-        data: { requestId, requestTitle: request.title, requestSlug: request.slug },
+        data: { requestId, requestTitle: request.title },
       });
     }
 

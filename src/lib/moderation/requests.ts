@@ -16,6 +16,8 @@ async function findSubmitted(requestId: string) {
       countryCode: requests.countryCode,
       journalistId: requests.journalistId,
       status: requests.status,
+      slug: requests.slug,
+      title: requests.title,
     })
     .from(requests)
     .where(eq(requests.id, requestId))
@@ -76,7 +78,11 @@ export async function publishRequest(requestId: string): Promise<ModerationActio
     entityId: requestId,
   });
 
-  await notifyJournalist(request.journalistId, "request_approved_published", { requestId });
+  await notifyJournalist(request.journalistId, "request_approved_published", {
+    requestId,
+    title: request.title,
+    slug: request.slug,
+  });
 
   return { ok: true };
 }
