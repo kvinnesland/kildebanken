@@ -406,6 +406,16 @@ JournalistProfile.verification_status (kun journalist, 19.5):
 moderatorhandling (godkjenn/avvis) — aldri av innloggings- eller
 verifiseringsflyten.
 
+**Presisert under autonomt arbeid** (se `NATTLOGG.md`, økt 7): diagrammet
+over har bevisst INGEN tilbakepiler — `approved` og `rejected` er
+ENDELIGE tilstander, akkurat som `verification_status = rejected` allerede
+er dokumentert som endelig lenger opp i denne seksjonen. En
+godkjennings-/avvisningshandling skal derfor avvises dersom søknaden ikke
+lenger står i `pending_review` (f.eks. to moderatorer som handler på samme
+søknad samtidig, eller en gjentatt/replayet forespørsel) — samme prinsipp
+som FR-029 sin re-håndhevelse i `moderation/requests.ts`
+(`errors.request_not_editable`), ikke bare håndhevet ved selve innsendingen.
+
 | `User.status` | `verification_status` | Kan logge inn | Kan lage utkast | Kan sende til moderering |
 |---|---|---|---|---|
 | `pending_email_verification` | (uansett) | nei | nei | nei |

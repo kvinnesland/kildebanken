@@ -5821,3 +5821,63 @@ sammenlign alle `registration/*.ts`-, `moderation/*.ts`- og
 `admin/*.ts`-filene parvis for asymmetriske sjekker). Brevo-integrasjon,
 resten av komponentbiblioteket, og OG-delingsbilde forblir alle korrekt
 blokkert (se punktene notert i tidligere økter).
+
+---
+
+## Fortsettelse av økt 7 — enda et reelt spec-vs-kode-hull funnet og rettet: journalistgodkjenning/-avvisning kunne flippes frem og tilbake
+
+Tok fatt på selve søkeforslaget fra forrige "Neste økt": sammenlignet
+`moderation/journalists.ts` parvis mot `moderation/requests.ts` (samme
+kategori — moderatorhandling som avgjør en søknad/forespørsel).
+
+**Fant en reell asymmetri**: `moderation/requests.ts` sine tre
+handlinger (`publishRequest`, `rejectRequest`, `requestChanges`) håndhever
+ALLE eksplisitt `if (request.status !== "submitted") return
+errors.request_not_editable` FØR de gjør noe — dokumentert i requests.ts
+sin egen kommentar som en bevisst re-håndhevelse av FR-029 mot at to
+moderatorer handler samtidig på samme sak. `moderation/journalists.ts` sine
+to tilsvarende handlinger (`approveJournalist`, `rejectJournalist`) hadde
+INGEN tilsvarende sjekk — en søknad som allerede var `approved` kunne
+kalles med `rejectJournalist()` og flippes til `rejected` (og omvendt),
+til tross for at SPEC-V1.md 8.1s eget diagram allerede tegner
+`verification_status` som en énveis, endelig tilstandsovergang (ingen
+tilbakepiler). Verifiserte at hverken API-rutene
+(`/admin/journalists/:id/approve|reject`) eller UI-siden
+(`admin/journalists/page.tsx`, som kun henter `pending_review`-søknader)
+kompenserer for dette på noen måte som ville hindre det via en annen kanal
+(f.eks. to samtidig åpne moderator-faner, eller en gjentatt/replayet
+forespørsel).
+
+Presiserte SPEC-V1.md 8.1 (diagrammet har alltid vært endelig, men sa det
+ikke eksplisitt i tekst) FØR jeg rettet koden: la til en guard i begge
+funksjonene (`if (journalist.verificationStatus !== "pending_review")
+return errors.journalist_not_pending_review`, plassert FØR
+autorisasjonssjekken, samme rekkefølge som requests.ts sin egen guard), ny
+feilnøkkel i begge språkfiler, og to nye tester i
+`journalists.integration.test.ts` (godkjenn-så-godkjenn-igjen, og
+avvis-så-godkjenn — begge nå korrekt avvist, den avviste raden forblir
+`rejected` uendret).
+
+Sjekket også `moderation/users.ts` (suspend/unsuspend) og
+`admin/responses.ts` (unntaksvis oppslag) i samme runde — begge allerede
+korrekte (`users.ts` håndterer idempotens eksplisitt i begge retninger,
+`responses.ts` er skrivebeskyttet uten tilstandsovergang å beskytte).
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**335
+tester**, uendret), `i18n:check` (**387 nøkler brukt i kode**, uendret —
+den nye feilnøkkelen er, som flere andre `errors.*`-nøkler i denne
+kodebasen, kun konsumert via API-responsen, ikke via en direkte `t()`-kall
+i UI-en ennå), `design:check-tokens` (**40** komponent-CSS-filer,
+uendret), `rm -rf .next && next build` (grønn), `test:integration` mot
+ekte lokal Postgres (**205 tester**, +2).
+
+### Neste økt
+
+Fortsett samme type parvise sammenligning på flere hjørner av kodebasen
+(spesielt steder med en tilstandsovergang som IKKE er eksplisitt beskyttet
+mot dobbel/samtidig handling — dette er nå den nest funnet forekomsten av
+akkurat dette mønsteret på to påfølgende økter, så det er trolig en
+produktiv jaktstrategi videre). Brevo-integrasjon, resten av
+komponentbiblioteket, og OG-delingsbilde forblir alle korrekt blokkert.

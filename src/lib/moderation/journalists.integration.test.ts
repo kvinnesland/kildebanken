@@ -178,4 +178,39 @@ describe("approveJournalist/rejectJournalist mot ekte Postgres", () => {
 
     expect(result).toEqual({ ok: true });
   });
+
+  it("approveJournalist(): avviser en søknad som allerede er GODKJENT (8.1: verification_status er endelig)", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await ensureTestCountry();
+    const journalist = await createPendingJournalist(TEST_COUNTRY_CODE);
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    await loginAs(moderator.id);
+    const first = await approveJournalist(journalist.id);
+    expect(first).toEqual({ ok: true });
+
+    const second = await approveJournalist(journalist.id);
+
+    expect(second).toEqual({ ok: false, error: "errors.journalist_not_pending_review" });
+  });
+
+  it("rejectJournalist(): avviser en søknad som allerede er AVVIST — kan ikke flippes frem og tilbake", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await ensureTestCountry();
+    const journalist = await createPendingJournalist(TEST_COUNTRY_CODE);
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    await loginAs(moderator.id);
+    const first = await rejectJournalist(journalist.id, "Første begrunnelse.");
+    expect(first).toEqual({ ok: true });
+
+    const second = await approveJournalist(journalist.id);
+
+    expect(second).toEqual({ ok: false, error: "errors.journalist_not_pending_review" });
+    const [profile] = await db
+      .select()
+      .from(journalistProfiles)
+      .where(eq(journalistProfiles.userId, journalist.id));
+    expect(profile?.verificationStatus).toBe("rejected");
+  });
 });

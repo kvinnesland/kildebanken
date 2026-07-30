@@ -427,6 +427,7 @@
   "errors.invalid_locale": "Dette språket er ikke tilgjengelig i valgt land.",
   "errors.legal_documents_unavailable": "Denne kombinasjonen av land og språk er ikke klar for registrering ennå.",
   "errors.email_already_registered": "Denne e-postadressen er allerede registrert.",
+  "errors.journalist_not_pending_review": "Denne søknaden er allerede behandlet.",
   "errors.not_found": "Fant ikke det du lette etter.",
   "errors.not_authorized": "Du har ikke tilgang til å gjøre dette.",
   "errors.reason_required": "Du må oppgi en begrunnelse.",

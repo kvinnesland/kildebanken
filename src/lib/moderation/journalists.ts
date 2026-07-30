@@ -28,10 +28,19 @@ async function findJournalist(journalistUserId: string) {
 /**
  * SPEC-V1.md 8: moderator (tildelt landet) eller administrator kan
  * godkjenne. FR-050: alle moderator-/administratorhandlinger logges.
+ *
+ * `verification_status` er ENDELIG én gang satt (8.1, presisert økt 7) —
+ * avviser derfor en søknad som ikke lenger er `pending_review`, samme
+ * re-håndhevelses-mønster som `publishRequest()` i moderation/requests.ts
+ * (to moderatorer som handler samtidig, eller en gjentatt forespørsel, skal
+ * ikke kunne flippe status frem og tilbake).
  */
 export async function approveJournalist(journalistUserId: string): Promise<ModerationResult> {
   const journalist = await findJournalist(journalistUserId);
   if (!journalist) return { ok: false, error: "errors.not_found" };
+  if (journalist.verificationStatus !== "pending_review") {
+    return { ok: false, error: "errors.journalist_not_pending_review" };
+  }
 
   const session = await requireModeratorForCountry(journalist.countryCode);
   if (!session) return { ok: false, error: "errors.not_authorized" };
@@ -73,6 +82,9 @@ export async function rejectJournalist(
 
   const journalist = await findJournalist(journalistUserId);
   if (!journalist) return { ok: false, error: "errors.not_found" };
+  if (journalist.verificationStatus !== "pending_review") {
+    return { ok: false, error: "errors.journalist_not_pending_review" };
+  }
 
   const session = await requireModeratorForCountry(journalist.countryCode);
   if (!session) return { ok: false, error: "errors.not_authorized" };
