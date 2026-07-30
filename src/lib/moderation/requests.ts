@@ -1,6 +1,6 @@
 import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { auditLogs, requests, users } from "@/db/schema";
+import { auditLogs, journalistProfiles, requests, users } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { requireModeratorForCountry, getAssignedCountryCodes } from "@/lib/auth/authorize";
 import type { CurrentSession } from "@/lib/auth/session";
@@ -159,7 +159,10 @@ export async function requestChanges(requestId: string, comment: string): Promis
 }
 
 /** GET /admin/moderation/requests — filtrert på moderatorens tildelte land,
- * samme mønster som listJournalists() i src/lib/moderation/journalists.ts. */
+ * samme mønster som listJournalists() i src/lib/moderation/journalists.ts.
+ * Joiner journalistProfiles for VISNING (9.3: moderator må kunne vurdere
+ * "legitimt journalistisk formål" — trenger å se HVEM som spør, ikke bare
+ * selve teksten). */
 export async function listModerationQueue(session: CurrentSession) {
   const assigned = await getAssignedCountryCodes(session);
   if (assigned !== "all" && assigned.length === 0) return [];
@@ -168,7 +171,19 @@ export async function listModerationQueue(session: CurrentSession) {
   if (assigned !== "all") conditions.push(inArray(requests.countryCode, assigned));
 
   return db
-    .select()
+    .select({
+      id: requests.id,
+      title: requests.title,
+      summary: requests.summary,
+      description: requests.description,
+      targetPersonDescription: requests.targetPersonDescription,
+      countryCode: requests.countryCode,
+      responseDeadline: requests.responseDeadline,
+      createdAt: requests.createdAt,
+      journalistFullName: journalistProfiles.fullName,
+      organizationName: journalistProfiles.organizationName,
+    })
     .from(requests)
+    .innerJoin(journalistProfiles, eq(requests.journalistId, journalistProfiles.userId))
     .where(and(...conditions));
 }

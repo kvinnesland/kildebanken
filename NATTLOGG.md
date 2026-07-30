@@ -3999,3 +3999,126 @@ ubrukte `"approved"`-verdien i `request_status`-enumen (se over); (5)
 OG-delingsbilde; (6) det oversatte-stinavn-hullet (3.7); (7)
 `prefers-color-scheme` for e-postmaler; (8) flere e-postmaler etter
 behov; (9) faktisk Brevo-integrasjon når en API-nøkkel finnes.
+
+---
+
+## Fortsettelse av økt 7 — moderator-/administrasjonskøen (SPEC-V1.md 16), samme "backend uten UI"-mønster som forrige del
+
+Fortsatte rett videre på punkt (3) fra forrige "Neste økt" i stedet for
+svarinnboksen (som sto øverst) — uten en moderator som faktisk kan
+godkjenne noe gjennom grensesnittet, var forespørsel-skjemaet fra forrige
+del av økten en blindvei: en innsendt forespørsel kunne ALDRI bli
+`published` uten et direkte API-kall, og dermed ville svarinnboksen ikke
+hatt noe ekte, gjennom-grensesnittet-publisert innhold å vise. Samme
+"hva blokkerer den gyldne stien faktisk"-resonnement som sist, ikke en ny
+prioriteringsprosess.
+
+**Bevisst avgrenset, IKKE hele 16.1-dashbordet**: `SPEC-V1.md` 16 beskriver
+et fullt dashbord (statistikk, flere køer, landvelger for administrator,
+utsendelsesstatus osv.) — bygget her er BARE de to køene som faktisk
+blokkerer noe (journalistsøknader, innsendte forespørsler), med
+godkjenn/avvis/be-om-endringer-handlinger. Resten av 16 er fortsatt et
+reelt hull, notert under "Neste økt".
+
+### Bygget
+
+- `src/app/[locale]/admin/journalists/page.tsx` +
+  `JournalistQueueItem.tsx` — `GET /admin/journalists?status=pending_review`
+  (kalt direkte via `listJournalists()`, samme mønster som journalist-
+  sidene i forrige del av økten), med Godkjenn (direkte) og Avvis
+  (åpner en begrunnelses-tekstboks, begrunnelsen er obligatorisk — 8:
+  "avvisning skal ha en begrunnelse som sendes til søkeren").
+- `src/app/[locale]/admin/requests/page.tsx` + `RequestQueueItem.tsx` —
+  `listModerationQueue()`, med tre handlinger: "Godkjenn og publiser"
+  (direkte), "Be om endringer" (kommentar obligatorisk), "Avvis"
+  (begrunnelse obligatorisk) — nøyaktig de tre overgangene 9.2 tillater
+  fra `submitted`.
+- `listModerationQueue()` (`src/lib/moderation/requests.ts`) utvidet til
+  å joine `journalistProfiles` for VISNING (9.3: moderator skal vurdere
+  "legitimt journalistisk formål" — må se hvem som spør, ikke bare
+  forespørselsteksten). Endret fra `select()` (alle rå-kolonner, aldri
+  brukt av noen tidligere kaller) til et eksplisitt felt-sett + de to
+  nye navnefeltene.
+- Etter en handling kalles `router.refresh()` — elementet forsvinner
+  fra køen ved neste server-rendring i stedet for å administrere en
+  klientside-liste selv, samme mønster som ville vært naturlig andre
+  steder i kodebasen.
+- 25 nye `admin.journalists.*`/`admin.requests.*`-oversettelser.
+
+### Et reelt, pre-eksisterende arkitekturhull oppdaget: `moderation/*.ts` kan ikke integrasjonstestes
+
+Forsøkte først å skrive en integrasjonstest for `listModerationQueue()`
+sin nye join (samme disiplin som resten av natten: verifiser mot ekte
+Postgres, ikke bare stol på koden). Testen feilet UMIDDELBART med
+`"This module cannot be imported from a Client Component module"` — selv
+etter å ha fjernet enhver egen import av `CurrentSession`-typen.
+
+Årsaken er strukturell, ikke noe jeg introduserte: `src/lib/moderation/
+requests.ts` importerer `requireModeratorForCountry`/
+`getAssignedCountryCodes` fra `src/lib/auth/authorize.ts`, som igjen
+importerer `getCurrentSession` fra `src/lib/auth/session.ts`, som har
+`import "server-only"` øverst. Denne pakken kaster en feil i ETHVERT
+miljø som ikke eksplisitt setter Next sin `react-server`-
+modulforhold-betingelse (`exports` i `server-only` sin `package.json`)
+— noe Vitest ikke gjør. Siden ES-moduler importerer en fils HELE
+topptekst uavhengig av hvilken navngitt eksport man faktisk bruker,
+poisoner dette HELE `requests.ts`/`journalists.ts` for testformål, selv
+for en funksjon som `listModerationQueue()` som aldri selv kaller
+`getCurrentSession()`.
+
+Til sammenligning importerer `src/lib/requests/requests.ts` (forrige del
+av økten) ALDRI `session.ts` — den tar `journalistUserId`/`actorUserId`
+som rene strengparametre og lar RUTEN slå opp økten, nøyaktig for å
+unngå denne koblingen. `moderation/*.ts` brøt dette mønsteret ved å
+kalle `requireModeratorForCountry()` (som slår opp økten SELV) direkte
+fra lib-laget. Ingen eksisterende tester fantes for disse filene fra før
+— dette er altså IKKE en regresjon jeg innførte, men et reelt,
+pre-eksisterende hull i testbarheten som jeg støtte på.
+
+**Ikke rettet nå** — å dele opp `authorize.ts` (rendyrke
+`getAssignedCountryCodes()` til en fil som bare type-importerer
+`CurrentSession`) hjelper ikke alene, siden `requireModeratorForCountry()`
+(som trengs av SKRIVE-handlingene i samme fil) uansett trekker inn
+`session.ts` for hele modulen. En ekte fiks krever enten å flytte
+`listModerationQueue()` til en egen fil, eller omstrukturere hvordan
+skrivehandlingene henter sin autorisasjon (la RUTEN slå opp økten og gi
+den videre, som i `requests.ts`) — begge er reelle, men egne
+refaktoreringsoppgaver, ikke noe å gjøre som en bivirkning av én ny
+kolonne i én spørring. Verifiserte joinen i stedet med et engangs
+`tsx`-skript direkte mot databasen (kjørt og slettet igjen) — bekreftet
+riktig `journalistFullName`/`organizationName`.
+
+### Verifisert ende til ende i en ekte nettleser
+
+Samme produksjonsbygg-metode som forrige del av økten (dev-modus
+kolliderer fortsatt med CSP-en). Logget inn som en sådd moderator tildelt
+testlandet: avviste en ventende journalistsøknad (køen ble tom
+etterpå), og publiserte en innsendt forespørsel (forsvant fra
+modereringskøen etterpå, `status` ble `published` i databasen).
+Skjermbilde tatt og sjekket visuelt.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**234
+tester**, uendret — se avsnittet over for hvorfor ingen ny
+enhetstest/integrasjonstest kunne legges til for selve joinen),
+`i18n:check` (**199 nøkler**), `design:check-tokens` (25
+komponent-CSS-filer), `rm -rf .next && next build`, `test:integration`
+mot ekte lokal Postgres (41 tester, uendret), PLUSS
+ende-til-ende-nettleserverifiseringen beskrevet over.
+
+### Neste økt
+
+(1) journalistens svarinnboks (SPEC-V1.md 13) — nå er BÅDE
+forespørsel-opprettelse OG moderasjon bygget, så dette gir endelig mening
+å teste med ekte, gjennom-grensesnittet-publiserte forespørsler; (2)
+vurder å rette testbarhetshullet i `moderation/*.ts` (se over) FØR flere
+funksjoner legges til der, ikke etter; (3) resten av komponentbiblioteket
+(Dialog, Toast, Card, Alert, Tabs, Table, Pagination, EmptyState,
+SkeletonLoader, LanguageSwitcher); (4) resten av 16.1-dashbordet
+(statistikk, landvelger for administrator, utsendelsesstatus) — bevisst
+utelatt fra denne økten som bare bygget de to blokkerende køene; (5) den
+ubrukte `"approved"`-verdien i `request_status`-enumen; (6)
+OG-delingsbilde; (7) det oversatte-stinavn-hullet (3.7); (8)
+`prefers-color-scheme` for e-postmaler; (9) flere e-postmaler etter
+behov; (10) faktisk Brevo-integrasjon når en API-nøkkel finnes.
