@@ -2871,22 +2871,25 @@ og feiltilstand — se over.
   tekst mot `--color-surface`/`--color-bg` bør bruke samme mønster
   (`--color-success-text`/`--color-warning-text`) FØR de gjør det, ikke
   etter at kontrasttesten fanger det.
-- Lenkene i samtykketeksten (`Vilkår`/`Personvernerklæring`, bygget forrige
-  del av økten) har ALDRI fått egen styling — de arver nettleserens
-  standard lenkefarge, ikke `--color-link`-tokenet. Oppdaget under den
-  visuelle sjekken i denne runden. Ikke rettet nå (fungerer, ser rimelig ut
-  siden standardblått og aksentblått tilfeldigvis ligner), men bør få en
-  delt `.link`-klasse som bruker `--color-link` når noen bygger flere
-  lenker i løpende tekst.
+- **Rettelse av en antagelse fra samme runde:** trodde først at lenkene i
+  samtykketeksten (`Vilkår`/`Personvernerklæring`) arvet nettleserens
+  standardfarge fordi de så "vanlig blå" ut på skjermbildet. Sjekket det
+  FAKTISK i stedet for å stole på det visuelle inntrykket alene
+  (`getComputedStyle` i en ekte nettleser): `globals.css` har allerede en
+  global `a { color: var(--color-link); }`-regel (linje 26–28), og
+  lenkeelementet sin faktisk beregnede farge er nøyaktig
+  `oklch(0.43 0.082 230)` — samme verdi som `--color-link`/`--accent-700`.
+  Ingen feil her. Notatet under (fra da jeg trodde det VAR en feil) er
+  strøket, men står igjen som en påminnelse om å verifisere med
+  `getComputedStyle`, ikke gjette ut fra et skjermbilde, før noe kalles en
+  feil i NATTLOGG.
 
 ### Neste økt
 
-(1) Rett lenkestylingen nevnt over (`--color-link`, delt CSS-klasse for
-lenker i løpende tekst); (2) vurder `--color-success-text`/
-`--color-warning-text` FØR noen faktisk bruker dem som ren tekst; (3) en
-Postgres-service-container i CI for `test:integration`; (4) resten av
-komponentbiblioteket (TextArea, RadioGroup, Dialog, Toast, Badge, Card,
-Alert, Tabs, Table, Pagination, EmptyState, SkeletonLoader,
-LanguageSwitcher); (5) en offentlig forespørsel-liste/-visning
-(`/[locale]/requests`, SPEC-V1.md seksjon 9) — se forrige økts vurdering av
-hvorfor den bør brytes ned først.
+(1) vurder `--color-success-text`/`--color-warning-text` FØR noen faktisk
+bruker dem som ren tekst; (2) en Postgres-service-container i CI for
+`test:integration`; (3) resten av komponentbiblioteket (TextArea,
+RadioGroup, Dialog, Toast, Badge, Card, Alert, Tabs, Table, Pagination,
+EmptyState, SkeletonLoader, LanguageSwitcher); (4) en offentlig
+forespørsel-liste/-visning (`/[locale]/requests`, SPEC-V1.md seksjon 9) —
+se forrige økts vurdering av hvorfor den bør brytes ned først.
