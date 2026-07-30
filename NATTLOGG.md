@@ -5549,3 +5549,113 @@ ende-til-ende-nettleserverifiseringen beskrevet over (begge roller).
 komponentbiblioteket (Dialog, Toast, Alert, Tabs, Table, Pagination) —
 bygg når en KONKRET forbruker faktisk trenger dem, ikke spekulativt; (3)
 OG-delingsbilde.
+
+---
+
+## Fortsettelse av økt 7 — auditerte de tre "Neste økt"-punktene (alle fortsatt blokkert), fant og lukket to reelle hull
+
+Undersøkte de tre listede punktene før noe annet: **Brevo** — ingen
+`BREVO_API_KEY` finnes i miljøet, fortsatt bevisst utsatt, ikke glemt.
+**Komponentbiblioteket** — fortsatt ingen konkret forbruker for
+Dialog/Toast/Alert/Tabs/Table/Pagination utover det som allerede er bygget;
+å bygge dem nå ville vært spekulativt, i strid med etablert prinsipp. **OG-
+delingsbilde** — sjekket DESIGN.md på nytt: seksjon "10. Uavklart" lister
+dette EKSPLISITT som blokkert på en ikke-besluttet visuell identitet. Dette
+er ikke implementasjonens å finne opp; korrekt fortsatt utsatt, ikke et
+hull.
+
+Med alle tre bekreftet fortsatt blokkert, gjorde jeg et systematisk søk
+etter andre reelle hull i stedet for å stå stille:
+
+**Rettet en utdatert kommentar** i `src/lib/jobs/retention.ts`
+(`purgeOldResponses()`s docstring, 17.4/17.5): kommentaren hevdet at
+`withdrawResponse()` "ikke er bygget ennå" og at trukne svar derfor midlertidig
+er retensjonsjobbens ansvar. Dette er ikke lenger sant —
+`withdrawResponse()` (`src/lib/responses/responses.ts`) er bygget og
+hard-sletter allerede umiddelbart ved trekking. Rettet kommentaren til å
+vise til den faktiske funksjonen i stedet for å beskrive en tilstand som
+ikke lenger stemmer. Ren dokumentasjonsrettelse, ingen atferdsendring.
+
+**Testdekningsaudit**: kjørte en systematisk sjekk av alle filer i
+`src/lib/**/*.ts` (unntatt `*.test.ts`) mot om de har en søsken-testfil.
+Fant 9 filer med NULL dekning. De klart høyest prioriterte — kjernen i HELE
+autentiseringssystemet, aldri testet til tross for all
+testbarhets-refaktoreringen tidligere denne økten — var `auth/session.ts`
+og `auth/magic-link.ts`. Skrev:
+
+- `auth/magic-link.integration.test.ts` (15 tester) — INGEN mocking
+  nødvendig (samme kategori som `tick.ts`/`account-deletion.ts`: ingen
+  `next/headers`-avhengighet). Dekker `requestMagicLink()`: no-op for
+  ukjent/suspendert/slettet bruker (avslører aldri kontoeksistens),
+  riktig e-postmal valgt (`magic_link` for bekreftet bruker,
+  `confirm_email`/`journalist_application_received` for førstegangs),
+  og hastighetsgrensen (5 per 15 minutter, 6. avvist). Og
+  `verifyMagicLink()`: avviser ukjent/feil-formål
+  (`delete_account`-token brukt mot login)/brukt/utløpt/suspendert-bruker-
+  token (19.15: alle samme feilvei, null), gyldig token verifiserer +
+  markerer brukt + aktiverer kontoen, samme token kan ikke brukes to
+  ganger, og rører IKKE `emailVerifiedAt` for en allerede bekreftet bruker.
+- `auth/session.integration.test.ts` (13 tester) — `session.ts` har
+  `import "server-only"`, som (som tidligere dokumentert) kaster under
+  Vitest med mindre `server-only` er aliaset til pakkens egen `empty.js`
+  (allerede løst i `vitest.integration.config.ts` fra en tidligere økt).
+  `next/headers`s `cookies()` mocket med en enkel, mutérbar
+  fake-cookie-jar (`.get()`/`.set()`/`.delete()`), IKKE en ekte
+  cookie-jar-bibliotek. Dekker `createSession()` (setter cookien til
+  nøyaktig samme rå token som lagres hashet i databasen; 30 dagers
+  levetid for mottaker/journalist, 12 timer for moderator/administrator —
+  8.3, fornyes ikke), `getCurrentSession()` (ingen cookie/ukjent
+  token/utløpt/tilbakekalt økt/bruker med `status` ulik `active` — ALLE
+  gir null, 19.15), `revokeCurrentSession()` (tilbakekaller OG sletter
+  cookien; trygt no-op uten cookie), og `revokeAllSessionsForUser()`
+  (tilbakekaller ALLE en brukers økter uten å røre andre brukeres,
+  idempotent — 17.5).
+
+**Fant og rettet et reelt rerun-sikkerhetshull i de nye
+magic-link-testene**: syv av testene brukte hardkodede rå token-strenger
+(`"test-raw-token-wrong-purpose"` osv.) direkte som unike verdier i
+`auth_tokens.token_hash`. Ved første kjøring gikk alle 15 grønt, men en
+etterfølgende kjøring av HELE `test:integration`-pakken feilet med
+"duplicate key value violates unique constraint" — radene fra forrige
+kjøring var aldri ryddet bort. Samme lærdom som tidligere økter i denne
+serien (unike/tilfeldige verdier, ikke hardkodede konstanter): byttet alle
+syv til `generateToken()` (den faktiske token-generatoren appen selv
+bruker), som gir en ny tilfeldig verdi hver kjøring.
+
+Under full `test:integration`-kjøring dukket også én FLAKY, IKKE-relatert
+test opp: `dashboard.integration.test.ts`s første test sammenligner to
+påfølgende tellinger av `pendingJournalistApplications` for
+`TEST_COUNTRY_CODE` og forventer dem like — men siden Vitest kjører
+integrasjonstestfiler parallelt i flere workere mot samme delte Postgres,
+kan en ANNEN testfil skrive en `pending_review`-journalistprofil for
+samme landkode i vinduet mellom de to tellingene. Bekreftet ved å kjøre
+filen isolert (10/10 grønt) og hele pakken på nytt (153/153 grønt) — dette
+er en preeksisterende race condition i test-parallelliseringen, IKKE noe
+denne øktens endringer forårsaket. Ikke rettet denne økten (utenfor
+skopet for testdekningsarbeidet, og krever et bevisst valg om enten
+delta-måling med retry eller `pool: "forks"`/serialisering av denne ene
+filen) — notert under.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**331
+tester**, uendret — ingen nye enhetstester denne runden, kun
+integrasjonstester), `i18n:check` (**387 nøkler**), `design:check-tokens`
+(**40** komponent-CSS-filer, uendret), `rm -rf .next && next build`
+(grønn), `test:integration` mot ekte lokal Postgres (**153 tester**, +28
+nye — 15 for `magic-link.ts`, 13 for `session.ts` — kjørt to ganger for å
+bekrefte rerun-sikkerhet etter fiksen over).
+
+### Neste økt
+
+(1) de resterende 7 filene uten testdekning funnet i denne øktens audit:
+`auth/authorize.ts`, `contact-requests/contact-requests.ts`,
+`digests/digests.ts`, `http/escape-html.ts`,
+`journalists/journalist-inbox.ts`, `legal/documents.ts`,
+`registration/journalist.ts` — prioriter etter samme
+sikkerhet/kompleksitet-kriterium som denne runden; (2) den flakete
+`dashboard.integration.test.ts`-testen (se over) — vurder delta-måling med
+retry eller å isolere filen fra parallell kjøring, IKKE en hastverksfiks
+mot symptomet; (3) Brevo-integrasjon, resten av komponentbiblioteket, og
+OG-delingsbilde forblir alle korrekt blokkert, se punktene notert i forrige
+økt.

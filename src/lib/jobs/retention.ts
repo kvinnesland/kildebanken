@@ -91,8 +91,9 @@ export async function runRetention(dbase: Database = db): Promise<RetentionSumma
  * retensjonsfristen løper ut" — tolket som at selve svarraden slettes når
  * fristen faktisk løper ut (12 måneder etter at forespørselen ble lukket),
  * ikke at den anonymiseres i påvente av en senere jobb. Trukne svar er IKKE
- * denne jobbens ansvar — de skal slettes umiddelbart ved trekking, i selve
- * withdraw-endepunktet (ikke bygget ennå), ikke via en periodisk sveip.
+ * denne jobbens ansvar — de slettes umiddelbart ved trekking, i selve
+ * `withdrawResponse()` (src/lib/responses/responses.ts), ikke via en
+ * periodisk sveip.
  */
 async function purgeOldResponses(
   dbase: Database,
