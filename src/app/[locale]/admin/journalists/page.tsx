@@ -3,6 +3,7 @@ import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
 import { createTranslator } from "@/i18n/get-messages";
 import { getCurrentSession } from "@/lib/auth/session";
 import { listJournalists } from "@/lib/moderation/journalists";
+import { EmptyState } from "@/components/EmptyState";
 import { JournalistQueueItem } from "./JournalistQueueItem";
 import styles from "./page.module.css";
 
@@ -32,7 +33,10 @@ export default async function AdminJournalistsPage({
       <h1 className={styles.title}>{t("admin.journalists.title")}</h1>
 
       {pending.length === 0 ? (
-        <p className={styles.empty}>{t("admin.journalists.empty")}</p>
+        <EmptyState
+          title={t("admin.journalists.empty_title")}
+          description={t("admin.journalists.empty_description")}
+        />
       ) : (
         <ul className={styles.list}>
           {pending.map((journalist) => (

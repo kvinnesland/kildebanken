@@ -13,12 +13,6 @@
   color: var(--color-text);
 }
 
-.empty {
-  font-family: var(--font-ui);
-  font-size: var(--text-base);
-  color: var(--color-text-muted);
-}
-
 .list {
   display: flex;
   flex-direction: column;

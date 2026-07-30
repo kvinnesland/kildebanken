@@ -4414,9 +4414,83 @@ allerede eksisterende browser-verifiserte flytene (denne natten testet
 både godkjenning og avvisning i en ekte nettleser) som manuell
 regresjonssjekk mellom hver fil — ikke gjør alle seks på én gang; (2)
 resten av komponentbiblioteket (Dialog, Toast, Card, Alert, Tabs, Table,
-Pagination, EmptyState); (3) resten av 16.1-dashbordet; (4) den ubrukte
+Pagination); (3) resten av 16.1-dashbordet; (4) den ubrukte
 `"approved"`-verdien i `request_status`-enumen; (5) OG-delingsbilde; (6)
 det oversatte-stinavn-hullet (3.7); (7) flere e-postmaler etter behov;
 (8) faktisk Brevo-integrasjon når en API-nøkkel finnes; (9) vurder en
 `/me`-side og hva som skal skje med de resterende ubrukte
 `nav.*`-nøklene.
+
+---
+
+## Fortsettelse av økt 7 — `EmptyState`-komponenten, og et reelt innholdsdesign-avvik rettet i samme slengen
+
+Fortsatte punkt (2) fra forrige "Neste økt" — men i stedet for å bygge et
+vilkårlig valgt komponentnavn uten en bruker, sjekket jeg først om noen
+av de resterende (Dialog, Toast, Card, Alert, Tabs, Table, Pagination,
+EmptyState) hadde en KONKRET, allerede eksisterende bruksplass, samme
+metode som `LanguageSwitcher`-delen av natten. `EmptyState` hadde det
+tydeligst: fire sider bygget i natt (journalistens forespørsler,
+svarinnboksen, begge modereringskøene) viste allerede en enkel "ingen
+X ennå"-tekst med rå `<p>`.
+
+**Fant samtidig et reelt avvik fra DESIGN.md 8** ("Tomme tilstander
+forklarer hva som skjer videre, ikke bare at det er tomt.") — alle fire
+eksisterende tekstene brøt akkurat dette: "Du har ingen forespørsler
+ennå.", "Ingen søknader til vurdering.", osv., uten noen forklaring på
+hva som skjer videre. Ikke bare en komponent-mangel, altså, men et
+faktisk innholdsdesign-avvik fra en allerede skrevet regel. Rettet
+begge deler sammen: la til en obligatorisk `description`-prop på selve
+komponenten (gjør det unaturlig å utelate forklaringen, se filens egen
+kommentar) OG skrev om alle fire tekstene til faktisk å forklare hva som
+skjer videre — delt inn i `_title`/`_description`-nøkkelpar i stedet for
+én sammenslått streng.
+
+### Bygget
+
+- `src/components/EmptyState.tsx` (+ test, + CSS) — tittel, obligatorisk
+  forklaring, valgfri handling (`action`, en vilkårlig `ReactNode` — f.eks.
+  en knapp). Ingen react-aria-primitiv nødvendig, ren statisk visning.
+- Fire i18n-nøkkelpar erstattet (`*.empty` → `*.empty_title` +
+  `*.empty_description`) i begge språkfiler, med faktiske
+  forklaringer: "Klikk «Ny forespørsel» for å opprette din første. Den
+  sendes til moderator for godkjenning før den publiseres.", "Nye
+  journalistsøknader vises her når noen søker om en konto.", osv.
+- Fire sider oppdatert til å bruke komponenten i stedet for rå `<p>`, med
+  den nå ubrukte `.empty`-CSS-klassen fjernet fra hver av deres
+  `page.module.css` (ingen død kode liggende igjen).
+- **Ingen ny handlingsknapp lagt til i selve `EmptyState`en på
+  forespørselslisten** — siden "Ny forespørsel"-knappen allerede alltid
+  vises i toppteksten (uavhengig av om listen er tom), ville en ANNEN
+  knapp inni selve den tomme tilstanden vært en duplisert, forvirrende
+  handling, ikke en forbedring.
+
+### Verifisert ende til ende i en ekte nettleser
+
+Sådd en fersk journalist uten noen forespørsler, i en
+produksjonsbygget instans. Bekreftet at den tomme tilstanden faktisk
+vises med riktig tittel OG forklaring, korrekt stylet (samme
+overflate-/avstandstokens som resten av komponentbiblioteket).
+Skjermbilde tatt og sjekket visuelt.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**250
+tester**, +3 nye), `i18n:check` (**244 nøkler**), `design:check-tokens`
+(31 komponent-CSS-filer), `rm -rf .next && next build`,
+`test:integration` mot ekte lokal Postgres (41 tester, uendret), PLUSS
+ende-til-ende-nettleserverifiseringen beskrevet over.
+
+### Neste økt
+
+(1) den store testbarhets-refaktoreringen (`admin/`/`moderation/`-
+lib-laget) — se konkret plan to deler tilbake i økten, fortsatt bevisst
+utsatt; (2) resten av komponentbiblioteket (Dialog, Toast, Card, Alert,
+Tabs, Table, Pagination) — samme "finn en konkret bruker først"-metode
+bør gjentas, ingen av de resterende har en like opplagt en ennå; (3)
+resten av 16.1-dashbordet; (4) den ubrukte `"approved"`-verdien i
+`request_status`-enumen; (5) OG-delingsbilde; (6) det
+oversatte-stinavn-hullet (3.7); (7) flere e-postmaler etter behov; (8)
+faktisk Brevo-integrasjon når en API-nøkkel finnes; (9) vurder en
+`/me`-side og hva som skal skje med de resterende ubrukte
+`nav.*`-nøklene (`nav.my_account`/`nav.requests`).

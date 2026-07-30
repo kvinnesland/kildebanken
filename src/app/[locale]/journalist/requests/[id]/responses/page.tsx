@@ -6,6 +6,7 @@ import { getCurrentSession } from "@/lib/auth/session";
 import { getOwnedRequestDetail } from "@/lib/requests/requests";
 import { listResponsesForRequest } from "@/lib/journalist-inbox/journalist-inbox";
 import { Badge } from "@/components/Badge";
+import { EmptyState } from "@/components/EmptyState";
 import styles from "./page.module.css";
 
 // GET /[locale]/journalist/requests/[id]/responses (SPEC-V1.md 13, 20) —
@@ -49,7 +50,10 @@ export default async function ResponseInboxPage({
       </div>
 
       {items.length === 0 ? (
-        <p className={styles.empty}>{t("journalist.inbox.empty")}</p>
+        <EmptyState
+          title={t("journalist.inbox.empty_title")}
+          description={t("journalist.inbox.empty_description")}
+        />
       ) : (
         <ul className={styles.list}>
           {items.map((item) => {

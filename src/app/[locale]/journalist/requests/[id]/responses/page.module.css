@@ -22,11 +22,6 @@
   color: var(--color-text-muted);
 }
 
-.empty {
-  font-family: var(--font-ui);
-  font-size: var(--text-base);
-  color: var(--color-text-muted);
-}
 
 .list {
   display: flex;

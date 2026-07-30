@@ -10,6 +10,7 @@ import {
 } from "@/lib/requests/status-badge";
 import { Badge } from "@/components/Badge";
 import { buttonClassName } from "@/components/buttonClassName";
+import { EmptyState } from "@/components/EmptyState";
 import { NewRequestButton } from "./NewRequestButton";
 import styles from "./page.module.css";
 
@@ -53,7 +54,10 @@ export default async function MyRequestsPage({
       </div>
 
       {mine.length === 0 ? (
-        <p className={styles.empty}>{t("journalist.requests.empty")}</p>
+        <EmptyState
+          title={t("journalist.requests.empty_title")}
+          description={t("journalist.requests.empty_description")}
+        />
       ) : (
         <ul className={styles.list}>
           {mine.map((request) => {
