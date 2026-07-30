@@ -793,3 +793,74 @@ build` (25 API-ruter totalt).
 journalistens svarinnboks (`GET /journalist/requests/:id/responses`,
 `PATCH /journalist/responses/:id/marking`); (3) faktisk Brevo-integrasjon
 når en API-nøkkel finnes.
+
+---
+
+## Fortsettelse av økt 7 — kontaktforespørsel-flyten
+
+Samme arbeidsøkt (01:38–02:38 UTC), fortsatte forbi kontosletting siden det
+fortsatt var god tid til neste planlagte gjenoppvåkning.
+
+### Rettet et hull i `closeRequest()` oppdaget mens kontaktflyten ble bygget
+
+14.3 sier eksplisitt at en pending kontaktforespørsel utløper "14 dager,
+ELLER forespørselen lukkes" — men `closeRequest()` (bygget økt 6) satte bare
+`status = closed` på forespørselen, uten å røre tilhørende
+kontaktforespørsler. Rettet: `closeRequest()` setter nå alle `pending`
+kontaktforespørsler knyttet til forespørselens svar til `expired` i samme
+kall — som en øyeblikkelig konsekvens av lukking, ikke noe som skal vente på
+at den daglige tikkejobben oppdager det i etterkant.
+
+### Kontaktforespørsel-flyten (FR-040/FR-041/FR-043, 14.1–14.3)
+
+- `src/lib/contact-requests/contact-requests.ts`:
+  - `createContactRequest()` — kun forespørselens egen journalist, kun hvis
+    respondenten IKKE allerede har delt e-postadressen
+    (`contact_sharing !== "email"`), kun hvis svaret fortsatt er
+    `submitted`. FR-043 (én kontaktforespørsel per svar) håndheves av den
+    unike indeksen på `contact_requests.response_id` (19.8) — sjekken her
+    er bare en vennligere feilvei enn en rå constraint-feil ved kappløp.
+  - `respondToContactRequest()` — godkjenning setter `shared_email` fra
+    respondentens LIVE e-postadresse (ikke en snapshot) og logger til
+    `AuditLog` med samtykkegrunnlag i `reason`, ALDRI selve
+    e-postadressen i `metadata` (19.12). Avslag varsler journalisten UTEN
+    begrunnelse (14.2, ordrett) — ingen `reason`-data sendes med den
+    e-posten.
+  - `getContactRequestDetail()` — synlig for de to involverte partene.
+    Skjuler bevisst `shared_email` for journalisten før status er
+    `approved`, slik at feltets tilstedeværelse ikke kan brukes til å gjette
+    seg til utfallet før respondenten faktisk har svart.
+- **Rettet ruteoppsett underveis:** startet med én generisk
+  `POST /contact-requests/:id/respond`, men `SPEC-V1.md` 20 lister faktisk
+  TO separate endepunkter (`/approve`, `/decline`). Rettet til å matche
+  spec-en nøyaktig — samme underliggende funksjon (`respondToContactRequest`
+  med et `decision`-parameter), men to tynne ruter.
+- Fire route handlers: `POST /api/journalist/responses/[id]/contact-request`,
+  `GET /api/contact-requests/[id]`, `POST /api/contact-requests/[id]/approve`,
+  `POST /api/contact-requests/[id]/decline`.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler etter å ha fjernet én ubrukt
+import), `vitest run` (54 tester, uendret), `i18n:check` (3 nye
+feilnøkler), `next build` (28 API-ruter totalt).
+
+### Status ved slutten av økt 7
+
+Alle fire hovedflytene fra `SPEC-V1.md` 20 som ble prioritert i natt er nå
+bygget: registrering, autentisering, forespørsel-livssyklus (utkast →
+moderering → publisering → lukking), svar (innsending → trekking), og
+kontakt (forespørsel → godkjenning/avslag). Gjenstående kjente hull:
+journalistens svarinnboks-endepunkter (merking, internt notat — datamodellen
+finnes, ingen ruter ennå), faktisk Brevo-integrasjon, og
+integrasjonstester mot en ekte database (ingen Postgres tilgjengelig i denne
+sandkassen gjennom hele natten).
+
+### Neste økt
+
+(1) journalistens svarinnboks:
+`GET /journalist/requests/:id/responses` (liste + tellere fra 13),
+`GET /journalist/responses/:id` (detaljvisning, setter `viewed_at`),
+`PATCH /journalist/responses/:id/status` (merking + internt notat, 13.1); (2)
+`GET /me/data-export` og øvrige gjenstående `/me`-ruter; (3) faktisk
+Brevo-integrasjon når en API-nøkkel finnes.

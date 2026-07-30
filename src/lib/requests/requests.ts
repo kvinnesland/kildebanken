@@ -1,10 +1,12 @@
 import { and, count, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
+  contactRequests,
   countries,
   journalistProfiles,
   moderatorCountries,
   requests,
+  responses,
   users,
 } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
@@ -265,6 +267,26 @@ export async function closeRequest(
     .update(requests)
     .set({ status: "closed", closedAt: new Date(), updatedAt: new Date() })
     .where(eq(requests.id, requestId));
+
+  // 14.3: pending kontaktforespørsler skal utløpe "når forespørselen
+  // lukkes", ikke bare etter 14 dager. Manglet frem til nå — lagt til her
+  // (økt 7, se NATTLOGG.md) fremfor i den daglige tikkejobben, siden
+  // lukking er en øyeblikkelig hendelse, ikke noe et 15-minutters-vindu
+  // skal oppdage i etterkant.
+  const responseIdsForRequest = db
+    .select({ id: responses.id })
+    .from(responses)
+    .where(eq(responses.requestId, requestId));
+
+  await db
+    .update(contactRequests)
+    .set({ status: "expired" })
+    .where(
+      and(
+        eq(contactRequests.status, "pending"),
+        inArray(contactRequests.responseId, responseIdsForRequest)
+      )
+    );
 
   return { ok: true, id: requestId };
 }

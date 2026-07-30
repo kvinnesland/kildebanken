@@ -82,5 +82,8 @@
   "errors.request_not_open": "This request isn't open.",
   "errors.validation_failed": "One or more fields are missing or invalid.",
   "errors.too_many_published_requests": "You already have too many open requests. Close one before submitting a new one.",
-  "errors.already_responded": "You've already submitted a response to this request."
+  "errors.already_responded": "You've already submitted a response to this request.",
+  "errors.contact_already_shared": "The respondent has already shared their email address.",
+  "errors.contact_request_already_sent": "You've already sent a contact request for this response.",
+  "errors.contact_request_not_pending": "This contact request is no longer pending."
 }
