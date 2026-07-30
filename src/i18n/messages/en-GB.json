@@ -35,6 +35,11 @@
   "journalist.apply.organization_url_label": "Link to newsroom",
   "journalist.apply.disclaimer": "Your name and newsroom are shown publicly on requests you publish. Your email address is never shown to recipients.",
   "journalist.apply.submit": "Submit application",
+  "journalist.apply.consent_terms": "I accept the {termsLink}.",
+  "journalist.apply.submitting": "Submitting…",
+  "journalist.apply.success": "Check your inbox — we've sent you a link to confirm your email address. Your application will be reviewed after that.",
+
+  "legal.journalist_terms_title": "Journalist terms",
 
   "digest.subject": "{count, plural, one {# new request today} other {# new requests today}}",
   "digest.intro": "Here are today's requests from journalists.",

@@ -2673,3 +2673,75 @@ krever (byggeklossene i `oklch.ts` er klare, bare selve testen som itererer
 med en ekte CSS/AST-parser på sikt — samme naive-regex-svakhet som forårsaket
 funn 2 over finnes fortsatt i selve lint-verktøyet, bare at den ikke har slått
 ut på ny igjen ennå.
+
+Bekreftet FØRST i denne runden (GitHub-verktøyene): CI for commit `a613ecb`
+(subscribe-siden) er grønn (`conclusion: "success"`, kjøring 30522043186).
+
+---
+
+## Fortsettelse av økt 7 — `/[locale]/journalists/apply` (SPEC-V1.md 7.2)
+
+Samme arbeidsøkt, punkt (3) fra forrige "Neste økt" over. Nøyaktig samme
+mønster som `/[locale]/subscribe`: tynn server-`page.tsx` +
+`JournalistApplyForm.tsx` ("use client") + CSS-modul, land hentet live fra
+`GET /api/countries`, land/språk forhåndsvalgt fra Accept-Language,
+posterer mot den eksisterende `POST /journalists/apply`.
+
+Forskjeller fra mottakerskjemaet, alle direkte fra 7.2: fem obligatoriske
+tekstfelt (fullt navn, jobb-e-post, stilling, redaksjon, lenke til
+redaksjon — sistnevnte validert som en ekte URL med `new URL(...)`, ikke
+bare en ikke-tom streng) i stedet for én e-post, og ETT samtykke
+(`consentJournalistTerms`) i stedet for tre, siden `applyAsJournalist()`
+bare har én lovtekst-type å samtykke til (`journalist_terms`). Disclaimer-
+teksten fra 7.2 ("navn og redaksjon vises offentlig, e-post vises aldri")
+vises over selve skjemaet, hentet fra den allerede eksisterende
+`journalist.apply.disclaimer`-nøkkelen.
+
+Gjenbrukte BEVISST `recipient.register.country_label/locale_label/
+country_placeholder/locale_placeholder` og `errors.field_required` i stedet
+for å lage parallelle `journalist.apply.*`-duplikater av identisk tekst
+("Land"/"Språk" betyr det samme uansett skjema) — la bare til de fire
+nøklene som faktisk ER journalist-spesifikke
+(`journalist.apply.consent_terms/submitting/success`,
+`legal.journalist_terms_title`) i begge språkfilene.
+
+**Utvidet `/legal/[country]/[docLocale]/[type]`-siden fra forrige del av
+økten:** den hadde en hardkodet `type === "terms" ? ... : ...`-ternær som
+implisitt antok bare to dokumenttyper — men `legalDocumentType`-enumet i
+`src/db/schema.ts` har alltid hatt TRE verdier (`terms`, `privacy`,
+`journalist_terms`). Byttet til et uttømmende `Record<LegalDocumentType,
+string>`-oppslag FØR det faktisk ble en synlig feil (journalistvilkårs-siden
+ville vist "Personvernerklæring" som overskrift på et journalistvilkår-
+dokument) — fanget ved å faktisk lese gjennom koden på nytt før bruk, ikke
+ved at noe feilet i test/bygg.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**101 tester**,
++3 nye for `JournalistApplyForm`), `i18n:check` (56 nøkler), `design:
+check-tokens` (OK, 9 komponent-CSS-filer), et lite Node-script som bekrefter
+`en-GB.json`/`nb-NO.json` har NULL nøkkeldrift i noen retning nå (ikke bare
+"alt brukt i kode finnes i nb-NO", som `check-keys.ts` selv sjekker), `rm -rf
+.next && next build` (grønt, nå 28 sider), OG `npx vitest run -c vitest
+.integration.config.ts` mot ekte lokal Postgres (**39 tester**, uendret).
+
+Satte et passord på den lokale `kildebanken`-Postgres-brukeren i selve
+SANDKASSEN (ikke i noe committet filtre — bare `ALTER USER ... PASSWORD`
+mot den lokale klyngen) fordi `DATABASE_URL` ikke lå lagret noe sted fra
+tidligere økter, og et rent passordløst `psql`-forsøk feilet
+(`fe_sendauth: no password supplied`). Kun relevant for DENNE
+kjøretidsinstansen — ikke noe fremtidige økter kan stole på at fortsatt
+gjelder.
+
+### Neste økt
+
+(1) Selve WCAG-kontrasttesten DESIGN.md 2.4 krever (fortsatt ubygget);
+(2) en Postgres-service-container i CI for `test:integration`; (3)
+resten av komponentbiblioteket (TextArea, RadioGroup, Dialog, Toast, Badge,
+Card, Alert, Tabs, Table, Pagination, EmptyState, SkeletonLoader,
+LanguageSwitcher — DESIGN.md 6); (4) en enkel offentlig forespørsel-
+liste/-visning (`/[locale]/requests`, SPEC-V1.md seksjon 9) er trolig den
+neste ekte SIDEN som gir mest verdi, nå som begge registreringsskjemaene
+finnes — men den krever mer avveiing (paginering, filtre, språkvisning på
+tvers av lokaliteter) enn de to formene bygget i kveld, så vurder å bryte
+den ned i mindre economic i en egen økt fremfor å haste den frem.

@@ -1,0 +1,19 @@
+.main {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: var(--space-6);
+}
+
+.title {
+  font-family: var(--font-editorial);
+  font-size: var(--text-3xl);
+  color: var(--color-text);
+  margin-block-end: var(--space-2);
+}
+
+.disclaimer {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin-block-end: var(--space-4);
+}

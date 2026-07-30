@@ -30,11 +30,15 @@ export default async function LegalDocumentPage({
   const document = await getCurrentLegalDocument(country.toUpperCase(), docLocale, type);
   if (!document) notFound();
 
-  const titleKey = type === "terms" ? "common.footer.terms_link" : "common.footer.privacy_link";
+  const TITLE_KEYS: Record<LegalDocumentType, string> = {
+    terms: "common.footer.terms_link",
+    privacy: "common.footer.privacy_link",
+    journalist_terms: "legal.journalist_terms_title",
+  };
 
   return (
     <main className={styles.main}>
-      <h1 className={styles.title}>{t(titleKey)}</h1>
+      <h1 className={styles.title}>{t(TITLE_KEYS[type])}</h1>
       <p className={styles.meta}>{document.version}</p>
       <div className={styles.body}>{document.body}</div>
     </main>

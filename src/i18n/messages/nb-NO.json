@@ -35,6 +35,11 @@
   "journalist.apply.organization_url_label": "Lenke til redaksjon",
   "journalist.apply.disclaimer": "Navnet og redaksjonen din vises offentlig på forespørsler du publiserer. E-postadressen din vises aldri for mottakere.",
   "journalist.apply.submit": "Send søknad",
+  "journalist.apply.consent_terms": "Jeg godtar {termsLink}.",
+  "journalist.apply.submitting": "Sender søknad …",
+  "journalist.apply.success": "Sjekk innboksen din — vi har sendt deg en lenke for å bekrefte e-postadressen. Søknaden din blir gjennomgått etter det.",
+
+  "legal.journalist_terms_title": "Journalistvilkår",
 
   "digest.subject": "{count, plural, one {# ny forespørsel i dag} other {# nye forespørsler i dag}}",
   "digest.intro": "Her er dagens forespørsler fra journalister.",
