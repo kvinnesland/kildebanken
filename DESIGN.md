@@ -143,6 +143,8 @@ Dette er kontrakten. Komponentene kjenner bare disse navnene.
   --color-danger-subtle:   var(--danger-100);
   --color-danger-text:     var(--danger-600);
   --color-on-danger:       var(--gray-0);
+  --color-success-text:    var(--success-600);
+  --color-warning-text:    var(--warning-900);
 }
 ```
 
@@ -175,6 +177,8 @@ Følger systemvalget, med en manuell overstyring som huskes på kontoen.
   --color-link:           var(--accent-300);
 
   --color-danger-text:    var(--danger-100);
+  --color-success-text:   var(--success-100);
+  --color-warning-text:   var(--warning-100);
 }
 ```
 
@@ -194,6 +198,16 @@ felt) må den lysne i mørkt tema, akkurat som aksenten over — derfor
 `--danger-100` i mørkt). `--color-on-danger` er komplementet: tekst/ikon OPPÅ
 en `--color-danger`-fylt flate (faretruende-knapp) — tema-uavhengig fordi
 bakgrunnen den står på er det. Rettet samme økt, samme funn.
+
+`--color-success-text`/`--color-warning-text` finnes av samme grunn, lagt
+til FOREBYGGENDE (økt 7, ingen komponent bruker dem som ren tekst ennå).
+Merk at `--color-warning` (`--warning-600`) i seg selv bare gir 3.28:1 mot
+hvitt — under 4.5:1 selv i LYST tema — så `--color-warning-text` peker på
+`--warning-900` i lyst tema (11.43:1), ikke `--warning-600` som
+`--color-danger-text` gjorde. `--color-success-text` følger derimot
+`--color-danger-text` sitt mønster (uendret i lyst tema, `-100` i mørkt),
+siden `--success-600` selv klarer 4.5:1 mot hvitt. Legg til i
+`contrast-pairs.ts` sin `TOKEN_PAIRS` DEN DAGEN noe faktisk bruker dem.
 
 ### 2.4 Kontrast
 

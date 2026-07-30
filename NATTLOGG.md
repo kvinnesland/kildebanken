@@ -2950,3 +2950,54 @@ som CI dekker BÅDE enhetstester og integrasjonstester, er det verdt å
 vurdere om selve `next build`-steget også burde kjøre MOT en migrert
 database (ikke bare den bevisst ugyldige URL-en) for å fange eventuelle
 fremtidige tilfeller av spørringer som utilsiktet kjører ved buildtid.
+
+Bekreftet i denne runden: CI for commit `dd45642` er grønn — FØRSTE gang
+integrasjonstestene faktisk har kjørt mot en ekte Postgres-service-
+container i selve GitHub Actions-infrastrukturen (ikke bare lokalt). Ingen
+overraskelser i den ekte kjøringen utover det som allerede var verifisert
+lokalt mot en fersk database.
+
+---
+
+## Fortsettelse av økt 7 — `--color-success-text`/`--color-warning-text` (forebyggende, samme funn-klasse som danger)
+
+Samme arbeidsøkt, kort oppgave. La til de to gjenværende "-text"-rollene
+DESIGN.md 2.4-notatet fra tidligere i økten pekte på som gjenstående —
+FØR noen faktisk bruker `--color-success`/`--color-warning` som ren tekst,
+ikke etter.
+
+**Et ekte, litt overraskende funn underveis:** antok først at samme mønster
+som `--color-danger-text` (uendret i lyst tema, lysere i mørkt) ville gjelde
+begge — men regnet faktisk ut tallene i stedet for å anta, og
+`--warning-600` mot hvit flate gir bare **3.28:1 — under 4.5:1-kravet selv i
+LYST tema**, ikke bare i mørkt. `--warning-600` er rett og slett for lys/lavt
+mettet til å fungere som tekst i noe tema. Løsningen ble derfor asymmetrisk:
+`--color-warning-text` peker på `--warning-900` i lyst tema (11.43:1) og
+`--warning-100` i mørkt (15.62:1) — begge eksisterende primitiver, ingen nye
+farger. `--color-success-text` derimot følger `--color-danger-text` sitt
+enklere mønster uendret (`--success-600` klarer 5.27:1 mot hvitt i seg
+selv), bare `--success-100` i mørkt tema.
+
+Ingen komponent bruker noen av de to ennå — rent forebyggende, dokumentert
+tydelig i både `semantic.css` og DESIGN.md 2.3 med instruks om å legge dem
+til i `contrast-pairs.ts` sin `TOKEN_PAIRS`-liste den dagen noe faktisk
+konsumerer dem som tekst (testen kan ikke sjekke et par ingen bruker).
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .`, `vitest run` (134 tester, uendret — ingen nye
+tokens er tatt i bruk noe sted ennå, så `contrast-pairs.test.ts` sine 32
+sjekker er uendret med hensikt), `i18n:check`, `design:check-tokens`,
+`rm -rf .next && next build`, `test:integration` mot lokal Postgres (39
+tester).
+
+### Neste økt
+
+(1) resten av komponentbiblioteket (TextArea, RadioGroup, Dialog, Toast,
+Badge, Card, Alert, Tabs, Table, Pagination, EmptyState, SkeletonLoader,
+LanguageSwitcher) — naturlig neste steg er trolig `TextArea`, siden
+`response.form.answer_label`/`relevance_label` (SPEC-V1.md, svarskjemaet)
+antakelig trenger et flerlinjers felt, ikke bare `TextField`; (2) en
+offentlig forespørsel-liste/-visning (`/[locale]/requests`, SPEC-V1.md
+seksjon 9); (3) vurder om `next build`-steget i CI også bør kjøre mot en
+migrert database.

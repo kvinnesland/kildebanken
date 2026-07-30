@@ -33,18 +33,23 @@
   --color-warning-subtle: var(--warning-100);
   --color-danger: var(--danger-600);
   --color-danger-subtle: var(--danger-100);
-  /* --color-danger som INNHOLDSFARGE (kant, ikonfyll, knappebakgrunn) er
-     bevisst tema-uavhengig, se DESIGN.md 2.1 ("bevisst lav metning"). Men
-     brukt direkte som TEKSTFARGE mot flatens bakgrunn (feiltekst under et
-     skjemafelt) MÅ den lysne i mørkt tema av nøyaktig samme grunn som
-     aksenten må det (DESIGN.md 2.3) — derfor en egen rolle, se 2.4-notatet
-     under om hvorfor dette ble delt i to.
+  /* --color-danger/-success/-warning som INNHOLDSFARGE (kant, ikonfyll,
+     knappebakgrunn) er bevisst tema-uavhengige, se DESIGN.md 2.1 ("bevisst
+     lav metning"). Brukt direkte som TEKSTFARGE mot flatens bakgrunn må de
+     derimot justeres per tema av samme grunn som aksenten (DESIGN.md 2.3)
+     — derfor egne "-text"-roller, se 2.4-notatet under. Ingen komponent
+     bruker --color-success-text/--color-warning-text ennå (kun forebygget
+     her, økt 7, samme runde --color-danger-text ble en reell nødvendighet
+     i) — legg dem til i contrast-pairs.ts sin TOKEN_PAIRS-liste DEN DAGEN
+     noe faktisk konsumerer dem som ren tekst.
      --color-on-danger er komplementet: tekst/ikon OPPÅ en --color-danger-
      fylt flate (faretruende-knapp). Siden --color-danger-bakgrunnen ikke
      temabytter, skal heller ikke teksten oppå den gjøre det — i motsetning
      til --color-accent-text, som med hensikt følger --color-accent. */
   --color-danger-text: var(--danger-600);
   --color-on-danger: var(--gray-0);
+  --color-success-text: var(--success-600);
+  --color-warning-text: var(--warning-900);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -69,6 +74,8 @@
     --color-link: var(--accent-300);
 
     --color-danger-text: var(--danger-100);
+    --color-success-text: var(--success-100);
+    --color-warning-text: var(--warning-100);
   }
 }
 
@@ -93,4 +100,6 @@
   --color-link: var(--accent-300);
 
   --color-danger-text: var(--danger-100);
+  --color-success-text: var(--success-100);
+  --color-warning-text: var(--warning-100);
 }
