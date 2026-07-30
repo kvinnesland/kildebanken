@@ -1027,3 +1027,111 @@ uendret — integrasjonstestene korrekt ekskludert, 9 testfiler ikke 11),
 databasenivå-invariantene (f.eks. `contact_requests.response_id`-unikheten,
 kontosletting-anonymisering) nå som riggen finnes; (4) faktisk
 Brevo-integrasjon når en API-nøkkel finnes.
+
+---
+
+## Fortsettelse av økt 7 — `PATCH /me`, `POST /me/change-country`, `/journalists/me`
+
+Samme arbeidsøkt. Postgres-instansen fra forrige del av økten er fortsatt
+oppe, så disse ble bygget MED integrasjonstester fra starten, ikke bare
+kodegjennomgang.
+
+### `src/lib/me/profile.ts` — `updateMyProfile()` (`PATCH /me`)
+
+Endrer visningsnavn, locale og timezone. Endrer bevisst IKKE `country_code` —
+det er en egen, strengere operasjon (se under). Et rent språkbytte for en
+allerede aktiv konto krever IKKE nytt samtykke: 7.1s krav om at
+samtykketekster lastes på nytt og nullstilles ved endret land/språk gjelder
+registreringsSKJEMAET før innsending, ikke løpende redigering av en ferdig
+konto — bare landbytte (7.3, FR-010) er eksplisitt underlagt et nytt
+samtykkekrav.
+
+Ny ren valideringsfunksjon `src/lib/me/validate.ts` (`isValidTimezone`) —
+lar `Intl.DateTimeFormat` selv avgjøre gyldigheten av en IANA-tidssone i
+stedet for å vedlikeholde en egen liste som fort blir utdatert. Testet
+isolert (samme "ren funksjon, ingen andre importer"-mønster som
+`safe-redirect.ts`).
+
+### `src/lib/me/change-country.ts` — `changeCountry()` (`POST /me/change-country`)
+
+Bygger 7.3 ordrett: sjekker samtykke FØR noe som helst skrives (FR-010:
+avslag skal la `country_code` stå uendret), trekker tilbake KUN det gamle
+terms/privacy-samtykket (`withdrawn_at`) — bevisst IKKE
+`email_subscription`/`minimum_age`, som ikke er knyttet til et bestemt land
+— skriver nye ConsentRecord-rader med `source = "country_change"` (enum-
+verdien fantes allerede i skjemaet, forberedt tidligere i natt uten at
+funksjonen som bruker den var bygget), og oppdaterer til slutt
+`users.country_code`/`locale`. Ingen egen handling trengs for å "flytte
+abonnementet til det nye landets digest" (7.3, punkt 2) — bekreftet ved å
+lese `tick.ts`: digest-jobben grupperer mottakere på `users.country_code`
+direkte, uten noen egen landkobling på `email_subscriptions`. Allerede
+innsendte svar røres bevisst ikke (punkt 3).
+
+Rollesjekk (kun mottakere — 7.3 siste avsnitt: journalist kan ikke bytte
+land selv) håndheves i RUTEN, ikke i biblioteksfunksjonen — samme
+ansvarsfordeling som resten av kodebasen (rute = rolle, bibliotek =
+forretningsregler for den gitte brukeren).
+
+Utvidet `src/db/integration/fixtures.ts` med `ensureSecondTestCountry()`
+(`TEST_COUNTRY_CODE_2 = "XU"`) — landbytte kan ikke testes meningsfullt mot
+bare ett testland.
+
+### `src/lib/journalists/journalist-profile.ts` — `GET`/`PATCH /journalists/me`
+
+`getJournalistProfile()` slår sammen `JournalistProfile`-feltene med
+`User.country_code`/`locale` (landet ligger på `User`, ikke på profilen,
+19.5). `updateJournalistProfile()` endrer KUN kontaktfeltene (fullName,
+jobTitle, organizationName, organizationUrl) — ALDRI `country_code` (krever
+ny moderatorvurdering, 7.3) og ALDRI `verification_status` (kun moderator).
+
+**Antagelse tatt, dokumentert i kodekommentar:** spec-en sier ingenting om
+hvorvidt en redigering av disse kontaktfeltene skal utløse ny
+moderatorbehandling. 8.1 lister bare søknad → review som utløsende hendelse
+for `verification_status` — ikke senere redigering av en allerede vurdert
+profil. Valgt å IKKE tilbakestille `verification_status` ved slik
+redigering. Revurder om dette er feil lesning.
+
+### Nye ruter
+
+`PATCH /api/me`, `POST /api/me/change-country`, `GET /api/journalists/me`,
+`PATCH /api/journalists/me`.
+
+### Ny i18n-nøkkel
+
+`errors.invalid_timezone` lagt til i `nb-NO.json` (samme mønster som de
+øvrige `errors.*`-nøklene — brukes av en fremtidig frontend, ikke av
+`i18n:check` direkte siden den bare scanner etter bokstavelige `t(...)`-kall
+i kildekoden, som ikke finnes i disse rutene ennå).
+
+### Ny, faktisk verifisert integrasjonstestdekning
+
+- `src/lib/me/change-country.integration.test.ts` (2 tester): bytte av land
+  trekker tilbake gammelt terms/privacy-samtykke og skriver nytt for det nye
+  landet; avslått samtykke lar `country_code` stå uendret.
+- `src/lib/me/profile.integration.test.ts` (3 tester): oppdaterer
+  visningsnavn/timezone, avviser ugyldig timezone uten å skrive noe, avviser
+  en locale landet ikke tilbyr.
+- `src/lib/journalists/journalist-profile.integration.test.ts` (3 tester):
+  henter sammenslått profil, oppdaterer kontaktfelt uten å røre
+  `verification_status`, avviser tomme felt.
+
+Alle 14 integrasjonstester (5 testfiler) grønne:
+`DATABASE_URL="postgres://kildebanken:kildebanken@localhost:5432/kildebanken_test" npx vitest run -c vitest.integration.config.ts`.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (56 tester,
+inkludert 2 nye for `isValidTimezone`), `i18n:check`, `next build`
+(**33 API-ruter totalt**), OG
+`npx vitest run -c vitest.integration.config.ts` mot ekte lokal Postgres
+(14 tester, alle grønne).
+
+### Neste økt
+
+(1) `GET /me/data-export`; (2) vurder om flere kritiske
+databasenivå-invarianter bør få integrasjonstester (kontosletting-
+anonymisering, `contact_requests.response_id`-unikheten, FR-029 sitt maks-5-
+samtidig-publiserte-forespørsler); (3) faktisk Brevo-integrasjon når en
+API-nøkkel finnes; (4) husk at Postgres-instansen i sandkassen må startes på
+nytt (`service postgresql start`) i en ny sandkasse-økt — se merknad i
+forrige del av denne økten.

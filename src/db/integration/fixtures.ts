@@ -20,6 +20,7 @@ if (!process.env.DATABASE_URL) {
 }
 
 export const TEST_COUNTRY_CODE = "XT"; // "test", aldri et ekte ISO 3166-1-kodenavn i bruk
+export const TEST_COUNTRY_CODE_2 = "XU"; // et ANNET testland, for landbytte-tester
 
 /**
  * Oppretter (eller gjenbruker) et testland med status `active` og
@@ -27,10 +28,22 @@ export const TEST_COUNTRY_CODE = "XT"; // "test", aldri et ekte ISO 3166-1-koden
  * kommer ingen registreringsflyt gjennom (FR-009).
  */
 export async function ensureTestCountry(): Promise<void> {
+  await ensureCountryWithDocuments(TEST_COUNTRY_CODE);
+}
+
+/** Et ANNET testland enn `ensureTestCountry()`, for å teste landbytte
+ * (`changeCountry()`, SPEC-V1.md 7.3) — trenger to distinkte, aktive land
+ * med egne juridiske dokumenter for å bevise at det faktisk bytter til RIKTIG
+ * lands dokumenter, ikke bare at feltet endres. */
+export async function ensureSecondTestCountry(): Promise<void> {
+  await ensureCountryWithDocuments(TEST_COUNTRY_CODE_2);
+}
+
+async function ensureCountryWithDocuments(countryCode: string): Promise<void> {
   await db
     .insert(countries)
     .values({
-      code: TEST_COUNTRY_CODE,
+      code: countryCode,
       nameKey: "country.test.name",
       defaultLocale: "nb-NO",
       availableLocales: ["nb-NO", "en-GB"],
@@ -53,11 +66,11 @@ export async function ensureTestCountry(): Promise<void> {
     await db
       .insert(legalDocuments)
       .values({
-        countryCode: TEST_COUNTRY_CODE,
+        countryCode,
         locale: "nb-NO",
         documentType,
         version: "1.0.0",
-        body: `Testversjon av ${documentType}.`,
+        body: `Testversjon av ${documentType} (${countryCode}).`,
         publishedAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // publisert i går
       })
       .onConflictDoNothing();
