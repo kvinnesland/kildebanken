@@ -11,6 +11,7 @@ import {
   users,
 } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
+import { zonedWallTimeToUtc } from "@/lib/datetime/timezone";
 import { slugify, withDisambiguator } from "./slug";
 import { validateForSubmit, validatePatchedFields, type SubmitValidationError } from "./validate";
 
@@ -24,7 +25,15 @@ export interface RequestPatchInput {
   topic?: string | null;
   geographicNote?: string | null;
   internalReference?: string | null;
+  // To alternative veier til det samme feltet: `responseDeadline` er det
+  // faktiske UTC-tidspunktet, for kallere som allerede har regnet det ut
+  // (bl.a. integrasjonstestene). `responseDeadlineLocal` er rå
+  // `YYYY-MM-DDTHH:mm` fra en `<input type="datetime-local">` — SPEC-V1.md
+  // 9.1 krever at journalisten taster dette i LANDETS tidssone, ikke sin
+  // egen nettlesers, så konverteringen må skje her (der landets tidssone
+  // allerede slås opp), ikke i skjemaet.
   responseDeadline?: Date;
+  responseDeadlineLocal?: string;
   allowsAnonymousParticipation?: boolean;
   mayBeRecorded?: boolean;
   mayInvolvePhotoVideo?: boolean;
@@ -101,14 +110,21 @@ export async function updateDraft(
     return { ok: false, error: "errors.request_not_editable" };
   }
 
-  if (patch.contentLanguage) {
+  let resolvedDeadline = patch.responseDeadline;
+
+  if (patch.contentLanguage || patch.responseDeadlineLocal) {
     const [country] = await db
-      .select({ availableLocales: countries.availableLocales })
+      .select({ availableLocales: countries.availableLocales, timezone: countries.timezone })
       .from(countries)
       .where(eq(countries.code, existing.countryCode))
       .limit(1);
-    if (!country || !country.availableLocales.includes(patch.contentLanguage)) {
+    if (!country) return { ok: false, error: "errors.invalid_country" };
+
+    if (patch.contentLanguage && !country.availableLocales.includes(patch.contentLanguage)) {
       return { ok: false, error: "errors.invalid_locale" };
+    }
+    if (patch.responseDeadlineLocal) {
+      resolvedDeadline = zonedWallTimeToUtc(patch.responseDeadlineLocal, country.timezone);
     }
   }
 
@@ -118,7 +134,7 @@ export async function updateDraft(
       summary: patch.summary,
       description: patch.description,
       targetPersonDescription: patch.targetPersonDescription,
-      responseDeadline: patch.responseDeadline,
+      responseDeadline: resolvedDeadline,
     },
     new Date()
   );
@@ -132,9 +148,11 @@ export async function updateDraft(
     slug = await generateUniqueSlug(effectiveTitle);
   }
 
+  const { responseDeadlineLocal: _omit, ...rest } = patch;
+
   await db
     .update(requests)
-    .set({ ...patch, slug, updatedAt: new Date() })
+    .set({ ...rest, responseDeadline: resolvedDeadline, slug, updatedAt: new Date() })
     .where(eq(requests.id, requestId));
 
   return { ok: true, id: requestId };
@@ -373,6 +391,23 @@ export async function getOwnedRequestDetail(requestId: string, journalistUserId:
     )
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * Brukes av redigeringssiden (`/[locale]/journalist/requests/[id]`) til å
+ * bygge språkvelgeren og tolke `responseDeadlineLocal` — landet er allerede
+ * fastlåst fra journalistens konto (9.1: "kan ikke velges i skjemaet"), så
+ * dette er bare et oppslag, ikke et valg.
+ */
+export async function getCountryFormOptions(
+  countryCode: string
+): Promise<{ availableLocales: string[]; timezone: string } | null> {
+  const [country] = await db
+    .select({ availableLocales: countries.availableLocales, timezone: countries.timezone })
+    .from(countries)
+    .where(eq(countries.code, countryCode))
+    .limit(1);
+  return country ?? null;
 }
 
 const PUBLICLY_VISIBLE_STATUSES = ["published", "closed", "expired"] as const;

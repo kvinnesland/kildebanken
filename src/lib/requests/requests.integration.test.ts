@@ -10,7 +10,7 @@ import {
   TEST_COUNTRY_CODE_2,
   uniqueTestEmail,
 } from "@/db/integration/fixtures";
-import { closeRequest, getPublicRequest } from "./requests";
+import { closeRequest, createDraft, getPublicRequest, updateDraft } from "./requests";
 
 describe("getPublicRequest mot ekte Postgres", () => {
   let journalistId: string;
@@ -169,5 +169,37 @@ describe("closeRequest mot ekte Postgres — moderator er begrenset til tildelt 
       .where(and(eq(auditLogs.entityId, requestId), eq(auditLogs.action, "request.close")));
     expect(log?.actorUserId).toBe(moderatorSameCountryId);
     expect(log?.countryCode).toBe(TEST_COUNTRY_CODE);
+  });
+});
+
+describe("updateDraft mot ekte Postgres — responseDeadlineLocal tolkes i LANDETS tidssone (9.1)", () => {
+  let journalistId: string;
+  let requestId: string;
+
+  beforeAll(async () => {
+    await ensureTestCountry(); // TEST_COUNTRY_CODE sin tidssone er Europe/Oslo
+    const journalist = await createActiveJournalist();
+    journalistId = journalist.id;
+
+    const created = await createDraft(journalistId);
+    if (!created.ok) throw new Error("Klarte ikke opprette utkast");
+    requestId = created.id;
+  });
+
+  afterAll(async () => {
+    await db.delete(requests).where(eq(requests.id, requestId));
+  });
+
+  it("konverterer en sommerdato (CEST, UTC+2) til riktig UTC-tidspunkt, ikke bare lagrer klokkeslettet rått", async () => {
+    const result = await updateDraft(requestId, journalistId, {
+      responseDeadlineLocal: "2026-08-15T14:00",
+    });
+    expect(result.ok).toBe(true);
+
+    const [row] = await db
+      .select({ responseDeadline: requests.responseDeadline })
+      .from(requests)
+      .where(eq(requests.id, requestId));
+    expect(row?.responseDeadline?.toISOString()).toBe("2026-08-15T12:00:00.000Z");
   });
 });

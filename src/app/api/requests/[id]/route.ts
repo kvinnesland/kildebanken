@@ -34,7 +34,10 @@ const patchSchema = z.object({
   topic: z.string().nullable().optional(),
   geographicNote: z.string().max(100).nullable().optional(),
   internalReference: z.string().max(100).nullable().optional(),
-  responseDeadline: z.coerce.date().optional(),
+  // Rå YYYY-MM-DDTHH:mm fra <input type="datetime-local">, tolket i
+  // LANDETS tidssone av updateDraft() selv (SPEC-V1.md 9.1) — se
+  // src/lib/datetime/timezone.ts.
+  responseDeadlineLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/).optional(),
   allowsAnonymousParticipation: z.boolean().optional(),
   mayBeRecorded: z.boolean().optional(),
   mayInvolvePhotoVideo: z.boolean().optional(),

@@ -3843,3 +3843,159 @@ og moderasjon/rapportering er nå trolig de med høyest reell
 sannsynlighet for å faktisk bli kalt fra kode som allerede finnes, samme
 mønster som de sju som er bygget så langt); (7) faktisk
 Brevo-integrasjon når en API-nøkkel finnes.
+
+---
+
+## Fortsettelse av økt 7 — journalistens forespørsel-skjema (SPEC-V1.md 9), et ekte hull oppdaget før det ble bygget
+
+Før jeg fortsatte punktlisten over, sjekket jeg selve `src/app/[locale]/`-
+mappen mot API-rutene den skal dekke — og fant et større, reelt hull enn
+noe i "Neste økt"-listen: HELE journalistens forespørsel-livssyklus
+(opprette utkast, redigere, sende til vurdering) hadde full backend
+(`POST/PATCH/DELETE /requests/:id`, `POST /requests/:id/submit`,
+`GET /requests/mine`) men INGEN brukergrensesnitt i det hele tatt — bare
+API-ruter en journalist aldri kunne nå uten å skrive HTTP-kall for hånd.
+Journalistens svarinnboks (som sto øverst i listen) har SAMME situasjon,
+men forespørsel-skjemaet er mer grunnleggende: uten det finnes det
+ingenting en journalist faktisk kan publisere gjennom grensesnittet, og
+dermed heller ingen publiserte forespørsler å bygge en svarinnboks
+IMOT. Prioriterte derfor dette foran punkt (1)/(2) over — en avviking fra
+den nedskrevne rekkefølgen, men med samme "hva mangler faktisk for at den
+gyldne stien skal fungere ende til ende"-resonnement som har styrt
+prioriteringen hele natten.
+
+### Bygget
+
+- `src/app/[locale]/journalist/requests/page.tsx` — journalistens egen
+  forespørselsliste (`GET /requests/mine`), med statusmerker, frist (i
+  LANDETS tidssone, se under), "Rediger"-lenke for redigerbare statuser,
+  og en offentlig visnings-lenke for publiserte/lukkede/utløpte.
+- `NewRequestButton.tsx` — en liten klientkomponent som kaller
+  `POST /requests` (FR-010: oppretter et TOMT utkast, ingen body) og
+  navigerer rett til redigeringssiden. Selve skjemaet fylles der, ikke i
+  en opprettelsesdialog.
+- `src/app/[locale]/journalist/requests/[id]/page.tsx` +
+  `RequestEditForm.tsx` — selve skjemaet (tittel, oppsummering,
+  beskrivelse, hvem søkes, tema, språk, svarfrist, de tre ja/nei-feltene,
+  geografisk område, intern referanse), med to knapper ("Lagre utkast" =
+  PATCH, "Send til vurdering" = PATCH etterfulgt av submit). Statuser
+  utenfor `draft`/`changes_requested` vises som en skrivebeskyttet
+  oppsummering i stedet — PATCH nekter uansett å kjøre utenfor disse to
+  (håndheves allerede av `updateDraft()`), så dette er en SPEILING av en
+  regel som allerede fantes, ikke en ny en.
+- Feilmeldinger vises PER FELT (DESIGN.md 6.1: "feilmeldinger står ved
+  feltet"), ikke bare oppsummert — `fieldErrors`-koden fra
+  `validate.ts` mappes eksplisitt til riktig felt i skjemaet, med én
+  ny `errors.<kode>`-nøkkel per valideringskode (13 nye nøkler).
+- `src/lib/requests/topics.ts` (ny) — de 21 temanøklene fra 9.1 som en
+  delt konstant (`REQUEST_TOPICS`), brukt av temavelgeren. 21 nye
+  `request.topic.<nøkkel>`-oversettelser lagt til.
+- `src/lib/requests/status-badge.ts` utvidet med
+  `journalistRequestStatusTone()`/`isJournalistRequestStatus()` for de
+  sju statusene journalisten selv ser (`draft`/`submitted`/
+  `changes_requested`/`rejected`/`published`/`closed`/`expired`) — filens
+  egen kommentar sa fra økt 6 at dette var utsatt "til den dagen
+  journalistportalen faktisk viser dem". Den dagen er i dag.
+- 4 nye `request.status.*`-oversettelser (draft/submitted/
+  changes_requested/rejected) — bare de tre offentlige fantes fra før.
+
+### Svarfristen: et reelt tidssone-problem, løst med en generell, testet funksjon
+
+SPEC-V1.md 9.1 krever "dato + klokkeslett i LANDETS tidssone" — IKKE
+journalistens nettleser sin egen. En `<input type="datetime-local">` gir
+bare et rått "YYYY-MM-DDTHH:mm" uten noen tidssoneinformasjon i det hele
+tatt, så konverteringen til riktig UTC-tidspunkt måtte gjøres et sted som
+faktisk kjenner landets IANA-sone.
+
+- `src/lib/datetime/timezone.ts` (ny) — `zonedWallTimeToUtc()` og dens
+  invers `utcToZonedWallTime()`, samme "ingen avhengighet utover
+  Node sin innebygde Intl"-prinsipp som `localTimeForTimezone()` i
+  `tick.ts` (økt 4/5) allerede etablerte for et beslektet problem.
+  Bruker en to-runders "gjett, se hva sonen faktisk viser, korriger"-
+  teknikk (standard for denne typen konvertering) — IKKE en fast
+  UTC-offset-tabell, som ville vært feil halve året for enhver sone med
+  sommertid. 10 tester, inkludert en vinter- OG en sommerdato for
+  Europe/Oslo (krysser selve DST-grensen riktig) og en ikke-hel-
+  time-forskyvning (Asia/Kathmandu, UTC+5:45) som ville avslørt en
+  implementasjon som antok hele timer.
+- `updateDraft()` (`requests.ts`) tar nå ENTEN et ferdig `responseDeadline:
+  Date` (uendret, brukt av integrasjonstestene som allerede kjenner det
+  eksakte tidspunktet) ELLER et nytt `responseDeadlineLocal: string` —
+  konverteres til UTC med landets tidssone FØR validering og lagring.
+  Ny `getCountryFormOptions()` slår opp landets tidssone og tilgjengelige
+  språk i én spørring, brukt av både listesiden og redigeringssiden.
+  PATCH-ruten sin zod-body byttet fra `responseDeadline: z.coerce.date()`
+  (aldri faktisk kalt av noen klient ennå) til
+  `responseDeadlineLocal: z.string().regex(...)`.
+- **Verifisert uavhengig av UI-et**: etter å ha satt "15.09.2026 14:00"
+  gjennom selve skjemaet i en ekte nettleser, sjekket jeg raden direkte i
+  Postgres (`psql`) — `response_deadline = 2026-09-15 12:00:00+00`.
+  15. september er sommertid i Norge (CEST, UTC+2), så 14:00 lokalt skal
+  bli 12:00 UTC. Stemte nøyaktig — ikke bare "listen viste samme
+  klokkeslett tilbake" (som en dobbel feil-i-samme-retning kunne skjult),
+  men den faktiske lagrede UTC-verdien kontrollert mot kjent riktig svar.
+
+### Et ekte, men lavrisiko funn i selve skjemaet — IKKE rettet nå
+
+`request_status`-enumen i `db/schema.ts` inneholder en verdi, `"approved"`,
+som verken SPEC-V1.md 9.2 sin tilstandsdiagram nevner (kun `submitted →
+published` direkte, ingen mellomtilstand) eller noe kode noensinne setter
+(`grep` bekreftet: enumen definerer den, ingenting tildeler den). Trolig en
+rest fra et tidligere utkast av skjemaet. Ufarlig som den står (ingen rad
+kan noensinne få denne verdien), men er teknisk et hull mellom kode og
+spec i streng forstand. IKKE rettet nå — å fjerne en enum-verdi krever en
+migrasjon, og dette er et rent opprydningsarbeid uten hastverk, ikke noe
+å gjøre som en bivirkning av å bygge skjema-UI-et. Notert her per
+"spec er sannheten"-regelen; en fremtidig økt bør enten fjerne verdien
+(migrasjon) eller — om den er ment å brukes til noe — oppdatere 9.2 til å
+nevne den.
+
+### Verifisert ende til ende i en EKTE nettleser, ikke bare enhetstestet
+
+`next dev` viste seg IKKE å fungere for denne testen — CSP-en bygget
+tidligere i natt (`strict-dynamic`, ingen `unsafe-eval`) kolliderer med
+Next sin dev-modus, som er avhengig av `eval()` for å kjøre HMR-bunter.
+Ingen klient-JS kjørte i det hele tatt (ingen hydrering, ingen
+knappe-handlere), uten noen synlig feil utover en CSP-advarsel i
+konsollen. Løst ved å teste mot en PRODUKSJONSBYGGET instans (`next build`
++ `next start`) i stedet — som uansett er den riktige måten å verifisere
+en CSP bygget for produksjon på. Notert her i tilfelle en senere økt støter
+på samme "ingenting skjer når jeg klikker"-symptom i dev-modus og feilaktig
+mistenker en kodefeil.
+
+Brukte Playwright (`npx playwright`, forhåndsinstallert i miljøet, IKKE
+lagt til som et prosjektavhengighet — installert midlertidig med
+`--no-save` og avinstallert igjen etter testen) til å: logge inn som en
+sådd, godkjent testjournalist (økt-token satt direkte i databasen, samme
+fixture-mønster som integrasjonstestene bruker), opprette en ny
+forespørsel, fylle ut hele skjemaet, lagre utkastet, sende det til
+vurdering, og til slutt laste listesiden på nytt — alt fungerte, inkludert
+riktig statusmerke og riktig frist-visning etter innsending. Skjermbilder
+tatt og sjekket visuelt (riktig designtoken-styling, fokusring synlig,
+tegntellere riktige). Alle midlertidige skript og den midlertidige
+`playwright`-installasjonen fjernet igjen etter testen.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**234
+tester**, +26 nye), `i18n:check` (**175 nøkler**), `design:check-tokens`
+(21 komponent-CSS-filer), `rm -rf .next && next build`,
+`test:integration` mot ekte lokal Postgres (`pg_isready` — klyngen hadde
+stoppet på nytt, samme kjente, ufarlige driftsforstyrrelse som forrige
+del av økten, startet på nytt — 41 tester, +1 ny), PLUSS den fullstendige
+ende-til-ende-nettleserverifiseringen beskrevet over.
+
+### Neste økt
+
+(1) journalistens svarinnboks (SPEC-V1.md 13) — nå gir dette faktisk
+mening å bygge, siden en journalist nå kan komme seg gjennom hele veien
+til en publisert forespørsel gjennom selve grensesnittet; (2) resten av
+komponentbiblioteket (Dialog, Toast, Card, Alert, Tabs, Table,
+Pagination, EmptyState, SkeletonLoader, LanguageSwitcher); (3) en
+moderator-/administrasjonsside for å godkjenne/avvise innsendte
+forespørsler og journalistsøknader (SPEC-V1.md 16) — også et hull av
+samme type som det denne økten fant: full backend, ingen UI; (4) den
+ubrukte `"approved"`-verdien i `request_status`-enumen (se over); (5)
+OG-delingsbilde; (6) det oversatte-stinavn-hullet (3.7); (7)
+`prefers-color-scheme` for e-postmaler; (8) flere e-postmaler etter
+behov; (9) faktisk Brevo-integrasjon når en API-nøkkel finnes.
