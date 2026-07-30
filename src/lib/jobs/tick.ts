@@ -23,6 +23,7 @@ import {
 import { sendTransactionalEmail, sendBulkEmail } from "@/lib/email/send";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
 import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
+import { runRetention } from "@/lib/jobs/retention";
 import {
   insertPerRecipientTokens,
   renderDigestContent,
@@ -60,10 +61,26 @@ export async function runTick(): Promise<TickSummary> {
   // shouldRunDailyJobNow() under.
   if (shouldRunDailyJobNow()) {
     results.push(await runPurgeUnverified(db));
-    // retention (SPEC-V1.md 17.4) er bevisst IKKE implementert i dette
-    // scaffoldet — sletting/anonymisering av ekte personopplysninger skal
-    // ikke kjøre før datamodellen er testet grundig mot et testmiljø. Se
-    // NATTLOGG.md.
+
+    // retention (SPEC-V1.md 17.4) kjører nå, men i "dry run" som standard —
+    // se src/lib/jobs/retention.ts. Den teller og logger hva den ville
+    // gjort, og sletter/anonymiserer ingenting med mindre
+    // RETENTION_DRY_RUN=false er eksplisitt satt i miljøet. Ikke koblet til
+    // noe ekte miljø ennå.
+    const retentionSummary = await runRetention(db);
+    results.push({
+      job: "retention",
+      processed: retentionSummary.results.reduce((sum, r) => sum + r.affectedCount, 0),
+      errors: retentionSummary.results.flatMap((r) =>
+        r.errors.map((e) => `${r.category}: ${e}`)
+      ),
+    });
+    if (retentionSummary.dryRun) {
+      console.log(
+        "[retention] dry run — ingenting slettet.",
+        JSON.stringify(retentionSummary.results)
+      );
+    }
   }
 
   return { ranAt: new Date().toISOString(), results };

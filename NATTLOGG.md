@@ -408,3 +408,109 @@ aldri importeres av jobblogikken.
 6.2); (2) admin-ruter for journalistgodkjenning; (3) `retention`-jobben,
 fortsatt med forsiktighet; (4) faktisk Brevo-integrasjon når/hvis en ekte
 API-nøkkel blir tilgjengelig i miljøet.
+
+---
+
+## Økt 5 — 2026-07-30, natt (`create_trigger` fyrte presist, 00:39 UTC)
+
+Alle tre gjenstående prioriteter fra økt 4 er fullført denne timen.
+
+### 1. Klikk-gjennom-endepunkt for digest-lenken (fullfører SPEC-V1.md 6.2)
+
+- **Endret lenkeformat i `digest.ts`:** i stedet for å peke direkte på
+  innholdssiden med `?da=TOKEN` i søkestrengen, peker "Les og svar"-lenken nå
+  på `/api/digest-access/TOKEN?to=/{locale}/foresporsler/{id}/{slug}`.
+  Grunnen: å opprette en `Session` krever å sette en cookie via
+  `next/headers`, noe en vanlig side (Server Component-rendering) ikke kan
+  gjøre i Next.js — det krever en Route Handler. Byttepunktet slår opp
+  tokenet, oppretter økten, og videresender til den faktiske siden.
+- **Design valgt bevisst: gjenbrukbart, ikke engangsbruk.** En bruker skal
+  kunne klikke seg inn fra en ukes gammel digest-e-post uten å måtte be om
+  en ny innloggingslenke. `DigestDelivery.access_token_hash` har derfor
+  ingen utløps- eller brukt-flagg, i motsetning til `AuthToken` (engangsbruk,
+  15 minutter). Dokumentert eksplisitt i route-filen, siden det er et avvik
+  fra mønsteret i resten av autentiseringskoden og lett kan mistolkes som en
+  forglemmelse.
+- Åpen redirect-beskyttelse (`to`-parameteret) flyttet til en egen,
+  avhengighetsfri modul `src/lib/http/safe-redirect.ts` — se feilen under for
+  hvorfor.
+
+### Reell feil oppdaget og rettet: samme `"server-only"`-problem, ny variant
+
+Skrev først `isSafeRelativePath()` inne i selve route-filen. Testen for den
+importerte route-filen, som transitivt drar inn `session.ts` →
+`next/headers` → dens `"server-only"`-guard, og feilet med nøyaktig samme
+feil som økt 4 (men denne gangen var `"server-only"` faktisk riktig plassert
+i `session.ts` — problemet var at jeg testet en ren hjelpefunksjon ved å
+importere en fil med tunge, request-kontekst-bundne sideeffekter).
+**Lærdom notert for videre arbeid:** rene, testbare hjelpefunksjoner bør fra
+nå av bo i egne moduler UTEN andre importer, ikke inni route-/handler-filer
+— ikke bare for denne filen, men som et generelt mønster fremover.
+
+### 2. Admin-ruter for journalistgodkjenning
+
+- `src/lib/auth/authorize.ts` — `requireModeratorForCountry(countryCode)`:
+  moderator tildelt DET LANDET, eller administrator (som har alle land,
+  19.4). `getAssignedCountryCodes()` for lister.
+- `src/lib/moderation/journalists.ts` — `approveJournalist()`,
+  `rejectJournalist()` (krever ikke-tom begrunnelse, sendes til søkeren på
+  søkerens eget språk, jf. seksjon 8), `listJournalists()` (filtrert på
+  moderatorens tildelte land — en moderator uten landtildeling ser en TOM
+  liste, ikke alle journalister, hvis det noen gang blir en
+  konfigurasjonsfeil). Alle skriver til `AuditLog` (FR-050).
+- `GET /api/admin/journalists` (med `?status=`-filter),
+  `POST /api/admin/journalists/:id/approve`,
+  `POST /api/admin/journalists/:id/reject`.
+
+### 3. Retensjonsjobben — bygget forsiktig, som instruert
+
+- `src/lib/jobs/retention.ts`: **standard er dry run.** Jobben SELECTer og
+  teller hva den ville påvirket i alle kategorier, men sletter ingenting med
+  mindre `RETENTION_DRY_RUN=false` er eksplisitt satt i miljøet — noe som
+  ikke er satt noe sted i dette scaffoldet. Koblet inn i `tick.ts` sin
+  daglige jobbrunde, men forblir inert helt til noen bevisst slår den på
+  etter å ha sett gjennom dry run-loggene.
+- Dekker: innsendte svar (12 mnd etter at forespørselen lukkes — HELE raden
+  slettes, tolket fra "svarteksten beholdes TIL fristen løper ut" i 17.5),
+  kontaktforespørsler (12 mnd etter avslutning — `updated_at` brukt som
+  tilnærming til "avslutning" siden `ContactRequest` ikke har et eget
+  `resolved_at`-felt), revisjonslogg (3 år), digest + leveringsstatus
+  (12 mnd).
+- **Én kategori er bevisst KUN telt, aldri utført**, uansett
+  `RETENTION_DRY_RUN`: avviste journalistsøknader (6 mnd). Å faktisk slette
+  krysser flere tabeller med FK mot `user_id` og bør dele rutine med
+  kontosletting (17.5), som ikke er bygget ennå — ikke noe en periodisk jobb
+  bør gjøre på egen hånd. Rapporteres i `errors[]` i stedet for å utføres.
+- **Kjent, dokumentert avvik fra spec-en:** 17.4 sier eksplisitt at
+  lagringstider skal være per-land-konfigurasjon, ikke konstanter i koden.
+  Med kun ett aktivt land (NO, fortsatt `draft`) er det ingen reell variasjon
+  å konfigurere ennå — periodene er hardkodede, navngitte konstanter, med en
+  TODO i filen om at dette må bli ekte konfigurasjon på `countries`-tabellen
+  før land nummer to med andre krav legges til.
+- 6 enhetstester for de rene funksjonene (`monthsAgo`, `yearsAgo`,
+  `isRetentionDryRun`) — dato-utregning og sikker-standard-logikken er
+  nettopp det som MÅ være riktig før noen noensinne vurderer å slå av dry
+  run.
+
+### Ikke gjort denne økten
+
+Fortsatt ingen ekte Brevo-integrasjon, fortsatt ingen integrasjonstester mot
+ekte database (samme begrunnelse som tidligere økter).
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil, 0 advarsler etter opprydding), `vitest
+run` (29 tester — 12 nye), `i18n:check` (11 nøkler), `next build` (tre nye
+API-ruter kompilerer: `/api/digest-access/[token]`,
+`/api/admin/journalists`, `/api/admin/journalists/[id]/approve`,
+`/api/admin/journalists/[id]/reject`).
+
+### Neste økt
+
+Alle fire prioriteter fra økt 4 er nå dekket. Naturlige neste steg: (1)
+withdraw-endepunkt for svar (`POST /responses/:id/withdraw`) — nevnt som
+avhengighet i retention-jobbens kommentarer, men ikke bygget; (2)
+kontosletting (`DELETE /me`, SPEC-V1.md 17.5) — deler anonymiseringslogikk
+med den utsatte "avvist journalistsøknad"-kategorien i retention; (3)
+`POST /requests` og resten av forespørsel-CRUD-en fra seksjon 20; (4) faktisk
+Brevo-integrasjon når en API-nøkkel finnes.

@@ -74,5 +74,8 @@
   "errors.invalid_country": "This country isn't available.",
   "errors.invalid_locale": "This language isn't available in the selected country.",
   "errors.legal_documents_unavailable": "This country and language combination isn't ready for registration yet.",
-  "errors.email_already_registered": "This email address is already registered."
+  "errors.email_already_registered": "This email address is already registered.",
+  "errors.not_found": "We couldn't find what you were looking for.",
+  "errors.not_authorized": "You don't have access to do this.",
+  "errors.reason_required": "You must provide a reason."
 }

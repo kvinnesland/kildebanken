@@ -57,8 +57,16 @@ export function renderDigestContent(
 
   const subject = t("digest.subject", { count: requestsForDigest.length });
 
-  const requestUrl = (r: DigestRequestItem) =>
-    `${SITE_ORIGIN}/${locale}/foresporsler/${r.id}/${r.slug}?da=${ACCESS_TOKEN_PLACEHOLDER}`;
+  // Går via byttepunktet i /api/digest-access/[token] (økt 5, SPEC-V1.md
+  // 6.2), IKKE direkte til innholdssiden med tokenet i søkestrengen. Grunnen:
+  // det endepunktet oppretter en Session (via next/headers cookies()), noe
+  // en vanlig Server Component-siderendering ikke kan gjøre — det krever en
+  // Route Handler. Se route-filens kommentar for hvorfor dette er trygt mot
+  // åpen redirect.
+  const requestUrl = (r: DigestRequestItem) => {
+    const destination = encodeURIComponent(`/${locale}/foresporsler/${r.id}/${r.slug}`);
+    return `${SITE_ORIGIN}/api/digest-access/${ACCESS_TOKEN_PLACEHOLDER}?to=${destination}`;
+  };
   const unsubscribeUrl = `${SITE_ORIGIN}/unsubscribe/${UNSUBSCRIBE_TOKEN_PLACEHOLDER}`;
 
   const itemsHtml = requestsForDigest

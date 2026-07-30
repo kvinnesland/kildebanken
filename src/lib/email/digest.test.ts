@@ -56,7 +56,7 @@ describe("insertPerRecipientTokens", () => {
 
     expect(personalized.html).not.toContain("__ACCESS_TOKEN__");
     expect(personalized.html).not.toContain("__UNSUBSCRIBE_TOKEN__");
-    expect(personalized.html).toContain("da=access-abc");
+    expect(personalized.html).toContain("/api/digest-access/access-abc?to=");
     expect(personalized.html).toContain("/unsubscribe/unsub-xyz");
     expect(personalized.text).toContain("access-abc");
     expect(personalized.text).toContain("unsub-xyz");
