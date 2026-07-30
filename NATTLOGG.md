@@ -1828,3 +1828,58 @@ noe annet, siden metoden har funnet syv reelle hull på rad i natt
 (suppressions, fem audit_logs-hull, og nå denne). Ellers: samme restliste
 som før — frontend, eller faktisk Brevo-integrasjon når en API-nøkkel
 finnes.
+
+---
+
+## Fortsettelse av økt 7 — fortsatte FR-gjennomgangen, fant hull nr. 8: FR-038
+
+Samme arbeidsøkt. Fortsatte den systematiske FR-for-FR-gjennomgangen fra
+forrige del.
+
+**FR-038:** "Alle bulkutsendelser skal inneholde `List-Unsubscribe` og
+`List-Unsubscribe-Post`." `SendBulkEmailInput` (`src/lib/email/send.ts`)
+hadde ingen felt for dette i det hele tatt — verken tick.ts sin
+førstegangsutsendelse eller `retryFailedDigestDeliveries()` sin
+gjenutsendelse kunne noensinne satt headeren, siden grensesnittet ikke bar
+informasjonen frem dit.
+
+Ingen spec-rettelse nødvendig denne gangen — FR-038 var allerede presist og
+riktig formulert, bare ikke bygget.
+
+### Rettet
+
+- `SendBulkEmailInput.listUnsubscribeUrl` — nytt, OBLIGATORISK felt (ikke
+  valgfritt, med hensikt: en glemt header skal være en typefeil ved
+  kompilering, ikke en stille mangel i produksjon). Peker på API-RUTEN
+  direkte (`/api/unsubscribe/:token`), IKKE frontend-siden lenken i selve
+  e-postteksten peker til (`src/lib/email/digest.ts`) — en e-postklient
+  POSTer rett til denne uten å rendre noen side (RFC 8058, "one-click").
+- Eksporterte `SITE_ORIGIN` fra `digest.ts` (var privat) slik at både
+  `tick.ts` og `digests.ts` kan bygge samme URL uten å duplisere
+  fallback-verdien.
+- Begge de to reelle kallstedene til `sendBulkEmail()` (førstegangsutsendelse
+  i `tick.ts`, gjenutsendelse i `digests.ts`) sender nå med
+  `listUnsubscribeUrl`.
+- Selve HTTP-headeren er IKKE satt ennå — det krever den faktiske
+  Brevo-API-integrasjonen, som fortsatt er en TODO (`send.ts`). Feltet
+  finnes nå i grensesnittet slik at det ikke glemmes NÅR den bygges — samme
+  "forbered grensesnittet, utsett selve leverandørkallet"-mønster som
+  resten av `send.ts`.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (59 tester,
+uendret), `i18n:check`, `next build` (46 API-ruter, uendret — ingen ny rute
+denne gangen), OG `npx vitest run -c vitest.integration.config.ts` mot ekte
+lokal Postgres (32 tester, uendret).
+
+### Neste økt
+
+Fortsett FR-for-FR-gjennomgangen — gjenstår bl.a. en grundigere sjekk av
+FR-013 (aktivere land uten kodeendring — bygget, men aldri kjørt ende-til-
+ende mot ekte data i denne sandkassen), FR-028 (kodegjennomgang: kan en
+forespørsel publiseres uten å ha vært innom `submitted`+moderatorhandling —
+sjekk `publishRequest()` sin forutsetning eksplisitt), og FR-052
+(kodegjennomgang: bekreft at det virkelig ikke finnes noen
+tvers-av-forespørsler-svarvisning). Ellers: frontend, eller faktisk
+Brevo-integrasjon.

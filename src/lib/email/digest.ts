@@ -19,8 +19,10 @@ export interface RenderedDigest {
 }
 
 // Egen driftskonfigurasjon, ikke en produktbeslutning — settes til faktisk
-// domene ved deploy. Se .env.example.
-const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN ?? "https://kildebanken.example";
+// domene ved deploy. Se .env.example. Eksportert (ikke bare brukt her) slik
+// at tick.ts kan bygge List-Unsubscribe-headeren (FR-038) fra samme
+// opprinnelse, uten å duplisere fallback-verdien to steder.
+export const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN ?? "https://kildebanken.example";
 
 // To ULIKE plassholdere, ikke én — de to lenkene bærer to ulike tokens med
 // ulikt formål (SPEC-V1.md 6.2 vs. 24.3/9.3):

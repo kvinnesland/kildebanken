@@ -27,6 +27,7 @@ import { runRetention } from "@/lib/jobs/retention";
 import {
   insertPerRecipientTokens,
   renderDigestContent,
+  SITE_ORIGIN,
   type DigestRequestItem,
   type RenderedDigest,
 } from "@/lib/email/digest";
@@ -303,6 +304,9 @@ async function sendDigestToRecipients(
         subject: personalized.subject,
         html: personalized.html,
         text: personalized.text,
+        // FR-038 — peker på API-ruten direkte, ikke frontend-siden lenken i
+        // selve e-postteksten peker til.
+        listUnsubscribeUrl: `${SITE_ORIGIN}/api/unsubscribe/${unsubscribeToken}`,
       });
 
       await dbase.update(digestDeliveries).set({ status: "sent" }).where(eq(digestDeliveries.id, deliveryId));

@@ -15,6 +15,7 @@ import { sendBulkEmail } from "@/lib/email/send";
 import {
   insertPerRecipientTokens,
   renderDigestContent,
+  SITE_ORIGIN,
   type DigestRequestItem,
   type RenderedDigest,
 } from "@/lib/email/digest";
@@ -135,6 +136,8 @@ export async function retryFailedDigestDeliveries(digestId: string): Promise<Ret
         subject: personalized.subject,
         html: personalized.html,
         text: personalized.text,
+        // FR-038, samme som førstegangsutsendelsen i tick.ts.
+        listUnsubscribeUrl: `${SITE_ORIGIN}/api/unsubscribe/${unsubscribeToken}`,
       });
 
       await db

@@ -61,6 +61,14 @@ export interface SendBulkEmailInput {
   subject: string;
   html: string;
   text: string;
+  // FR-038: "Alle bulkutsendelser skal inneholde List-Unsubscribe og
+  // List-Unsubscribe-Post." Obligatorisk (ikke valgfritt) med hensikt — et
+  // glemt felt skal gi en typefeil, ikke en bulk-e-post uten headeren.
+  // Peker på API-RUTEN direkte (/api/unsubscribe/:token), IKKE
+  // frontend-siden lenken i selve e-postteksten peker til
+  // (src/lib/email/digest.ts) — e-postklienten POSTer rett til denne uten å
+  // rendre noen side (RFC 8058, "one-click").
+  listUnsubscribeUrl: string;
 }
 
 /**
@@ -68,11 +76,19 @@ export interface SendBulkEmailInput {
  * `sendTransactionalEmail` med hensikt (`INFRASTRUCTURE.md` 6.1: "atskilte
  * strømmer for transaksjonell e-post og bulk, slik at en klage på digesten
  * ikke ødelegger leveringen av innloggingslenker"). Når Brevo faktisk kobles
- * til, skal denne bruke bulk-/kampanje-API-et, ikke det transaksjonelle.
+ * til, skal denne bruke bulk-/kampanje-API-et, ikke det transaksjonelle, OG
+ * sende med `List-Unsubscribe: <listUnsubscribeUrl>` og
+ * `List-Unsubscribe-Post: List-Unsubscribe=One-Click` som ekte e-post-
+ * headere (FR-038) — ikke implementert ennå siden selve Brevo-kallet ikke
+ * er bygget, men feltet finnes allerede i grensesnittet slik at det ikke
+ * glemmes når det bygges.
  */
 export async function sendBulkEmail(input: SendBulkEmailInput): Promise<void> {
   if (!process.env.BREVO_API_KEY) {
-    console.warn(`[email:stub:bulk] "${input.subject}" → ${input.to.email} (${input.to.locale})`);
+    console.warn(
+      `[email:stub:bulk] "${input.subject}" → ${input.to.email} (${input.to.locale}) ` +
+        `[List-Unsubscribe: ${input.listUnsubscribeUrl}]`
+    );
     return;
   }
 
