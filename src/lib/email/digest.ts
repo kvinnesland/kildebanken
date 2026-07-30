@@ -1,7 +1,7 @@
 import { createTranslator } from "@/i18n/get-messages";
 import type { SupportedLocale } from "@/i18n/config";
 import { escapeHtml } from "./escape-html";
-import { EMAIL_COLORS } from "./colors";
+import { EMAIL_COLOR_SCHEME_META, EMAIL_COLORS, emailDarkModeStyleTag } from "./colors";
 
 export interface DigestRequestItem {
   id: string;
@@ -81,25 +81,25 @@ export function renderDigestContent(
       const url = requestUrl(r);
       const languageNotice =
         r.contentLanguage !== locale
-          ? `<p style="color:${EMAIL_COLORS.textMuted};font-size:13px;margin:4px 0 0;">${escapeHtml(
+          ? `<p class="eb-muted" style="color:${EMAIL_COLORS.textMuted};font-size:13px;margin:4px 0 0;">${escapeHtml(
               t("request.foreign_language_notice")
             )}</p>`
           : "";
       const geoLine = r.geographicNote
-        ? `<p style="color:${EMAIL_COLORS.textMuted};font-size:14px;margin:4px 0 0;">${escapeHtml(r.geographicNote)}</p>`
+        ? `<p class="eb-muted" style="color:${EMAIL_COLORS.textMuted};font-size:14px;margin:4px 0 0;">${escapeHtml(r.geographicNote)}</p>`
         : "";
 
-      return `<tr><td style="padding:16px 0;border-bottom:1px solid ${EMAIL_COLORS.border};">
+      return `<tr><td class="eb-border" style="padding:16px 0;border-bottom:1px solid ${EMAIL_COLORS.border};">
         <h2 style="font-size:18px;margin:0 0 8px;font-family:Georgia,'Times New Roman',serif;">
-          <a href="${url}" style="color:${EMAIL_COLORS.link};text-decoration:none;">${escapeHtml(r.title)}</a>
+          <a href="${url}" class="eb-link" style="color:${EMAIL_COLORS.link};text-decoration:none;">${escapeHtml(r.title)}</a>
         </h2>
-        <p style="margin:0 0 8px;color:${EMAIL_COLORS.text};">${escapeHtml(r.summary)}</p>
-        <p style="color:${EMAIL_COLORS.textMuted};font-size:13px;margin:0;">${escapeHtml(r.organizationName)}</p>
-        <p style="color:${EMAIL_COLORS.textMuted};font-size:13px;margin:2px 0 0;">${escapeHtml(
+        <p class="eb-text" style="margin:0 0 8px;color:${EMAIL_COLORS.text};">${escapeHtml(r.summary)}</p>
+        <p class="eb-muted" style="color:${EMAIL_COLORS.textMuted};font-size:13px;margin:0;">${escapeHtml(r.organizationName)}</p>
+        <p class="eb-muted" style="color:${EMAIL_COLORS.textMuted};font-size:13px;margin:2px 0 0;">${escapeHtml(
           t("request.deadline_label", { deadline: dateFormatter.format(r.responseDeadline) })
         )}</p>
         ${geoLine}${languageNotice}
-        <a href="${url}" style="display:inline-block;margin-top:10px;padding:8px 16px;background:${EMAIL_COLORS.accent};color:${EMAIL_COLORS.accentText};text-decoration:none;border-radius:6px;font-size:14px;">${escapeHtml(
+        <a href="${url}" class="eb-button" style="display:inline-block;margin-top:10px;padding:8px 16px;background:${EMAIL_COLORS.accent};color:${EMAIL_COLORS.accentText};text-decoration:none;border-radius:6px;font-size:14px;">${escapeHtml(
           t("digest.cta_read_and_respond")
         )}</a>
       </td></tr>`;
@@ -108,16 +108,16 @@ export function renderDigestContent(
 
   const html = `<!doctype html>
 <html lang="${locale}">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:${EMAIL_COLORS.pageBackground};font-family:-apple-system,'Segoe UI',sans-serif;">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${EMAIL_COLOR_SCHEME_META}${emailDarkModeStyleTag()}</head>
+<body class="eb-body" style="margin:0;padding:0;background:${EMAIL_COLORS.pageBackground};font-family:-apple-system,'Segoe UI',sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
     <tr><td align="center" style="padding:24px 12px;">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:${EMAIL_COLORS.surface};border-radius:8px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" class="eb-card" style="max-width:600px;width:100%;background:${EMAIL_COLORS.surface};border-radius:8px;">
         <tr><td style="padding:24px;">
-          <p style="margin:0 0 20px;color:${EMAIL_COLORS.text};">${escapeHtml(t("digest.intro"))}</p>
+          <p class="eb-text" style="margin:0 0 20px;color:${EMAIL_COLORS.text};">${escapeHtml(t("digest.intro"))}</p>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${itemsHtml}</table>
-          <p style="margin:24px 0 0;font-size:12px;color:${EMAIL_COLORS.textMuted};">
-            <a href="${unsubscribeUrl}" style="color:${EMAIL_COLORS.textMuted};">${escapeHtml(t("digest.unsubscribe"))}</a>
+          <p class="eb-muted" style="margin:24px 0 0;font-size:12px;color:${EMAIL_COLORS.textMuted};">
+            <a href="${unsubscribeUrl}" class="eb-muted" style="color:${EMAIL_COLORS.textMuted};">${escapeHtml(t("digest.unsubscribe"))}</a>
           </p>
         </td></tr>
       </table>

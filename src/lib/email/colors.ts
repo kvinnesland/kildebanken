@@ -13,10 +13,6 @@
 // nærmeste tilnærmingen til "feiler CI ved avvik" uten hele
 // eksport-pipelinen.
 //
-// Kun lyst tema — e-postmaler i dette prosjektet er ikke bygget for mørkt
-// tema ennå (DESIGN.md 7 nevner `prefers-color-scheme`-støtte som et krav,
-// notert som gjenstående i NATTLOGG.md sammen med selve eksport-pipelinen).
-
 export const EMAIL_COLORS = {
   pageBackground: "#f9fafb", // --color-bg (--gray-50)
   surface: "#ffffff", // --color-surface (--gray-0)
@@ -27,3 +23,49 @@ export const EMAIL_COLORS = {
   accentText: "#ffffff", // --color-accent-text (--gray-0)
   link: "#0a5774", // --color-link (--accent-700)
 } as const;
+
+// DESIGN.md 7: "Mørkt tema via prefers-color-scheme der klienten støtter
+// det." Samme prinsipp og samme verifiseringsmetode som EMAIL_COLORS over
+// (`colors.test.ts` sjekker begge mot de faktiske oklch-primitivene) —
+// verdiene her er hentet fra semantic.css sin egen
+// `@media (prefers-color-scheme: dark)`-blokk, IKKE gjettet på nytt.
+export const EMAIL_COLORS_DARK = {
+  pageBackground: "#090b0e", // --color-bg mørkt (--gray-950)
+  surface: "#16191c", // --color-surface mørkt (--gray-900)
+  text: "#f1f4f6", // --color-text mørkt (--gray-100)
+  textMuted: "#9da2a8", // --color-text-muted mørkt (--gray-400)
+  border: "#25292e", // --color-border mørkt (--gray-800)
+  accent: "#63a9c9", // --color-accent mørkt (--accent-400)
+  accentText: "#090b0e", // --color-accent-text mørkt (--gray-950)
+  link: "#93c6e0", // --color-link mørkt (--accent-300)
+} as const;
+
+// DESIGN.md 7: "Mørkt tema via prefers-color-scheme der klienten støtter
+// det." E-postklienter støtter ikke CSS-variabler eller eksterne stilark,
+// men de fleste som faktisk implementerer prefers-color-scheme (Apple Mail,
+// nyere Gmail-apper) leser et innebygd <style>-element i <head> — derfor
+// klassenavn (`eb-*`) i TILLEGG til de vanlige inline-stilene hver mal
+// allerede setter (inline er selve det universelle fallback-laget for
+// klienter uten <style>-støtte). `!important` er nødvendig her — uten det
+// ville inline-stilen (høyere spesifisitet) alltid vunnet over klassen.
+export function emailDarkModeStyleTag(): string {
+  const d = EMAIL_COLORS_DARK;
+  return `<style>@media (prefers-color-scheme: dark) {
+  .eb-body { background-color: ${d.pageBackground} !important; }
+  .eb-card { background-color: ${d.surface} !important; }
+  .eb-text { color: ${d.text} !important; }
+  .eb-muted { color: ${d.textMuted} !important; }
+  .eb-link { color: ${d.link} !important; }
+  .eb-button { background-color: ${d.accent} !important; color: ${d.accentText} !important; }
+  .eb-border { border-color: ${d.border} !important; }
+}</style>`;
+}
+
+// Signaliserer til klienter som FAKTISK håndterer dette selv at e-posten
+// allerede støtter mørkt tema — hindrer at klienten i tillegg prøver å
+// gjette seg til et mørkt tema med egen fargeinvertering (DESIGN.md 7:
+// "farger som er lesbare også når klienten inverterer på egen hånd" —
+// dette er den delen av kravet som faktisk FOREBYGGER at det skjer, i
+// stedet for bare å tåle det).
+export const EMAIL_COLOR_SCHEME_META =
+  '<meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark">';

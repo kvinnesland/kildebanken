@@ -47,6 +47,16 @@ describe("renderDigestContent", () => {
     const rendered = renderDigestContent("nb-NO", [sampleRequest]);
     expect(rendered.html).not.toContain("et annet språk enn ditt");
   });
+
+  it("DESIGN.md 7: mørkt tema via prefers-color-scheme, med color-scheme-metatagger", () => {
+    const rendered = renderDigestContent("nb-NO", [sampleRequest]);
+    expect(rendered.html).toContain("@media (prefers-color-scheme: dark)");
+    expect(rendered.html).toContain('<meta name="color-scheme" content="light dark">');
+    expect(rendered.html).toContain('class="eb-body"');
+    expect(rendered.html).toContain('class="eb-card"');
+    expect(rendered.html).toContain('class="eb-button"');
+    expect(rendered.html).toContain('class="eb-link"');
+  });
 });
 
 describe("insertPerRecipientTokens", () => {

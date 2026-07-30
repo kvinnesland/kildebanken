@@ -1,4 +1,4 @@
-import { EMAIL_COLORS } from "../colors";
+import { EMAIL_COLOR_SCHEME_META, EMAIL_COLORS, emailDarkModeStyleTag } from "../colors";
 import { escapeHtml } from "../escape-html";
 
 export interface RenderedEmail {
@@ -43,22 +43,22 @@ export interface SimpleCtaEmailContent {
 export function renderSimpleCtaEmail(content: SimpleCtaEmailContent): RenderedEmail {
   const ctaHtml =
     content.ctaLabel && content.ctaUrl
-      ? `<a href="${content.ctaUrl}" style="display:inline-block;padding:10px 20px;background:${EMAIL_COLORS.accent};color:${EMAIL_COLORS.accentText};text-decoration:none;border-radius:6px;font-size:15px;">${escapeHtml(content.ctaLabel)}</a>`
+      ? `<a href="${content.ctaUrl}" class="eb-button" style="display:inline-block;padding:10px 20px;background:${EMAIL_COLORS.accent};color:${EMAIL_COLORS.accentText};text-decoration:none;border-radius:6px;font-size:15px;">${escapeHtml(content.ctaLabel)}</a>`
       : "";
   const ignoreNoteHtml = content.ignoreNote
-    ? `<p style="margin:24px 0 0;font-size:13px;color:${EMAIL_COLORS.textMuted};">${escapeHtml(content.ignoreNote)}</p>`
+    ? `<p class="eb-muted" style="margin:24px 0 0;font-size:13px;color:${EMAIL_COLORS.textMuted};">${escapeHtml(content.ignoreNote)}</p>`
     : "";
 
   const html = `<!doctype html>
 <html lang="${content.locale}">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:${EMAIL_COLORS.pageBackground};font-family:-apple-system,'Segoe UI',sans-serif;">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${EMAIL_COLOR_SCHEME_META}${emailDarkModeStyleTag()}</head>
+<body class="eb-body" style="margin:0;padding:0;background:${EMAIL_COLORS.pageBackground};font-family:-apple-system,'Segoe UI',sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
     <tr><td align="center" style="padding:24px 12px;">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:${EMAIL_COLORS.surface};border-radius:8px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" class="eb-card" style="max-width:600px;width:100%;background:${EMAIL_COLORS.surface};border-radius:8px;">
         <tr><td style="padding:24px;">
-          <h1 style="font-size:20px;margin:0 0 16px;color:${EMAIL_COLORS.text};font-family:Georgia,'Times New Roman',serif;">${escapeHtml(content.heading)}</h1>
-          <p style="margin:0 0 20px;color:${EMAIL_COLORS.text};">${escapeHtml(content.body)}</p>
+          <h1 class="eb-text" style="font-size:20px;margin:0 0 16px;color:${EMAIL_COLORS.text};font-family:Georgia,'Times New Roman',serif;">${escapeHtml(content.heading)}</h1>
+          <p class="eb-text" style="margin:0 0 20px;color:${EMAIL_COLORS.text};">${escapeHtml(content.body)}</p>
           ${ctaHtml}
           ${ignoreNoteHtml}
         </td></tr>

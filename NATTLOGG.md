@@ -4329,3 +4329,94 @@ API-nøkkel finnes; (10) vurder om `/me`-en side (profilvisning) og evt.
 en offentlig informasjonsside burde bygges, siden `nav.my_account`/
 `nav.requests` fortsatt er ubrukte i18n-nøkler uten noen side å peke
 til.
+
+---
+
+## Fortsettelse av økt 7 — `prefers-color-scheme` for e-postmalene (DESIGN.md 7)
+
+Vurderte testbarhets-refaktoreringen (punkt 2 over) igjen som neste
+steg, men landet på samme konklusjon som sist: `grep` bekreftet at den nå
+sprer seg over SEKS lib-filer (`admin/legal-documents.ts`,
+`admin/countries.ts`, `admin/responses.ts`, `moderation/users.ts`, i
+tillegg til de to allerede kjente `moderation/requests.ts`/
+`journalists.ts`) og et sted mellom 15 og 20 rutefiler som ville trenge
+tilsvarende endringer — alt sammen autorisasjonskode, uten en eneste
+rutetest å verifisere mot i dag. Å gjøre dette raskt, alene, uten et
+testsikkerhetsnett, er ikke forsvarlig risiko for én autonom runde.
+Fortsatt bevisst utsatt — se "Neste økt" for et konkret forslag til
+hvordan en fremtidig økt bør angripe den i stedet.
+
+Valgte i stedet et klart mindre, godt avgrenset, lavrisiko-punkt fra
+listen: punkt (7), `prefers-color-scheme` for e-postmalene — DESIGN.md 7
+sitt eneste gjenstående, eksplisitt navngitte krav som verken var bygget
+eller aktivt utsatt av en god grunn (i motsetning til den fulle
+byggetids-eksport-pipelinen for tokens, som ER bevisst utsatt og notert
+flere ganger i natt).
+
+### Bygget
+
+- `EMAIL_COLORS_DARK` i `src/lib/email/colors.ts` — samme prinsipp og
+  samme verifiseringsmetode som den lyse varianten (`colors.test.ts`
+  sjekker BEGGE mot de faktiske oklch-primitivene, nå 16 tester i den
+  filen). Verdiene hentet fra `semantic.css` sin egen
+  `@media (prefers-color-scheme: dark)`-blokk — IKKE gjettet på nytt: et
+  første forsøk med håndskrevne hex-verdier ble faktisk feil (avvek fra
+  de ekte primitivene med noen få hex-siffer), fanget opp av å kjøre et
+  engangsskript som beregnet de RIKTIGE verdiene med prosjektets egen
+  `oklchToSrgbHex()` FØR jeg skrev dem inn — samme disiplin som resten av
+  natten ("regn ut de faktiske tallene, ikke anta").
+- `emailDarkModeStyleTag()` + `EMAIL_COLOR_SCHEME_META` (samme fil) — et
+  delt `<style>`-element med `@media`-regler (`eb-body`/`eb-card`/
+  `eb-text`/`eb-muted`/`eb-link`/`eb-button`/`eb-border`-klasser, hver med
+  `!important` siden de må vinne over den allerede eksisterende
+  inline-stilen for klienter som FAKTISK støtter `<style>`), pluss
+  `<meta name="color-scheme">`/`<meta name="supported-color-schemes">` —
+  det er DENNE delen av DESIGN.md 7 sitt krav ("farger som er lesbare
+  også når klienten inverterer på egen hånd") som faktisk FOREBYGGER at
+  en klient prøver å gjette seg til et mørkt tema selv, i stedet for bare
+  å tåle det.
+- `simple-cta-email.ts` (skallet bak fem av de sju bygde malene) og
+  `digest.ts` (den daglige utsendelsen, egen HTML-struktur) begge
+  oppdatert til å legge `class="eb-*"` PÅ SIDEN AV de eksisterende
+  inline-stilene (aldri i stedet for — inline er fortsatt det
+  universelle fallback-laget for klienter uten `<style>`-støtte i det
+  hele tatt).
+- **Rettet en eksisterende, nå utdatert test-påstand**:
+  `simple-cta-email.test.ts` hadde en test som eksplisitt sjekket
+  `not.toContain("<style")` — korrekt DA den ble skrevet (ingen
+  `<style>` fantes), men "all CSS inlines" i DESIGN.md 7 betyr "ingen
+  ExTERNT stilark", ikke "aldri noe `<style>`-element i det hele tatt" —
+  det SAMME avsnittet krever jo `prefers-color-scheme`, som er umulig å
+  uttrykke med bare inline-stiler (media queries virker ikke der). Rettet
+  testen til å reflektere riktig lesning av kravet, med en ny, egen test
+  for selve mørk-tema-støtten.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**247
+tester**, +10 nye), `i18n:check` (**240 nøkler**, uendret — ingen nye
+i18n-strenger i denne delen), `design:check-tokens` (30
+komponent-CSS-filer, uendret — endringene er i e-postmaler, ikke
+komponent-CSS), `rm -rf .next && next build`, `test:integration` mot
+ekte lokal Postgres (41 tester, uendret), PLUSS en direkte kjøring av
+`renderMagicLinkEmail()` (kjørt og slettet igjen) som bekreftet at
+`<style>`-blokken, metataggene og `class`-attributtene faktisk vises
+riktig i den rå HTML-en.
+
+### Neste økt
+
+(1) den store testbarhets-refaktoreringen (`admin/`/`moderation/`-
+lib-laget, se over) — konkret forslag denne gangen: start med ÉN fil
+(f.eks. `moderation/journalists.ts`, minst risikofylt siden den bare har
+to skrivehandlinger), flytt sesjons-oppslaget til de tilhørende rutene,
+skriv INTEGRASJONSTESTER for den ene filen FØR den neste, og bruk de
+allerede eksisterende browser-verifiserte flytene (denne natten testet
+både godkjenning og avvisning i en ekte nettleser) som manuell
+regresjonssjekk mellom hver fil — ikke gjør alle seks på én gang; (2)
+resten av komponentbiblioteket (Dialog, Toast, Card, Alert, Tabs, Table,
+Pagination, EmptyState); (3) resten av 16.1-dashbordet; (4) den ubrukte
+`"approved"`-verdien i `request_status`-enumen; (5) OG-delingsbilde; (6)
+det oversatte-stinavn-hullet (3.7); (7) flere e-postmaler etter behov;
+(8) faktisk Brevo-integrasjon når en API-nøkkel finnes; (9) vurder en
+`/me`-side og hva som skal skje med de resterende ubrukte
+`nav.*`-nøklene.
