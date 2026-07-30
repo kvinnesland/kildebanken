@@ -2290,3 +2290,43 @@ skjemaet (det første virkelige skjemaet) faktisk trenger:
 sannsynligvis neste i rekkefølge; (3) vurder en enkel GitHub Actions-
 workflow som kjører alle fem+ verifiseringskommandoene (inkl. den nye
 `design:check-tokens`) automatisk — finnes ikke i repoet ennå.
+
+---
+
+## Fortsettelse av økt 7 — `Checkbox`-komponenten (SPEC-V1.md 7.1: samtykker)
+
+Samme arbeidsøkt. Bygget `src/components/Checkbox.tsx` — nødvendig for det
+FØRSTE virkelige skjemaet (mottakerregistrering, 7.1) sine tre obligatoriske
+samtykker, som ALLE eksplisitt "ikke forhåndsavkrysset".
+
+- Dokumentert eksplisitt i kodekommentar: komponenten selv håndhever IKKE
+  "aldri forhåndsavkrysset" — den arver `defaultSelected`/`isSelected`
+  uendret fra React Aria. Det er kallerens ansvar, siden komponenten ikke
+  kan vite hvorfor den brukes. Testet likevel at DEFAULT-tilstanden (ingen
+  props satt i det hele tatt) er avkrysset av, som en release-mot-regresjon.
+- Egen SVG-hake (ikke et ikonbibliotek — React Aria Components' `Checkbox`
+  er helt visuelt tom, gir bare tilstand via `data-selected` osv.).
+- Støtter `errorMessage`, vist KUN når `isInvalid` — samme mønster (og
+  samme grunn) som `TextField`s `FieldError`-fiks fra i sted i denne økten.
+- Label-innholdet tar `ReactNode`, ikke bare streng — nødvendig fordi
+  samtykketeksten i i18n-nøkkelen (`recipient.register.consent_terms`:
+  "Jeg godtar {termsLink} og {privacyLink}.") har innebygde lenker som må
+  interpoleres som React-elementer, ikke bare tekst.
+
+4 nye komponenttester, alle grønne på første forsøk (ingen ny feil funnet
+denne gangen, i motsetning til `TextField`).
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**78 tester**,
++4 nye), `npm run design:check-tokens` (OK, 3 komponent-CSS-filer, 0
+brudd), `i18n:check`, `next build`, OG
+`npx vitest run -c vitest.integration.config.ts` mot ekte lokal Postgres
+(39 tester, uendret).
+
+### Neste økt
+
+Samme som forrige: OKLCH-fargekonvertering (egen økt), resten av
+komponentbiblioteket (`RadioGroup`/`Select` sannsynligvis neste — landet/
+språket i registreringsskjemaet), eller en GitHub Actions-workflow som
+kjører hele verifiseringskjeden automatisk.

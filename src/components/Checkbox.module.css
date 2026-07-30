@@ -1,0 +1,80 @@
+/*
+ * Lag 3 — komponent. Se Button.module.css for regelen (kun semantiske
+ * tokens, aldri en farge-/avstands-/radiusverdi direkte).
+ */
+
+.checkbox {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  color: var(--color-text);
+  /* DESIGN.md 5: minst 8px mellom to trykkflater, og selve boksen pluss
+     luften rundt skal nå 44px trykkflate selv om selve den synlige boksen
+     er mindre. */
+  padding-block: var(--space-2);
+}
+
+.checkbox[data-disabled] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.box {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.125rem; /* optisk justering mot tekstens første linje */
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  transition: background-color var(--duration-fast) var(--ease), border-color var(--duration-fast) var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .box {
+    transition: none;
+  }
+}
+
+.checkbox[data-selected] .box,
+.checkbox[data-indeterminate] .box {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+/* DESIGN.md 6.1: fokusmarkering er alltid synlig, aldri fjernet. */
+.checkbox[data-focus-visible] .box {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.checkbox[data-invalid] .box {
+  border-color: var(--color-danger);
+}
+
+.checkmark {
+  color: var(--color-accent-text);
+  visibility: hidden;
+}
+.checkbox[data-selected] .checkmark,
+.checkbox[data-indeterminate] .checkmark {
+  visibility: visible;
+}
+
+.label {
+  line-height: var(--leading-normal);
+}
+
+.errorMessage {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+  margin-top: var(--space-1);
+}
