@@ -13,7 +13,7 @@ import { generateToken, hashToken } from "./tokens";
 import { revokeAllSessionsForUser } from "./session";
 import { sendTransactionalEmail } from "@/lib/email/send";
 
-// Samme gyldighetstid som magic link (8.1) — se src/lib/auth/magic-link.ts.
+// Samme gyldighetstid som magic link (6.1) — se src/lib/auth/magic-link.ts.
 const TOKEN_TTL_MS = 15 * 60 * 1000;
 
 export type AccountDeletionResult = { ok: true } | { ok: false; error: string };

@@ -50,7 +50,7 @@ async function insertSession(
   return rawToken;
 }
 
-describe("createSession mot ekte Postgres (SPEC-V1.md 8.1/8.3)", () => {
+describe("createSession mot ekte Postgres (SPEC-V1.md 6.1/6.3)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -83,7 +83,7 @@ describe("createSession mot ekte Postgres (SPEC-V1.md 8.1/8.3)", () => {
     expect(days).toBeLessThan(30.1);
   });
 
-  it("gir moderator/administrator 12 timers øktlevetid, IKKE 30 dager (8.3: fornyes ikke)", async () => {
+  it("gir moderator/administrator 12 timers øktlevetid, IKKE 30 dager (6.3: fornyes ikke)", async () => {
     await ensureTestCountry();
     const [moderator] = await db
       .insert(users)
@@ -142,6 +142,54 @@ describe("getCurrentSession mot ekte Postgres", () => {
     expect(session?.userId).toBe(journalist.id);
     expect(session?.role).toBe("journalist");
     expect(session?.email).toBe(journalist.email);
+  });
+
+  it("6.1: skyver expires_at frem til ~30 dager frem OG setter last_used_at for mottaker/journalist", async () => {
+    await ensureTestCountry();
+    const recipient = await createActiveRecipient();
+    const rawToken = await insertSession(recipient.id, {
+      // Original utløpsdato langt unna 30 dager frem — beviser at kallet
+      // faktisk SKYVER den frem, ikke bare lar den stå.
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+    const { store } = installFakeCookieJar();
+    store.set("kb_session", rawToken);
+    const { getCurrentSession } = await import("./session");
+
+    const before = Date.now();
+    await getCurrentSession();
+
+    const [row] = await db.select().from(sessions).where(eq(sessions.tokenHash, hashToken(rawToken)));
+    const days = (row!.expiresAt.getTime() - before) / (24 * 60 * 60 * 1000);
+    expect(days).toBeGreaterThan(29.9);
+    expect(days).toBeLessThan(30.1);
+    expect(row?.lastUsedAt).not.toBeNull();
+  });
+
+  it("6.3: rører IKKE expires_at for moderator/administrator, men setter fortsatt last_used_at", async () => {
+    await ensureTestCountry();
+    const [moderator] = await db
+      .insert(users)
+      .values({
+        email: `session-renew-moderator-${Date.now()}@example.invalid`,
+        role: "moderator",
+        status: "active",
+        countryCode: "XT",
+        locale: "nb-NO",
+        emailVerifiedAt: new Date(),
+      })
+      .returning({ id: users.id });
+    const originalExpiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000);
+    const rawToken = await insertSession(moderator!.id, { expiresAt: originalExpiresAt });
+    const { store } = installFakeCookieJar();
+    store.set("kb_session", rawToken);
+    const { getCurrentSession } = await import("./session");
+
+    await getCurrentSession();
+
+    const [row] = await db.select().from(sessions).where(eq(sessions.tokenHash, hashToken(rawToken)));
+    expect(row?.expiresAt.getTime()).toBe(originalExpiresAt.getTime());
+    expect(row?.lastUsedAt).not.toBeNull();
   });
 
   it("returnerer null for en UTLØPT økt", async () => {

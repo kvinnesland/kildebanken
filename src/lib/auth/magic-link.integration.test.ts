@@ -21,7 +21,7 @@ async function countTokensFor(userId: string): Promise<number> {
   return rows.length;
 }
 
-describe("requestMagicLink mot ekte Postgres (SPEC-V1.md 8.1)", () => {
+describe("requestMagicLink mot ekte Postgres (SPEC-V1.md 6.1)", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();

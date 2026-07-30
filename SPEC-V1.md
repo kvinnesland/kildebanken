@@ -1273,6 +1273,7 @@ request_ids                 array
 recipient_count
 status                      pending | sending | sent | failed
 sent_at
+created_at
 
 DigestDelivery
 id
@@ -1359,25 +1360,34 @@ token_hash                  unik – aldri rå token, jf. 24.3
 purpose                     login | delete_account | data_export
                             (24.3: "særlig sensitive handlinger skal kreve
                             ny autentisering" – samme mekanisme, annet formål)
-expires_at                  15 minutter fra utstedelse (8.1)
+expires_at                  15 minutter fra utstedelse (6.1)
 used_at                     nullable – tokenet er engangsbruk
 created_at
 ```
 
 ### 19.15 Session
 
-Samme begrunnelse som 19.14 – 8.1 og 8.3 forutsetter øktlevetid uten at en
+Samme begrunnelse som 19.14 – 6.1 og 6.3 forutsetter øktlevetid uten at en
 økt-entitet noensinne ble definert.
+
+**Rettet under autonomt arbeid** (økt 7, se `NATTLOGG.md`): denne seksjonen
+og 19.14 siterte tidligere "8.1"/"8.3" som kilden for øktlevetidene —
+8.1 handler om `verification_status` for journalister, ikke øktlevetid i
+det hele tatt. Selve reglene står i 6.1 ("Økt for mottaker og journalist:
+30 dager, fornyes ved bruk" / "Lenken er gyldig i 15 minutter") og 6.3
+("12 timers økt" for moderator/administrator). Rettet henvisningene.
 
 ```
 id
 user_id                     FK User
 token_hash                  unik – aldri rå token i cookie ukryptert/usignert
 expires_at                  30 dager (mottaker/journalist) eller 12 timer
-                            (moderator/administrator), fra 8.1/8.3
-last_used_at                fornyer IKKE expires_at automatisk for
-                            moderator/administrator (8.3: "fornyes ikke
-                            automatisk")
+                            (moderator/administrator), fra 6.1/6.3
+last_used_at                6.1: "fornyes ved bruk" for mottaker/journalist
+                            (glidende vindu — expires_at skyves frem ved
+                            hver bruk); fornyer IKKE expires_at for
+                            moderator/administrator (6.3 sier bare "12
+                            timers økt", ingen fornyelse nevnt der)
 revoked_at                  nullable – satt ved eksplisitt utlogging,
                             kontosletting eller suspensjon
 created_at

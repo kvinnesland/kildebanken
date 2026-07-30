@@ -6119,3 +6119,95 @@ OG-delingsbilde når visuell identitet er besluttet), eller (b) lete etter
 en HELT ANNEN klasse hull enn de tre allerede uttømte denne økten —
 f.eks. en diff av datamodellen (seksjon 19) mot det faktiske
 Drizzle-schemaet, samme teknikk anvendt på et tredje inventar.
+
+---
+
+## Fortsettelse av økt 7 — datamodellen (seksjon 19) diffet mot Drizzle-schemaet: ett feltnavn-hull, ETT REELT ATFERDSHULL, og fem feilaktige spec-henvisninger rettet
+
+Gjorde punkt (b) fra forrige "Neste økt" — sammenlignet hver av de 15
+entitetene i seksjon 19 (`Country` gjennom `Session`) felt for felt mot
+`src/db/schema.ts`. De aller fleste var perfekte 1:1-treff (`Country`,
+`LegalDocument`, `User`, `ModeratorCountry`, `JournalistProfile`,
+`Request` — inkludert at `approved`-verdien korrekt forblir fjernet fra
+`request_status`-enumen fra en tidligere økt —, `Response`,
+`ContactRequest`, `EmailSubscription`, `DigestDelivery`, `ConsentRecord`,
+`AuditLog`, `Suppression`, `AuthToken`). To avvik ble funnet:
+
+1. **`Digest` manglet `created_at` i spec-listen** — schemaet har den
+   (som alle andre tabeller), spec-teksten hadde bare glemt å liste den.
+   Lagt til i spec-en, ingen kodeendring.
+
+2. **Et REELT atferdshull, ikke bare et dokumentasjonshull**: `Session`
+   sitt `last_used_at`-felt eksisterer i schemaet, men ble ALDRI satt av
+   noen kode noe sted — samme klasse funn som `hidden_by_moderator`/
+   `manual` fra forrige økt (en kolonne bygget for et formål, men aldri
+   koblet til). Denne var derimot alvorligere: SPEC-V1.md 6.1 sier
+   eksplisitt "Økt for mottaker og journalist: 30 dager, FORNYES VED
+   BRUK" — et glidende vindu — men `getCurrentSession()` fornyet
+   ingenting; øktens `expires_at` sto fast fra innlogging uansett hvor
+   ofte kontoen ble brukt, i praksis identisk med
+   moderator/administrator-øktene som EKSPLISITT ikke skal fornyes (6.3).
+   `createSession()`s egen kommentar hevdet endog at dette var et BEVISST
+   valg ("samme 'ingen stille fornyelse'-prinsipp for alle roller"), noe
+   som direkte motsa 6.1s tekst.
+
+   Rettet: `getCurrentSession()` kaller nå en ny `renewSessionIfApplicable()`
+   som skyver `expires_at` frem til `now + 30 dager` OG setter
+   `last_used_at` for mottaker/journalist ved hver gyldig bruk, og setter
+   bare `last_used_at` (uendret `expires_at`) for moderator/administrator.
+
+   **Bevisst UFULLSTENDIG, dokumentert eksplisitt** (ikke glattet over):
+   dette fornyer kun DATABASE-sannheten, ikke selve `kb_session`-
+   informasjonskapselens egen nettleser-utløpsdato (satt én gang i
+   `createSession()` og aldri siden). Next.js tillater `cookies().set()`
+   KUN fra en Server Action eller Route Handler — `getCurrentSession()`
+   kalles derimot også fra over et dusin vanlige Server Component-sider
+   (`me/page.tsx`, `admin/page.tsx` m.fl.), der et slikt kall ville
+   KASTET og knekt siden. En fullt korrekt løsning krever enten å skille
+   kallernes kontekst (én variant for Route Handler-ruter som KAN fornye
+   cookien) eller å flytte selve fornyelsen til `middleware.ts` (som
+   kjører på hver sideforespørsel og kan sette responscookies, men i dag
+   verken dekker `/api`-ruter eller gjør databasekall). En så bred endring
+   på tvers av 30+ kallsteder i sikkerhetskritisk kode ble bevisst IKKE
+   forsøkt i samme slengen som selve funnet — det fortjener en egen,
+   grundig gjennomgått økt. Uten den fullførende cookie-fornyelsen
+   forblir den brukeropplevde effekten av denne fiksen begrenset (økten
+   fornyes i databasen, men nettleseren dropper likevel cookien etter 30
+   dager fra INNLOGGING, ikke fra siste bruk) — men den underliggende
+   datamodell-sannheten er nå korrekt, og et fremtidig cookie-fiks har nå
+   `last_used_at` å bygge videre på.
+
+3. **Fem stedfortredende spec-henvisningsfeil oppdaget underveis**:
+   `Session`/`AuthToken` i seksjon 19.14/19.15, og fire kodekommentarer
+   (`session.ts`, `magic-link.ts`, `account-deletion.ts`, `schema.ts`) samt
+   to testfilnavn (`session.integration.test.ts`,
+   `magic-link.integration.test.ts`) siterte "8.1"/"8.3" som kilden for
+   økt-/token-levetider — men 8.1 handler om journalisters
+   `verification_status`, IKKE øktlevetid. De faktiske reglene står i 6.1
+   (mottaker/journalist: 30 dager, fornyes ved bruk; magic link: 15
+   minutter, maks 5 forespørsler) og 6.3 (moderator/administrator: 12
+   timer). Rettet alle henvisningene — bekreftet at ALLE andre "8.1"-
+   referanser i kodebasen (journalistregistrering, moderation/users.ts,
+   schema.ts sin verification_status-kommentar) faktisk ER korrekte, siden
+   8.1 dekker BÅDE `verification_status` og det delte `User.status`-feltet.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**335
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret), `design:check-tokens`
+(**40** komponent-CSS-filer, uendret), `rm -rf .next && next build`
+(grønn), `test:integration` mot ekte lokal Postgres (**219 tester**, +2 —
+kjørt 3 ganger på rad, alle grønne, gitt at endringen rører
+sikkerhetskritisk økt-kode brukt av over 30 kallsteder).
+
+### Neste økt
+
+(1) Det viktigste gjenstående: en gjennomtenkt, isolert økt viet UTELUKKENDE
+til å fullføre øktfornyelsen med faktisk cookie-fornyelse (enten via
+kontekst-atskilte funksjoner for Route Handler- vs. Server Component-
+kallere, eller via `middleware.ts` utvidet til databasekall og
+`/api`-dekning) — IKKE noe å haste gjennom sammen med annet arbeid, gitt
+hvor sikkerhetskritisk og bredt brukt denne koden er; (2) datamodell-diffen
+fant ingen andre hull enn de to over — resten av seksjon 19 stemmer
+allerede fullstendig med schemaet; (3) Brevo-integrasjon, resten av
+komponentbiblioteket, og OG-delingsbilde forblir alle korrekt blokkert.

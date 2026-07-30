@@ -4,7 +4,7 @@ import { eq, and, gt, count } from "drizzle-orm";
 import { generateToken, hashToken } from "./tokens";
 import { sendTransactionalEmail } from "@/lib/email/send";
 
-// SPEC-V1.md 8.1: 15 minutters gyldighet, engangsbruk, maks 5 forespørsler
+// SPEC-V1.md 6.1: 15 minutters gyldighet, engangsbruk, maks 5 forespørsler
 // per e-postadresse per 15 minutter (samme seksjon + INFRASTRUCTURE.md 18).
 const TOKEN_TTL_MS = 15 * 60 * 1000;
 const MAX_REQUESTS_PER_WINDOW = 5;

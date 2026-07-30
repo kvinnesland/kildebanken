@@ -492,7 +492,8 @@ export const authTokens = pgTable("auth_tokens", {
 });
 
 // ---------------------------------------------------------------------------
-// 19.15 Session — SPEC-V1.md 8.1 (30 dager) / 8.3 (12 timer, fornyes ikke)
+// 19.15 Session — SPEC-V1.md 6.1 (30 dager, fornyes ved bruk) / 6.3 (12
+// timer for moderator/administrator, ingen fornyelse)
 // ---------------------------------------------------------------------------
 
 export const sessions = pgTable("sessions", {
