@@ -1,0 +1,39 @@
+/*
+ * Lag 3 — komponent. Se Button.module.css for regelen (kun semantiske
+ * tokens, aldri en farge-/avstands-/radiusverdi direkte).
+ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  padding-block: var(--space-1);
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.neutral {
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+}
+
+.success {
+  background: var(--color-success-subtle);
+  color: var(--color-success);
+}
+
+/* IKKE --color-warning-text her — den er kalibrert mot --color-surface,
+   ikke mot --color-warning-subtle, og kolliderer med den i mørkt tema
+   (se semantic.css sin kommentar ved --color-warning-on-subtle). */
+.warning {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning-on-subtle);
+}
+
+.danger {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
+}

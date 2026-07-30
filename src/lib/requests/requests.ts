@@ -405,10 +405,20 @@ export async function getPublicRequest(requestId: string) {
       publishedAt: requests.publishedAt,
       organizationName: journalistProfiles.organizationName,
       journalistFullName: journalistProfiles.fullName,
+      // SPEC-V1.md 11: "svarfrist MED TIDSSONE" — landets IANA-tidssone, ikke
+      // leserens egen, se countries.timezone (19.1).
+      countryCode: requests.countryCode,
+      countryTimezone: countries.timezone,
+      // Til hreflang-alternater i generateMetadata (11: "hreflang-
+      // alternater") — landets faktiske tilgjengelige locales, ikke en
+      // hardkodet liste, slik at det skalerer automatisk når land nummer to
+      // (med flere locales) legges til.
+      countryAvailableLocales: countries.availableLocales,
     })
     .from(requests)
     .innerJoin(journalistProfiles, eq(requests.journalistId, journalistProfiles.userId))
     .innerJoin(users, eq(requests.journalistId, users.id))
+    .innerJoin(countries, eq(requests.countryCode, countries.code))
     .where(
       and(
         eq(requests.id, requestId),

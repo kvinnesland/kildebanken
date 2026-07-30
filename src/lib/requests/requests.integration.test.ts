@@ -52,6 +52,12 @@ describe("getPublicRequest mot ekte Postgres", () => {
     expect(found?.id).toBe(requestId);
   });
 
+  it("inkluderer landets tidssone (SPEC-V1.md 11: 'svarfrist med tidssone')", async () => {
+    const found = await getPublicRequest(requestId);
+    expect(found?.countryCode).toBe(TEST_COUNTRY_CODE);
+    expect(found?.countryTimezone).toBe("Europe/Oslo");
+  });
+
   it("skjules umiddelbart når eierens konto suspenderes, og vises igjen når den gjenopprettes (8.1)", async () => {
     await db.update(users).set({ status: "suspended" }).where(eq(users.id, journalistId));
     const hidden = await getPublicRequest(requestId);

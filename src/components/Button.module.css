@@ -20,6 +20,10 @@
   font-weight: 500;
   line-height: var(--leading-tight);
   cursor: pointer;
+  /* Denne klassen brukes nå også på en ekte <a> (next/link), se
+     buttonClassName.ts — en knapp har aldri understrek som standard, men en
+     lenke gjør, uten dette. */
+  text-decoration: none;
   transition:
     background-color var(--duration-fast) var(--ease),
     border-color var(--duration-fast) var(--ease),

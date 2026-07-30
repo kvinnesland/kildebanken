@@ -3065,3 +3065,144 @@ komponent for komponent; (2) en offentlig forespørsel-liste/-visning
 nødvendig steg FØR svarskjemaet uansett, siden en respondent må kunne
 FINNE en forespørsel før hen kan svare på den; (3) vurder om
 `next build`-steget i CI også bør kjøre mot en migrert database.
+
+---
+
+## Fortsettelse av økt 7 — `/[locale]/foresporsler/[id]/[slug]` (SPEC-V1.md 11), OG en rettet antagelse
+
+Samme arbeidsøkt. Skulle først bygge en offentlig "forespørsel-liste"-side
+(punkt 2 i forrige "Neste økt"), men sjekket SPEC-V1.md 5.2 FØRST i stedet
+for å anta at en nettleservennlig liste faktisk trengs — og den gjør ikke
+det: mottakerens reise er utelukkende "mottar daglig e-post → klikker
+'Les og svar' på ÉN forespørsel → lander på DEN siden". Ingen bla-gjennom-
+flyt er beskrevet noe sted i v1-spec-en. Det som faktisk MANGLET var den
+individuelle forespørselssiden selve digest-lenken peker på (SPEC-V1.md
+11) — `src/lib/email/digest.ts` linker allerede til
+`/${locale}/foresporsler/${id}/${slug}`, men ingen slik side fantes.
+Rettet kursen til å bygge DEN i stedet for listen ingen ba om.
+
+### Backend fantes nesten helt fra før
+
+`getPublicRequest()` i `requests.ts` fantes allerede med nøyaktig de
+feltene 11 krever (tittel, sammendrag, beskrivelse, hvem søkes, status,
+frist, org/journalistnavn, anonymitets-/opptaksflagg) — men manglet
+landets tidssone og tilgjengelige locales, begge eksplisitt krevd av 11
+("svarfrist MED TIDSSONE", "hreflang-alternater"). Utvidet spørringen med
+et `countries`-join (fantes allerede importert) for `countryTimezone` og
+`countryAvailableLocales` — verifisert med en ny integrasjonstest mot ekte
+Postgres, ikke bare antatt riktig fra selve SQL-en.
+
+### To nye komponenter, og et REELT funn oppdaget FØR commit i den ene
+
+- **`Badge`** (DESIGN.md 6.2, "farge OG tekst", fire toner). Status→tone-
+  oppslaget ligger i `src/lib/requests/status-badge.ts`, ikke i selve
+  komponenten — "fargetilordningen defineres ett sted", per 6.2, gjenbrukbar
+  fra e-postmaler senere.
+
+  **Reelt funn, fanget FØR committing, ikke etter:** første forsøk lot
+  "warning"- og "danger"-tonen bruke de NYE `--color-warning-text`/
+  `--color-danger-text`-tokenene (lagt til forrige del av økten) som
+  tekstfarge mot sin egen `-subtle`-bakgrunn. Regnet ut tallene i stedet for
+  å anta det var trygt siden begge tokenene "nettopp var verifiserte" — og i
+  MØRKT tema er `--color-warning-text`/`--color-danger-text` nøyaktig LIK
+  `--color-warning-subtle`/`--color-danger-subtle` (begge peker på samme
+  `-100`-primitiv), som ville gitt 1.00:1 kontrast — usynlig tekst. Roten:
+  `-text`-tokenene ble kalibrert mot `--color-surface` (som ER
+  tema-avhengig), ikke mot sin egen `-subtle`-variant (som ALDRI er det) —
+  feil rolle for feil jobb, samme klasse feil som `--color-on-danger` løste
+  forrige del av økten, bare denne gangen fanget FØR den ble committet.
+  Løsning: `danger`-tonen bruker `--color-danger` (uendret, allerede riktig
+  — samme par som den eksisterende "feilbanner-tekst"-sjekken). `warning`-
+  tonen fikk et HELT NYTT, bevisst tema-UAVHENGIG token,
+  `--color-warning-on-subtle: var(--warning-900)`, siden `--color-warning`
+  (600) selv bare gir 2.90:1 mot `--color-warning-subtle` — for lav. To nye
+  par lagt til `contrast-pairs.ts` sin `TOKEN_PAIRS` (36 sjekker totalt nå,
+  alle grønne i begge temaer).
+
+- **`ReportForm`** (SPEC-V1.md 12.5: "et enkelt skjema", gjenbrukbar for
+  BÅDE `request`- og `response`-rapportering via `entityType`-prop). Bevisst
+  en inline utvidbar seksjon, IKKE en `Dialog` — den komponenten finnes ikke
+  ennå, og et helskjerm-modal er unødvendig kompleksitet for to felt.
+  Sjekket eksplisitt for samme klasse CSS-kommentarfeil som
+  `Button.module.css` hadde tidligere i natt (en utilsiktet `*/` midt i en
+  kommentar) — ingen funnet her.
+
+### To reelle feil funnet UNDER selve `next build`, ikke antatt bort
+
+1. **Server/klient-grense brutt:** `Button.tsx` importerer
+   `react-aria-components`, som selv importerer `"client-only"` — ethvert
+   Server Component som importerer NOE fra `Button.tsx` (selv en ren
+   streng-hjelpefunksjon uten reell klientavhengighet) feiler bygget, fordi
+   grensen håndheves PER FIL, ikke per eksport. Forespørselssiden (en Server
+   Component) trengte en "Svar"-CTA stylet som en primærknapp, men som en
+   EKTE `next/link`-navigasjonslenke (React Aria sin `<Button>` tar bevisst
+   ikke imot `href` i det hele tatt — sjekket typedefinisjonen, ikke antatt).
+   Løst ved å flytte selve klassenavn-logikken til en helt egen fil,
+   `src/components/buttonClassName.ts`, uten noen import av
+   `react-aria-components` — importeres trygt fra BÅDE `Button.tsx` og en
+   Server Component nå.
+2. **Lenken hadde en synlig, utilsiktet understreking** — oppdaget i et
+   ekte skjermbilde (Playwright, `next build` + `next start`), ikke antatt
+   bort: `.button`-klassen manglet `text-decoration: none`, usynlig så
+   lenge klassen bare satt på ekte `<button>`-elementer (som aldri har
+   understreking), men synlig nå som den også brukes på en `<a>`. Rettet.
+
+### `noindex` som standard, indekserbar bare her (SPEC-V1.md 11)
+
+La til `robots: { index: false, follow: false }` som standardverdi i
+`src/app/[locale]/layout.tsx` sin `metadata` — "noindex på alt utenfor de
+offentlige forespørselssidene og informasjonssidene" var IKKE håndhevet
+noe sted i prosjektet før nå (et reelt hull mellom spec og kode, rettet).
+Selve forespørselssiden overstyrer eksplisitt til `{ index: true, follow:
+true }` i sin egen `generateMetadata`, sammen med kanonisk URL og
+`hreflang`-alternater utledet fra landets FAKTISKE `availableLocales` (ikke
+en hardkodet liste).
+
+**Bevisst IKKE bygget:** delingsbilde (Open Graph-bilde) — 11 krever det
+eksplisitt, men prosjektet har ingen bildegenereringsinfrastruktur
+(`next/og`, fonter for rendering) eller `public/`-mappe i det hele tatt
+ennå. Reelt, notert gap — ikke silently droppet.
+
+### Faktisk visuelt verifisert i en ekte nettleser
+
+Satte inn en midlertidig, ekte publisert testforespørsel i
+`kildebanken_test` (slettet igjen etterpå), kjørte `next build` + `next
+start`, og sjekket med Playwright: metadata (tittel, `og:*`, `robots:
+index, follow`, canonical, BEGGE `hreflang`-alternatene), selve
+gjengivelsen i lyst OG mørkt tema (badge, byline, tegnsatt beskrivelse med
+linjeskift, de tre anonymitets-/opptaksinfolinjene med korrekt ICU
+`select`-formatering ut fra de faktiske boolske verdiene satt i
+testdataene), `expired`-tilstanden (advarsel-badge, ingen svar-knapp,
+tydelig varsel), rapportskjemaets utvidelse, OG at en feil/gjettet slug i
+URL-en faktisk omdirigerer til den kanoniske — ikke bare antatt fra koden.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**157
+tester**, +16 nye: Badge, ReportForm, status-badge, pluss to nye
+kontrastpar), `i18n:check` (74 nøkler), `design:check-tokens` (OK, 13
+komponent-CSS-filer), `rm -rf .next && next build` (grønt, inkludert den
+nye ruten), OG `npx vitest run -c vitest.integration.config.ts` mot ekte
+lokal Postgres (**40 tester**, +1 for landets tidssone).
+
+### Antagelser tatt
+
+- "Svar"-knappen lenker til `/${locale}/foresporsler/${id}/svar` — en rute
+  som IKKE finnes ennå (404 i dag). Bevisst: selve svarskjemaet er neste
+  steg, ikke denne siden sin jobb. Innsending av svar krever uansett
+  innlogging (SPEC-V1.md 6.2/12), som den fremtidige siden må håndtere selv.
+- Rapportering trenger ikke en `Dialog`-komponent — SPEC-V1.md 12.5 sier
+  "et enkelt skjema", og en inline utvidbar seksjon er enklere og mer
+  mobilvennlig enn en modal, jf. DESIGN.md 5.
+
+### Neste økt
+
+(1) selve svarskjemaet (`/[locale]/foresporsler/[id]/svar`, SPEC-V1.md 12)
+— den naturlige fortsettelsen, `TextArea`/`TextField`/`Button` finnes
+allerede; (2) vurder om `next build`-steget i CI også bør kjøre mot en
+migrert database; (3) resten av komponentbiblioteket (RadioGroup, Dialog,
+Toast, Card, Alert, Tabs, Table, Pagination, EmptyState, SkeletonLoader,
+LanguageSwitcher) — `RadioGroup` trengs trolig snart for svarskjemaets
+"del e-postadressen min"-valg (12.2, to alternativer, ikke en avkryssing);
+(4) et OG-delingsbilde for forespørselssider, når/hvis prioritert — krever
+`public/`-mappe og en bilde-renderingsstrategi som ikke finnes ennå.

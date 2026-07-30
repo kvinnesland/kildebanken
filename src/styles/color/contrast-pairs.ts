@@ -133,6 +133,10 @@ export const TOKEN_PAIRS: readonly TokenPair[] = [
   { name: "feilbanner-tekst", foreground: "color-danger", background: "color-danger-subtle", category: "text" },
   { name: "suksessbanner-tekst", foreground: "color-success", background: "color-success-subtle", category: "text" },
 
+  // Badge (forespørselsstatus, DESIGN.md 6.2).
+  { name: "nøytral badge-tekst", foreground: "color-text-muted", background: "color-surface-sunken", category: "text" },
+  { name: "advarsel-badge-tekst (expired)", foreground: "color-warning-on-subtle", background: "color-warning-subtle", category: "text" },
+
   // Ikke-tekst grensesnittelementer (WCAG 1.4.11 via DESIGN.md 2.4 sin
   // "3:1 ... for grensesnittelementer og fokusmarkering").
   { name: "feltkant (TextField/Select/Checkbox) mot flate", foreground: "color-border-strong", background: "color-surface", category: "ui-component" },

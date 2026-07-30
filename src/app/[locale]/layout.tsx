@@ -8,6 +8,11 @@ export const metadata: Metadata = {
   // (SPEC-V1.md 2). Erstatt når navn er besluttet; se DESIGN.md 10.1.
   title: "Kildebanken",
   description: "Plattform for journalistforespørsler og ekspertkilder",
+  // SPEC-V1.md 11: "noindex på alt utenfor de offentlige forespørselssidene
+  // og informasjonssidene." Trygg standardverdi her (fail closed) — de
+  // offentlige forespørselssidene overstyrer selv i sin egen generateMetadata
+  // (src/app/[locale]/foresporsler/[id]/[slug]/page.tsx).
+  robots: { index: false, follow: false },
 };
 
 export default async function LocaleLayout({

@@ -50,6 +50,18 @@
   --color-on-danger: var(--gray-0);
   --color-success-text: var(--success-600);
   --color-warning-text: var(--warning-900);
+  /* --color-warning-on-subtle: tekst OPPÅ --color-warning-subtle spesifikt
+     (f.eks. Badge sin "expired"-status) — IKKE samme rolle som
+     --color-warning-text over, som er kalibrert mot flatens bakgrunn
+     (--color-surface), ikke mot --color-warning-subtle. Begge sider av DENNE
+     paringen er tema-uavhengige (--warning-900 og --warning-100 endrer seg
+     aldri), så selve rollen er det også — i mørkt tema ville
+     --color-warning-text (som da peker på --warning-100) kollidert nøyaktig
+     med --color-warning-subtle (også --warning-100) og gitt usynlig tekst,
+     oppdaget FØR det ble committet (contrast-pairs.ts). --color-danger/
+     --color-success trenger IKKE et tilsvarende eget "-on-subtle"-token —
+     de er allerede lesbare mot sin egen -subtle uendret. */
+  --color-warning-on-subtle: var(--warning-900);
 }
 
 @media (prefers-color-scheme: dark) {

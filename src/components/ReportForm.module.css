@@ -1,0 +1,36 @@
+/*
+ * Lag 3 — komponent. Se Button.module.css for regelen (kun semantiske
+ * tokens, aldri en farge-/avstands-/radiusverdi direkte).
+ */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 32rem;
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.formError {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+  background: var(--color-danger-subtle);
+  border-radius: var(--radius-md);
+  padding-block: var(--space-2);
+  padding-inline: var(--space-3);
+}
+
+.success {
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  color: var(--color-success);
+  background: var(--color-success-subtle);
+  border-radius: var(--radius-md);
+  padding-block: var(--space-3);
+  padding-inline: var(--space-4);
+}
