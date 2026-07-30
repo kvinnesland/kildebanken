@@ -5469,3 +5469,83 @@ skjemaendringen).
 verdier i 12.6; (3) resten av komponentbiblioteket (Dialog, Toast, Card,
 Alert, Tabs, Table, Pagination); (4) resten av 16.1-dashbordet; (5)
 OG-delingsbilde.
+
+## Fortsettelse av økt 7 — SPEC-V1.md 16.1-dashbordet bygget
+
+Tok fatt på punkt (4) fra forrige "Neste økt". Undersøkte først punkt (2)
+(`contact_approved`/`contact_declined`-`displayStatus`-spørsmålet) —
+konkluderte at det IKKE er et hull: SPEC-V1.md 12.6 sier ORDRETT
+"forespørsel om videre kontakt → EN KONTAKTFORESPØRSEL (14) FINNES for
+svaret", uten noe forbehold om dens status (pending/godkjent/avslått), og
+koden (`listMineResponses()`) gjør nøyaktig det — enhver kontaktforespørsel,
+uansett status, gir `displayStatus: "contact_requested"`. En eventuell
+finere oppdeling ville vært en PRODUKTBESLUTNING utover det spec-en ber om,
+ikke en retting av et hull — lot den derfor stå, i tråd med prinsippet om
+å ikke finne opp UX spec-en ikke ber om.
+
+**16.1-dashbordet** fantes ikke i det hele tatt (`/admin` hadde ingen
+`page.tsx`). Bygget:
+
+- `src/lib/admin/dashboard.ts` — `getDashboardStatsForCountry(countryCode)`
+  (de syv tallene: ventende journalistsøknader, modereringskø, aktive
+  forespørsler, utløper innen 48t, nye mottakere/avmeldinger siste 7 dager,
+  siste utsendelse MED antall feilede leveranser) og
+  `getDashboardCountries(session, selectedCountryCode?)`. Ingen av dem
+  kaller `getCurrentSession()` selv (samme mønster som
+  `listModerationQueue()`) — dermed INGEN `vi.mock("next/headers")` nødvendig
+  i testene, til tross for at dette er nytt admin-kode.
+- `dashboard.integration.test.ts` (10 tester) mot ekte Postgres — én
+  fallgruve rettet: en test antok et ABSOLUTT tall ("0 ventende søknader")
+  for `TEST_COUNTRY_CODE`, som er DELT med mange andre integrasjonstest-
+  filer som (bevisst) ikke rydder opp alt — endret til å måle DELTA
+  (før/etter), samme lærdom som tidligere økter i denne serien.
+- `/admin/page.tsx` + `CountrySelector.tsx` (klientkomponent, kun for
+  administrator — navigerer via `?country=`-URL-en, ingen klientside-henting):
+  "Filtrert på moderatorens tildelte land, med landvelger for administrator"
+  (16.1, ordrett) — en moderator ser AUTOMATISK sine tildelte land uten
+  valg, en administrator velger ETT land om gangen (forvalgt til det
+  alfabetisk første landet når ingen er valgt ennå).
+- `Card`-komponenten (DESIGN.md 6s minimumssett) bygget som en konkret
+  konsekvens av dette dashbordet, IKKE spekulativt — det er den eneste av
+  de sju gjenværende listede komponentene (Dialog/Toast/Card/Alert/Tabs/
+  Table/Pagination) som faktisk hadde en klar, umiddelbar bruker akkurat
+  nå. De andre seks er fortsatt bevisst usatt: eksisterende destruktive
+  handlinger (lukk forespørsel, avvis, suspender) bruker alle et etablert
+  inline-avsløringsmønster i stedet for `Dialog`, og å bytte DEM til en
+  modal nå ville vært en ubedt redesign av noe som allerede fungerer og er
+  testet, ikke en retting av et hull.
+
+### Verifisert ende til ende i en ekte nettleser
+
+Sådd realistiske data i utviklingsdatabasen (én ventende journalistsøknad,
+én forespørsel i kø, tre publiserte hvorav én med frist under 48t, tre
+ferske mottakere hvorav én avmeldt, én utsendelse med én feilet levering).
+Besøkte siden som BÅDE moderator og administrator: moderator så INGEN
+landvelger og korrekte tall for sitt tildelte land; administrator så
+velgeren, forvalgt til landet, og identiske korrekte tall; besøk med
+`?country=XT` direkte ga samme resultat. Alle sju tallene stemte
+nøyaktig overens med det som ble sådd (pluss forventet, allerede
+eksisterende data fra tidligere økters egne verifiseringsscript, som
+IKKE ble ryddet bort — bekrefter at tellingen faktisk er reell, ikke
+hardkodet). Landnavnet viste "…" for begge roller — bekreftet at dette
+er FORVENTET, korrekt oppførsel: `TEST_COUNTRY_CODE`s `nameKey`
+("country.test.name") er et bevisst uoversatt fixture-navn (se
+fixtures.ts: "aldri et ekte ISO 3166-1-kodenavn i bruk"), og
+`createTranslator()`s "…"-fallback for en manglende nøkkel er selve den
+spesifiserte, tilsiktede oppførselen (3.4) — ikke en feil i den nye koden.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**331
+tester**, +2 nye for `Card`), `i18n:check` (**387 nøkler**),
+`design:check-tokens` (**40** komponent-CSS-filer, +2), `rm -rf .next &&
+next build` (bekreftet `/[locale]/admin` i utdataet), `test:integration`
+mot ekte lokal Postgres (**125 tester**, +10 nye), PLUSS
+ende-til-ende-nettleserverifiseringen beskrevet over (begge roller).
+
+### Neste økt
+
+(1) faktisk Brevo-integrasjon når en API-nøkkel finnes; (2) resten av
+komponentbiblioteket (Dialog, Toast, Alert, Tabs, Table, Pagination) —
+bygg når en KONKRET forbruker faktisk trenger dem, ikke spekulativt; (3)
+OG-delingsbilde.

@@ -20,6 +20,7 @@ export default async function AdminLayout({
       <SiteHeader
         locale={locale}
         navLinks={[
+          { href: `/${locale}/admin`, label: t("admin.dashboard.title") },
           { href: `/${locale}/admin/journalists`, label: t("admin.journalists.title") },
           { href: `/${locale}/admin/requests`, label: t("admin.requests.title") },
           { href: `/${locale}/me`, label: t("nav.my_account") },
