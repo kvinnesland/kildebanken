@@ -380,6 +380,10 @@ export const emailSubscriptions = pgTable("email_subscriptions", {
   unsubscribeTokenHash: text("unsubscribe_token_hash").notNull(),
   unsubscribedAt: timestamp("unsubscribed_at", { withTimezone: true }),
   lastDigestAt: timestamp("last_digest_at", { withTimezone: true }),
+  // 10.3: "tre myke bounces på rad behandles som hard bounce" — lagt til
+  // under autonomt arbeid (økt 7, se NATTLOGG.md og SPEC-V1.md 19.9), siden
+  // datamodellen ikke hadde noen måte å telle dem på.
+  consecutiveSoftBounces: integer("consecutive_soft_bounces").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

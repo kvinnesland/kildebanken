@@ -43,6 +43,13 @@
       "when": 1785373472878,
       "tag": "0005_nebulous_colleen_wing",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785379920368,
+      "tag": "0006_certain_cable",
+      "breakpoints": true
     }
   ]
 }

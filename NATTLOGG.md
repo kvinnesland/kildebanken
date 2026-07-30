@@ -1664,3 +1664,101 @@ flere tabeller neste økt, f.eks. `Suppression.reason` (håndheves
 er bare `unsubscribed` faktisk implementert?), eller en systematisk
 gjennomgang av hvilke FR-punkter i seksjon 22 som IKKE har tilsvarende kode
 ennå. Ellers: samme som før — frontend, eller faktisk Brevo-integrasjon.
+
+---
+
+## Fortsettelse av økt 7 — fulgte opp `Suppression.reason` selv, bygget bounce/klage-webhooken
+
+Samme arbeidsøkt (nattens hourly trigger fyrte på nytt med en utdatert
+prioriteringsliste fra tidlig i natt — sjekket `git log`/status og fant at
+alt den listet som "neste steg" for lengst er ferdig og pushet; fortsatte i
+stedet fra NATTLOGG.md sin faktiske siste "Neste økt"-notat, som er
+gjeldende kilde til sannhet for status, ikke triggerens faste
+promptmal).
+
+Fulgte opp spørsmålet fra forrige "Neste økt": er
+`hard_bounce`/`complaint`/tre-på-rad-reglene fra 10.3 faktisk bygget noe
+sted? Svaret var nei — `unsubscribeByToken()` var eneste kode som skrev til
+`suppressions`. 10.1 punkt 9 ("behandle bounce- og klage-webhooks
+fortløpende") og FR-037 ("Test: simulert webhook") forutsetter begge et
+webhook-endepunkt som ikke fantes noe sted, verken i kode eller i seksjon
+20s ruteliste.
+
+### To spec-rettelser (spec først, så kode, som alltid)
+
+1. **19.9 EmailSubscription** manglet et felt for å telle sammenhengende
+   myke bounces — 10.3 sier "tre myke bounces på rad behandles som hard
+   bounce", men datamodellen ga ingen måte å telle dem på. Lagt til
+   `consecutive_soft_bounces` (heltall, default 0).
+2. **Seksjon 20** manglet selve webhook-ruten. Lagt til
+   `POST /webhooks/email-events`, med merknad om at den er ubeskyttet av
+   innlogging (kalles av leverandøren) og i stedet sikret med en delt
+   hemmelighet.
+
+### Skjema og migrasjon
+
+`src/db/schema.ts`: ny kolonne `consecutiveSoftBounces` på
+`emailSubscriptions`. Generert og kjørt migrasjon `0006_certain_cable.sql`
+(`ALTER TABLE ... ADD COLUMN ... DEFAULT 0 NOT NULL`) mot
+`kildebanken_test`.
+
+### Kode
+
+- `src/lib/subscriptions/bounce-policy.ts` — ren funksjon
+  `shouldEscalateToHardBounce()`, samme "ingen andre importer"-mønster som
+  `safe-redirect.ts`, testet isolert med rene enhetstester.
+- `src/lib/subscriptions/email-events.ts` — `processEmailEvent()`. Tar en
+  ALLEREDE NORMALISERT hendelsestype (`delivered | soft_bounce |
+  hard_bounce | complaint`) — selve tolkningen av Brevos faktiske
+  feltnavn/verdier skjer i ruten, samme adapter-/kjernelogikk-fordeling som
+  `netlify/functions/tick.ts` vs. `src/lib/jobs/tick.ts`
+  (`INFRASTRUCTURE.md` 16.8): bytter vi e-postleverandør, er det bare
+  tolkningen i ruten som må endres. Returnerer `{ handled: boolean }`, ikke
+  en feil, for en ukjent e-post — en webhook skal alltid få 200 tilbake for
+  en hendelse den ikke har noe å gjøre med, ellers gjentar leverandøren
+  forsøket unødvendig.
+  - `hard_bounce` → `status = bounced` + sperrelisten (`reason:
+    hard_bounce`).
+  - `complaint` → `status = unsubscribed` umiddelbart + sperrelisten
+    (`reason: complaint`).
+  - `soft_bounce` → øker telleren; ved den TREDJE sammenhengende
+    eskaleres det til akkurat samme hard-bounce-håndtering som over.
+  - `delivered` → nullstiller telleren (bryter en påbegynt rekke).
+- `src/app/api/webhooks/email-events/route.ts` — normaliserer Brevos
+  hendelsestype (verdiene er IKKE bekreftet mot ekte Brevo-dokumentasjon i
+  denne økten, ingen nettverkstilgang til Brevo tilgjengelig — dekker
+  defensivt både snake_case og camelCase-varianter, MÅ verifiseres før
+  produksjon, samme forbehold som Brevo-TODO-en i `send.ts`), og krever en
+  delt hemmelighet (`EMAIL_WEBHOOK_SECRET`) via query-parameter eller
+  header. **Feiler LUKKET:** mangler hemmeligheten i miljøet, avvises ALLE
+  kall (401) — samme "trygg standard"-prinsipp som `RETENTION_DRY_RUN`.
+
+### Ny, faktisk verifisert integrasjonstestdekning
+
+`src/lib/subscriptions/email-events.integration.test.ts` (6 tester): ukjent
+e-post gir `handled: false` uten feil; hard bounce setter status og
+sperrer; klage setter `unsubscribed` og sperrer; to myke bounces øker
+telleren uten å eskalere; den TREDJE sammenhengende eskalerer til hard
+bounce (kjerneregelen fra 10.3, bekreftet ordrett); en vellykket levering
+bryter en påbegynt rekke slik at telleren faktisk starter på nytt.
+
+Pluss 3 nye rene enhetstester for `shouldEscalateToHardBounce()`.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**59 tester**,
++3 nye), `i18n:check`, `next build` (**45 API-ruter totalt**, +1), OG
+`npx vitest run -c vitest.integration.config.ts` mot ekte lokal Postgres
+(**32 tester**, +6 nye, 9 testfiler).
+
+### Neste økt
+
+`processEmailEvent()` oppdaterer i dag KUN `email_subscriptions` og
+`suppressions` på e-postnivå — den oppdaterer IKKE den spesifikke
+`DigestDelivery`-raden en hendelse faktisk gjelder, siden
+`digest_deliveries.provider_message_id` aldri settes ennå (Brevo er ikke
+reelt tilkoblet, `sendBulkEmail()` returnerer ingen ekte melding-ID). Når
+faktisk Brevo-integrasjon bygges, bør webhook-ruten også korrelere på
+`provider_message_id` og oppdatere den enkelte leveranseraden, ikke bare
+kontoen. Ellers: samme restliste som før — frontend, eller en systematisk
+FR-for-FR-gjennomgang av seksjon 22.

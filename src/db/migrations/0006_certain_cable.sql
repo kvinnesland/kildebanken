@@ -1,0 +1,1 @@
+ALTER TABLE "email_subscriptions" ADD COLUMN "consecutive_soft_bounces" integer DEFAULT 0 NOT NULL;

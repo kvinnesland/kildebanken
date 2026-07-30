@@ -1180,12 +1180,19 @@ status                      active | unsubscribed | bounced
 unsubscribe_token_hash
 unsubscribed_at             nullable
 last_digest_at              nullable
+consecutive_soft_bounces    heltall, default 0 – se 10.3
 created_at
 updated_at
 ```
 
 Landet ligger på brukeren. Byttes land, følger abonnementet med uten at raden
 opprettes på nytt.
+
+`consecutive_soft_bounces` er lagt til under autonomt arbeid (økt 7, se
+`NATTLOGG.md`) — 10.3 krever at "tre myke bounces på rad behandles som hard
+bounce", men datamodellen hadde ingen måte å telle dem på. Nullstilles ved
+enhver vellykket levering eller hard bounce/klage (som allerede har satt
+kontoen til `bounced`/`unsubscribed` og dermed avslutter rekken uansett).
 
 ### 19.10 Digest og DigestDelivery
 
@@ -1323,6 +1330,7 @@ DELETE /me                          krever fersk innlogging
 
 POST   /unsubscribe/:token          uten innlogging, ett klikk
 POST   /subscribe                   registrering som mottaker
+POST   /webhooks/email-events       bounce/klage fra e-postleverandøren, se 10.3
 
 POST   /journalists/apply
 GET    /journalists/me
@@ -1378,6 +1386,13 @@ se `NATTLOGG.md`) — 8.1s tilstandsdiagram viser eksplisitt
 `suspended → active`, og 16.2 lister "opphev suspensjon" som en egen
 moderatorhandling for journalister, men ruten manglet i denne listen. Et
 reelt hull mellom to deler av spec-en, ikke en ny beslutning.
+
+`POST /webhooks/email-events` er lagt til av samme grunn (økt 7): 10.1
+punkt 9 ("behandle bounce- og klage-webhooks fortløpende") og FR-037
+("Test: simulert webhook") forutsetter begge at et slikt endepunkt finnes,
+men det manglet i denne listen. Ingen innlogging (kalles av
+e-postleverandøren, ikke en bruker) — beskyttet i stedet av en delt
+hemmelighet, se `src/lib/subscriptions/email-events.ts`.
 
 ---
 
