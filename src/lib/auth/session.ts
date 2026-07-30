@@ -119,3 +119,16 @@ export async function revokeCurrentSession(): Promise<void> {
 
   cookieStore.delete(SESSION_COOKIE);
 }
+
+/**
+ * Tilbakekaller ALLE økter for en bruker, uavhengig av enhet/cookie — brukes
+ * ved kontosletting (SPEC-V1.md 17.5: "aktive økter avsluttes"), ikke bare
+ * den innloggede klientens egen. `isNull(sessions.revokedAt)` gjør dette
+ * idempotent å kalle flere ganger.
+ */
+export async function revokeAllSessionsForUser(userId: string): Promise<void> {
+  await db
+    .update(sessions)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
+}

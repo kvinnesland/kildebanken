@@ -26,7 +26,9 @@ export type TransactionalTemplate =
   | "response_submitted_receipt"
   | "contact_request_received"
   | "response_request_closed"
+  | "confirm_account_deletion"
   | "account_deletion_confirmed"
+  | "contact_request_cancelled_account_deleted"
   | "legal_terms_material_change"
   | "new_request_for_moderation";
 

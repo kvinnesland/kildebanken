@@ -724,3 +724,72 @@ kontaktforespørsel-flyten (`POST /journalist/responses/:id/contact-request`,
 (`GET /journalist/requests/:id/responses`,
 `PATCH /journalist/responses/:id/status`); (4) faktisk Brevo-integrasjon når
 en API-nøkkel finnes.
+
+---
+
+## Økt 7 — 2026-07-30, natt (`create_trigger` fyrte presist, 01:38 UTC)
+
+### Kontosletting bygget som to-stegs flyt (SPEC-V1.md 17.5, 24.3)
+
+Merket i økt 2 at `AuthToken.purpose` inkluderte `delete_account`, men
+flyten som faktisk bruker den var ikke bygget. Bygget nå:
+
+- `src/lib/auth/account-deletion.ts`:
+  - `requestAccountDeletion()` — steg 1, krever aktiv økt (ruten), sender en
+    EGEN bekreftelseslenke (`confirm_account_deletion`-mal, ny), ikke den
+    vanlige innloggingslenken — se begrunnelse lagt til i `SPEC-V1.md` 15
+    (24.3: sensitive handlinger skal kreve ny autentisering, og en
+    irreversibel handling bør si det tydelig i selve e-postteksten).
+  - `confirmAccountDeletion()` — steg 2, krever IKKE en aktiv økt. Tokenet
+    ALENE er autoriteten, bevisst samme prinsipp som
+    `verifyMagicLink()`: å ha mottatt e-posten er beviset, uavhengig av om
+    brukeren fortsatt er innlogget i nettleseren som ba om slettingen.
+  - Selve slettingen grener på rolle:
+    - **Mottaker:** svar (`lifecycleStatus = submitted`) anonymiseres —
+      IKKE slettes. `contact_sharing` settes til `none`,
+      `display_name_snapshot` fjernes, men selve svarteksten beholdes til
+      ordinær retensjonsfrist (17.5, ordrett). Dette er BEVISST forskjellig
+      fra `withdrawResponse()` (økt 6), som hard-sletter umiddelbart — to
+      ulike hendelser (respondentens eget valg vs. kontosletting), to ulike,
+      spec-definerte utfall. Pending kontaktforespørsler kanselleres, og
+      journalisten VARSLES (ny mal `contact_request_cancelled_account_deleted`)
+      — i motsetning til vanlig trekking, der 12.4 eksplisitt sier
+      journalisten IKKE varsles særskilt.
+    - **Journalist:** åpne (`published`) forespørsler lukkes, respondenter
+      varsles (gjenbruker `response_request_closed`).
+    - **Begge:** økter tilbakekalles (ny `revokeAllSessionsForUser()` i
+      `session.ts` — tilbakekaller ALLE økter, ikke bare klientens egen),
+      e-postabonnement settes til `unsubscribed`, kontoen anonymiseres
+      (e-post OG `email_hash` settes til SHA-256-hash av original e-post —
+      tilfredsstiller både unikhets- og NOT NULL-kravet på `email` uten
+      skjemaendring), bekreftelse sendes til ORIGINAL adresse FØR
+      anonymisering, slettingen logges til `AuditLog`.
+- To route handlers: `POST /api/me/request-deletion`,
+  `POST /api/me/confirm-deletion`.
+- To nye e-postmaler lagt til i spec-en (15) og `send.ts`:
+  `confirm_account_deletion`, `contact_request_cancelled_account_deleted`.
+  "Kontosletting bekreftet" endret fra "mottaker" til "begge" — en
+  journalistkonto kan også slettes (17.5, siste avsnitt), og det stemte ikke
+  at malen bare gjaldt én rolle.
+
+**Antagelse tatt, ikke skjult** (dokumentert i kodekommentar også): 17.5 sier
+ingenting om `JournalistProfile` (fullName, organizationName) skal
+anonymiseres ved kontosletting — bare at forespørsler lukkes og
+respondenter varsles. Valgt å LA disse feltene stå uendret på allerede
+publiserte forespørsler, med samme begrunnelse som at en avis beholder en
+byline selv om journalisten slutter. Revurder om dette er feil lesning.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (54 tester,
+uendret — ingen ny ren logikk å isolere denne runden), `i18n:check`, `next
+build` (25 API-ruter totalt).
+
+### Neste økt
+
+(1) kontaktforespørsel-flyten
+(`POST /journalist/responses/:id/contact-request`,
+`POST /contact-requests/:id/respond`) — siste store hull i seksjon 20; (2)
+journalistens svarinnboks (`GET /journalist/requests/:id/responses`,
+`PATCH /journalist/responses/:id/marking`); (3) faktisk Brevo-integrasjon
+når en API-nøkkel finnes.

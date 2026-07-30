@@ -787,9 +787,19 @@ hvilken journalist som fikk tilgang og hvilket samtykke som lå til grunn.
 | Kvittering på innsendt svar | mottaker |
 | Forespørsel om videre kontakt | mottaker |
 | Forespørsel du har svart på er lukket | mottaker |
-| Kontosletting bekreftet | mottaker |
+| Bekreft kontosletting (lenke) | begge |
+| Kontosletting bekreftet | begge |
+| Kontaktforespørsel kansellert (respondentens konto slettet) | journalist |
 | Vesentlig endring i vilkår eller personvernerklæring | mottaker |
 | Ny forespørsel til moderering | moderator |
+
+De to siste radene er lagt til under autonomt arbeid (økt 7, se
+`NATTLOGG.md`), som del av å bygge `DELETE /me` (17.5). "Kontosletting
+bekreftet" gjelder nå begge roller, ikke bare mottaker — en journalistkonto
+kan også slettes (17.5, siste avsnitt). Bekreftelseslenken er en egen mal,
+adskilt fra den vanlige innloggingslenken, fordi den utløser en irreversibel
+handling og bør si det tydelig i teksten (24.3: "særlig sensitive handlinger
+skal kreve ny autentisering").
 
 Alle maler finnes i HTML og ren tekst, i alle aktive locales, og sendes på
 mottakerens locale. Alle skal fungere med skjermleser.
