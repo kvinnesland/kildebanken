@@ -13,10 +13,13 @@ export interface SiteHeaderNavLink {
 // Delt topptekst for de INNLOGGEDE områdene (/journalist, /admin) — IKKE
 // lagt i rot-layouten ennå, siden den offentlige forsiden bevisst er en
 // plassholder frem til Fase 2-forsidedesignet (se page.tsx sin kommentar,
-// SPEC-V1.md 24). `nav.requests`/`nav.my_account` (i18n-nøkler fra økt 1)
-// brukes IKKE her — ingen offentlig "bla i forespørsler"-side finnes eller
-// skal finnes (11: oppdagelse skjer kun via digesten), og ingen `/me`-side
-// er bygget ennå. Se NATTLOGG.md.
+// SPEC-V1.md 24). `nav.requests` (en i18n-nøkkel fra økt 1) er fjernet
+// (økt 7, se NATTLOGG.md) — ingen offentlig "bla i forespørsler"-side
+// finnes eller skal finnes (11: oppdagelse skjer kun via digesten), og
+// journalistens/moderatorens EGNE lenker til sine forespørselslister
+// bruker mer presise, kontekstspesifikke tekster
+// (`journalist.requests.title` m.fl.) satt av hver kallende layout, ikke
+// en generisk `nav.*`-nøkkel.
 export function SiteHeader({
   locale,
   navLinks,

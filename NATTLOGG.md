@@ -5098,3 +5098,47 @@ om `contact_approved`/`contact_declined` bør bli egne
 16.1-dashbordet; (6) den ubrukte `"approved"`-verdien i
 `request_status`-enumen; (7) OG-delingsbilde; (8) den siste ubrukte
 `nav.*`-nøkkelen, `nav.requests`.
+
+## Fortsettelse av økt 7 — fjernet den siste ubrukte `nav.*`-nøkkelen
+
+Punkt (8) fra forrige "Neste økt". Bekreftet via grep at `nav.requests`
+har NULL faktiske `t("nav.requests")`-kall noe sted i kodebasen — kun
+nevnt i en kommentar i `SiteHeader.tsx`. Journalistens/moderatorens egne
+lenker til sine forespørselslister bruker mer presise, allerede
+eksisterende nøkler (`journalist.requests.title` — "Mine forespørsler" —
+satt av hver kallende layout), og ingen offentlig "bla i
+forespørsler"-side finnes eller skal finnes (11: oppdagelse skjer kun via
+digesten). Fjernet nøkkelen fra begge locale-filene.
+
+Rettet samtidig en annen, mindre staleness i samme kommentar: den påsto
+fortsatt at "ingen `/me`-side er bygget ennå" — det er den, og har vært
+det siden en tidligere økt (`nav.my_account` brukes faktisk, fra
+`journalist/layout.tsx`/`admin/layout.tsx`). Presisert kommentaren til å
+forklare HVORFOR `nav.requests` ble fjernet, i stedet for å liste to
+"ennå ikke bygget"-grunner der bare én fortsatt stemte.
+
+Merk: `i18n:check-keys.ts` fanger BARE nøkler brukt i kode som mangler i
+nb-NO — den flagger aldri ubrukte nøkler (FR-012s formål er strengt
+"manglende", ikke "ubrukt"). Denne typen opprydding må fortsatt gjøres
+manuelt (grep), ikke noe verktøyet gjør automatisk.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**329
+tester**, uendret — ingen ny testbar atferd, bare fjernet en ubrukt
+tekst), `i18n:check` (uendret antall brukte nøkler, som forventet —
+scriptet teller bruk i kode, ikke nøkler i JSON-filen), `design:check-tokens`,
+`rm -rf .next && next build`, `test:integration` mot ekte lokal Postgres
+(47 tester, uendret).
+
+### Neste økt
+
+(1) faktisk Brevo-integrasjon når en API-nøkkel finnes; (2) den store
+testbarhets-refaktoreringen (`admin/`/`moderation/`-lib-laget,
+`tick.ts`s jobbfunksjoner, `account-deletion.ts`) — fortsatt bevisst
+utsatt, det klart største gjenværende hullet i test-dekning; (3) vurder
+om `contact_approved`/`contact_declined` bør bli egne
+`displayStatus`-verdier i 12.6; (4) resten av komponentbiblioteket
+(Dialog, Toast, Card, Alert, Tabs, Table, Pagination); (5) resten av
+16.1-dashbordet; (6) den ubrukte `"approved"`-verdien i
+`request_status`-enumen; (7) OG-delingsbilde.
