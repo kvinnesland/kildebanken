@@ -1,6 +1,7 @@
 import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
 import { renderMagicLinkEmail } from "./templates/magic-link";
 import { renderConfirmEmailEmail } from "./templates/confirm-email";
+import { renderJournalistApplicationReceivedEmail } from "./templates/journalist-application-received";
 import { renderResponseSubmittedReceiptEmail } from "./templates/response-submitted-receipt";
 import { renderNewResponseReceivedEmail } from "./templates/new-response-received";
 import type { RenderedEmail } from "./templates/simple-cta-email";
@@ -48,7 +49,7 @@ export interface SendTransactionalEmailInput {
 
 /**
  * Rendrer den faktiske mal-HTML-en/-teksten for de malene som har en ekte
- * mal bygget (foreløpig fire, økt 7 — de andre 19 malene i
+ * mal bygget (foreløpig fem, økt 7 — de andre 18 malene i
  * `TransactionalTemplate` er ennå bare navn uten innhold, se NATTLOGG.md).
  * `null` betyr "ingen mal bygget ennå for denne, ELLER dataene som kreves
  * mangler", ikke en feil — stubben under faller da tilbake til det gamle,
@@ -61,12 +62,13 @@ function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedE
 
   switch (input.template) {
     case "magic_link":
-    case "confirm_email": {
+    case "confirm_email":
+    case "journalist_application_received": {
       const token = input.data.token;
       if (typeof token !== "string") return null;
-      return input.template === "magic_link"
-        ? renderMagicLinkEmail(locale, token)
-        : renderConfirmEmailEmail(locale, token);
+      if (input.template === "magic_link") return renderMagicLinkEmail(locale, token);
+      if (input.template === "confirm_email") return renderConfirmEmailEmail(locale, token);
+      return renderJournalistApplicationReceivedEmail(locale, token);
     }
     case "response_submitted_receipt":
     case "new_response_received": {

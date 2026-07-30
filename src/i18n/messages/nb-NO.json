@@ -59,6 +59,12 @@
   "email.confirm_email.cta": "Bekreft e-post",
   "email.confirm_email.ignore": "Registrerte du deg ikke? Da kan du se bort fra denne e-posten.",
 
+  "email.journalist_application_received.subject": "Søknaden din er mottatt",
+  "email.journalist_application_received.heading": "Søknaden din er mottatt",
+  "email.journalist_application_received.body": "Takk for at du søkte om en journalistkonto. Klikk lenken under for å bekrefte e-postadressen din. Søknaden blir deretter gjennomgått av en moderator.",
+  "email.journalist_application_received.cta": "Bekreft e-post",
+  "email.journalist_application_received.ignore": "Søkte du ikke om en journalistkonto? Da kan du se bort fra denne e-posten.",
+
   "email.response_submitted_receipt.subject": "Kvittering: Svaret ditt er sendt",
   "email.response_submitted_receipt.heading": "Svaret ditt er sendt",
   "email.response_submitted_receipt.body": "Vi har mottatt svaret ditt på forespørselen «{title}». Du får beskjed på e-post dersom journalisten ber om å få vite mer.",

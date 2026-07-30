@@ -23,6 +23,20 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
     expect(loggedMessage).toContain("/api/auth/verify?token=abc123&locale=nb-NO");
   });
 
+  it("logger den faktisk rendrede malen for journalist_application_received", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sendTransactionalEmail({
+      template: "journalist_application_received",
+      to: { email: "journalist@example.com", locale: "nb-NO" },
+      data: { token: "abc123" },
+    });
+
+    const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
+    expect(loggedMessage).toContain("Søknaden din er mottatt");
+  });
+
   it("logger den faktisk rendrede malen for confirm_email", async () => {
     vi.stubEnv("BREVO_API_KEY", "");
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});

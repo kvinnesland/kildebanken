@@ -3696,3 +3696,69 @@ OG-delingsbilde; (4) det oversatte-stinavn-hullet (3.7); (5)
 `journalist_rejected` — journalistregistreringen som ble bygget tidlig i
 natt kaller allerede disse malnavnene uten innhold bak dem, akkurat som
 mottakerflyten gjorde før i går natt).
+
+---
+
+## Fortsettelse av økt 7 — `journalist_application_received`-malen (fortsetter punkt (6) over)
+
+`applyAsJournalist()` (`src/lib/registration/journalist.ts`, via
+`requestMagicLink()` i `magic-link.ts`) har hele natten kalt
+`sendTransactionalEmail()` med malnavnet `journalist_application_received`
+uten at noe innhold lå bak det — falt tilbake til det generiske
+stubb-loggformatet, akkurat som `magic_link`/`confirm_email` gjorde før
+forrige del av økten, og akkurat som de to svar-malene gjorde før det
+igjen. Dette er den FØRSTE e-posten enhver journalistsøknad faktisk
+utløser, så det var det naturlige neste valget fra punkt (6)-listen
+fremfor å starte på komponentbiblioteket eller svarinnboksen.
+
+- Lagt til i18n-nøkler (`email.journalist_application_received.
+  subject/heading/body/cta/ignore`) i både `nb-NO.json` og `en-GB.json` —
+  verifisert null nøkkeldrift mellom filene med et engangs Node-skript før
+  `check-keys.ts` ble kjørt.
+- `src/lib/email/templates/journalist-application-received.ts` (ny) —
+  bruker det samme delte skallet (`simple-cta-email.ts`) og nøyaktig samme
+  `GET /api/auth/verify?token=...&locale=...`-lenkemekanisme som
+  `magic_link`/`confirm_email`, siden e-postbekreftelse for journalister
+  faktisk SKJER via denne lenken (samme `verifyMagicLink()`-kall setter
+  `email_verified_at`, uavhengig av rolle).
+- **Kommentert eksplisitt i malfilen** (for å unngå at noen senere leser
+  `verification_status`-feltet feil): `pending_review` settes idet søknaden
+  opprettes, UAVHENGIG av om denne e-posten i det hele tatt klikkes —
+  teksten sier "blir deretter gjennomgått", ikke at klikket UTLØSER
+  gjennomgangen. Ren e-postbekreftelse, ikke en portvokter for moderering.
+- `send.ts`: lagt malen inn i samme switch-gren som `magic_link`/
+  `confirm_email` (alle tre trenger kun `token`), fremfor en egen gren —
+  de er strukturelt identiske. Dokumentasjonskommentaren øverst i filen
+  oppdatert fra "foreløpig fire" til "foreløpig fem".
+- Nye tester: 3 i `journalist-application-received.test.ts` (emne/
+  overskrift, lenke med token+locale, en-GB-rendering), 1 ny i
+  `send.test.ts` (stubb-loggformatet inneholder den faktiske overskriften).
+
+**Ingen ny antagelse utover det som allerede sto i `magic-link.ts` sin
+kommentar fra tidligere i natt** — denne malen implementerer bare det
+malnavnet som allerede ble kalt, uten å endre selve beslutningen om å slå
+sammen e-postbekreftelse og søknadskvittering i én e-post.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run src/lib/email/`
+(9 testfiler, 43 tester), `vitest run` (full suite: 35 testfiler, **208
+tester**, +4 nye), `i18n:check` (**130 nøkler**), `design:check-tokens`
+(18 komponent-CSS-filer, ingen rå verdier), `rm -rf .next && next build`,
+`test:integration` mot ekte lokal Postgres (`pg_isready` bekreftet
+"accepting connections" først — ingen omstart nødvendig denne gangen, i
+motsetning til forrige del av økten — 10 testfiler, 40 tester, alle
+grønne, uendret siden malen ikke rører database-logikk).
+
+### Neste økt
+
+(1) `journalist_approved`/`journalist_rejected` — samme mal-familie,
+samme hastebegrunnelse (moderator-godkjenningsflyten, som allerede finnes
+i `src/lib/moderation/` fra en tidligere del av natten, kaller etter alt
+å dømme også disse malnavnene uten innhold bak — bør bekreftes og rettes
+på samme måte); (2) resten av komponentbiblioteket (Dialog, Toast, Card,
+Alert, Tabs, Table, Pagination, EmptyState, SkeletonLoader,
+LanguageSwitcher); (3) journalistens svarinnboks (SPEC-V1.md 13); (4)
+OG-delingsbilde; (5) det oversatte-stinavn-hullet (3.7); (6)
+`prefers-color-scheme` for e-postmaler; (7) faktisk Brevo-integrasjon når
+en API-nøkkel finnes.

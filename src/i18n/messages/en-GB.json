@@ -59,6 +59,12 @@
   "email.confirm_email.cta": "Confirm email",
   "email.confirm_email.ignore": "Didn't register? You can safely ignore this email.",
 
+  "email.journalist_application_received.subject": "Your application has been received",
+  "email.journalist_application_received.heading": "Your application has been received",
+  "email.journalist_application_received.body": "Thanks for applying for a journalist account. Click the link below to confirm your email address. Your application will then be reviewed by a moderator.",
+  "email.journalist_application_received.cta": "Confirm email",
+  "email.journalist_application_received.ignore": "Didn't apply for a journalist account? You can safely ignore this email.",
+
   "email.response_submitted_receipt.subject": "Receipt: Your response has been sent",
   "email.response_submitted_receipt.heading": "Your response has been sent",
   "email.response_submitted_receipt.body": "We've received your response to the request “{title}”. You'll be notified by email if the journalist asks to know more.",
