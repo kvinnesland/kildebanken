@@ -5334,3 +5334,80 @@ verdier i 12.6; (4) resten av komponentbiblioteket (Dialog, Toast, Card,
 Alert, Tabs, Table, Pagination); (5) resten av 16.1-dashbordet; (6) den
 ubrukte `"approved"`-verdien i `request_status`-enumen; (7)
 OG-delingsbilde.
+
+## Fortsettelse av økt 7 — de tre siste filene i `admin/` dekket: HELE testbarhets-refaktoreringen er nå lukket
+
+Fullførte punkt (2). Alle tre filene (`countries.ts`, `legal-documents.ts`,
+`responses.ts`) er `requireAdmin()`-gatet (enklere enn
+`requireModeratorForCountry()` — kun administrator-rollen slipper
+gjennom, intet landoppslag), så samme `vi.mock("next/headers")`-oppskrift
+ble gjenbrukt uendret nok en gang:
+
+- `admin/countries.integration.test.ts` (14 tester) — desidert den
+  største av de tre: `listAllCountries()`/`createCountry()`
+  (opprettes ALLTID i `draft`, validerer standardspråk mot tilgjengelige
+  språk, avviser duplikatkoder)/`updateCountry()`/`setCountryStatus()`
+  (nekter aktivering uten BÅDE publiserte vilkår/personvernerklæring OG
+  minst én tildelt moderator, hver sjekket uavhengig)/
+  `assignModeratorToCountry()` (oppretter en ny konto ELLER gjenbruker en
+  eksisterende MODERATOR-konto, men avviser å gjøre om en journalist/
+  mottaker — akkurat regelen kommentaren i selve filen beskriver — og er
+  idempotent).
+- `admin/legal-documents.integration.test.ts` (7 tester) —
+  `publishLegalDocument()`: validering, ukjent landkode, at en ny versjon
+  ALDRI overskriver en eksisterende (17.2), og selve 17.2-varslingsregelen
+  presist som filens kommentar beskriver den: varsler AKTIVE mottakere i
+  RIKTIG land+locale ved `isMaterialChange` for `terms`/`privacy`, men
+  ALDRI for `journalist_terms` (den bevisst avgrensede antagelsen).
+- `admin/responses.integration.test.ts` (4 tester) —
+  `getResponseForAdmin()`: krever administrator SPESIFIKT (FR-051 — en
+  moderator nektes, ulikt de fleste andre admin-rutene), logger oppslaget
+  MED begrunnelsen (16.2), og returnerer svaret UANSETT
+  `lifecycle_status` (inkludert `hidden_by_moderator`) — bevisst ulikt
+  journalistens egen innboks.
+
+To reelle fallgruver underveis, begge løst uten å røre produksjonskode:
+- `audit_logs`/`moderator_countries`/`legal_documents`/`users` refererer
+  alle til `countries.code` uten `ON DELETE CASCADE` — et første utkast
+  som slettet testlandet direkte etter hver test feilet gjentatte ganger
+  på fremmednøkkel-konflikter. Løst med en delt `deleteTestCountry()`-
+  hjelpefunksjon som rydder i riktig avhengighetsrekkefølge, og ved å la
+  moderator-brukerens EGEN `countryCode` peke på det STABILE
+  `TEST_COUNTRY_CODE` (aldri slettet) mens selve tildelingen
+  (`moderatorCountries`) peker på testlandet som slettes.
+- `legal_documents` har en UNIQUE-indeks på (land, locale, type, versjon)
+  — hardkodede versjonsstrenger ("2.0.0" osv.) kollapset ved andre
+  gangs kjøring av testfilen, siden denne filen bevisst ikke rydder opp i
+  publiserte dokumenter (samme aksepterte unntak som resten av
+  `fixtures.ts`). Løst med en `uniqueVersion()`-hjelpefunksjon
+  (`randomUUID()`-basert) i stedet for faste strenger.
+
+Alle fem filene i `admin/`/`moderation/` som "den store
+testbarhets-refaktoreringen" pekte på (over mange, mange økter) har nå
+ekte test-dekning: `moderation/requests.ts`, `moderation/journalists.ts`,
+`moderation/users.ts`, `admin/legal-documents.ts`, `admin/countries.ts`,
+`admin/responses.ts` — pluss `tick.ts`s jobbfunksjoner og
+`account-deletion.ts` fra tidligere i denne økten. Til sammen **68 nye
+integrasjonstester** lagt til i denne økten alene (47 → 115), og hinderet
+(`server-only`) som gjorde ALT dette umulig å teste er løst med én
+alias-linje. Dette punktet forsvinner nå helt fra "Neste økt".
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**329
+tester**, uendret), `i18n:check` (uendret), `design:check-tokens`,
+`rm -rf .next && next build`, `test:integration` mot ekte lokal Postgres
+(**115 tester**, +25 nye — alle grønne, kjørt FLERE ganger på rad for å
+bekrefte at ingen av de nye testene etterlater data som kolliderer ved
+gjentatt kjøring, ingen regresjon).
+
+### Neste økt
+
+Testbarhets-refaktoreringen er FERDIG — ikke lenger et punkt på denne
+listen. Gjenstående, i grov prioritert rekkefølge: (1) faktisk
+Brevo-integrasjon når en API-nøkkel finnes; (2) vurder om
+`contact_approved`/`contact_declined` bør bli egne `displayStatus`-
+verdier i 12.6; (3) resten av komponentbiblioteket (Dialog, Toast, Card,
+Alert, Tabs, Table, Pagination); (4) resten av 16.1-dashbordet; (5) den
+ubrukte `"approved"`-verdien i `request_status`-enumen; (6)
+OG-delingsbilde.
