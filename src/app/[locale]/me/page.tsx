@@ -1,9 +1,11 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
 import { createTranslator } from "@/i18n/get-messages";
 import { getCurrentSession } from "@/lib/auth/session";
 import { getMyProfile } from "@/lib/me/profile";
 import { getJournalistProfile } from "@/lib/journalists/journalist-profile";
+import { buttonClassName } from "@/components/buttonClassName";
 import { ProfileForm } from "./ProfileForm";
 import { JournalistProfileForm } from "./JournalistProfileForm";
 import { DeleteAccountSection } from "./DeleteAccountSection";
@@ -58,6 +60,12 @@ export default async function MePage({
           timezone: profile.timezone ?? "",
         }}
       />
+
+      {session.role === "recipient" ? (
+        <Link href={`/${locale}/me/bytt-land`} className={buttonClassName("secondary")}>
+          {t("me.change_country_link")}
+        </Link>
+      ) : null}
 
       {session.role === "journalist" && journalistProfile ? (
         <section>

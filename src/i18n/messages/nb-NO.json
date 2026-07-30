@@ -177,6 +177,12 @@
   "me.delete_account_description": "Dette sletter kontoen din permanent. Vi sender deg en bekreftelseslenke på e-post først — kontoen slettes ikke før du klikker den.",
   "me.delete_account_button": "Be om sletting av konto",
   "me.delete_account_requested_notice": "Sjekk innboksen din — vi har sendt deg en bekreftelseslenke. Kontoen slettes ikke før du klikker den.",
+  "me.change_country_link": "Bytt land",
+  "me.change_country.title": "Bytt land",
+  "me.change_country.responses_notice": "Svar du allerede har mottatt blir liggende hos journalistene som mottok dem — dette endres ikke ved å bytte land.",
+  "me.change_country.submit": "Bytt land",
+  "me.change_country.submitting": "Bytter land …",
+  "me.change_country.success": "Landet ditt er byttet. Endringen gjelder fra neste utsendelse av den daglige e-posten.",
 
   "legal.journalist_terms_title": "Journalistvilkår",
 

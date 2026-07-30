@@ -4606,3 +4606,91 @@ for å forbli "ubrukt med vilje" for alltid; (10) UI for
 `changeCountry()` (SPEC-V1.md 7.3) — full backend finnes
 (`src/lib/me/change-country.ts`), men ingen side, samme mønster som de
 andre "backend uten UI"-hullene denne natten fant.
+
+---
+
+## Fortsettelse av økt 7 — UI for `changeCountry()` (SPEC-V1.md 7.3)
+
+Fortsatte punkt (10) fra forrige "Neste økt" — samme "backend uten
+UI"-mønster denne natten har funnet gjentatte ganger. Full
+forretningslogikk fantes allerede (`src/lib/me/change-country.ts`,
+bygget for flere økter siden, med egne integrasjonstester), men ingen
+side kalte den.
+
+### Bygget
+
+- `src/app/[locale]/me/bytt-land/page.tsx` (server, kun mottakere —
+  7.3 siste avsnitt: journalister kan ikke bytte land selv) +
+  `ChangeCountryForm.tsx` — gjenbruker `SubscribeForm.tsx` sitt mønster
+  for landvelger→språkvelger (kaskade, nullstiller samtykke ved endring
+  av begge deler, 7.1/7.3) og samme lokale
+  `interpolateNodes()`-hjelpefunksjon for klikkbare vilkår-/
+  personvern-lenker inni oversatt tekst. FORSKJELLEN fra
+  `SubscribeForm`: forhåndsvelger brukerens NÅVÆRENDE land/språk (ikke et
+  gjettet `Accept-Language`-hint, siden dette er en endring av noe som
+  allerede er valgt, ikke en førstegangsregistrering).
+- **7.3, punkt 3, eksplisitt vist i selve siden, ikke bare i koden**:
+  "Allerede innsendte svar blir liggende hos journalistene som mottok
+  dem" — en fast, synlig merknad øverst på siden (`me.change_country
+  .responses_notice`), ikke gjemt i en tooltip eller en fotnote. Dette
+  er et eksplisitt spec-krav ("Dette opplyses i bekreftelsesdialogen"),
+  ikke bare god skikk.
+- "Bytt land"-lenke lagt til på `/me`, synlig KUN for mottakere
+  (`session.role === "recipient"`), gjenbruker `journalist.apply.*`-
+  mønsteret fra i går: gjenbrukte `recipient.register.country_label`/
+  `locale_label`/`consent_terms`/`country_placeholder`/
+  `locale_placeholder`/`select_country_first` direkte i stedet for å
+  duplisere seks nøkler for annen gangs skyld.
+
+### En reell timing-feil i TESTSKRIPTET, ikke i produktet — fanget FØR den ble feilaktig rapportert som en bug
+
+Første forsøk på nettleserverifisering viste landvelgeren som TOM
+("Velg et land") i stedet for forhåndsvalgt, rett etter
+`waitForLoadState("networkidle")`. Så dette umiddelbart som en mulig
+reell feil (kunne vært en race i `useEffect`-en) og undersøkte FØR jeg
+konkluderte — la til en lengre eksplisitt ventetid i et oppfølgende
+testskript, og forhåndsvalget viste seg da å være der hele tiden. Selve
+siden var aldri feil; `networkidle` venter ikke på at en REACT-
+tilstandsoppdatering etter en allerede fullført `fetch()` faktisk
+rekker å rendre før skjermbildet tas — en egenskap ved testverktøyet,
+ikke koden. Notert her fordi samme symptom kan dukke opp igjen i en
+senere økt og feilaktig mistenkes som en produktfeil.
+
+### Verifisert ende til ende i en ekte nettleser, uavhengig av UI-teksten
+
+Sådd en mottaker i ett testland med to aktive testland tilgjengelige.
+Byttet faktisk land gjennom skjemaet i en produksjonsbygget instans, og
+bekreftet UAVHENGIG i databasen (`psql`, ikke bare suksessmeldingen på
+skjermen): `users.country_code`/`locale` faktisk endret til det nye
+landet, OG to nye `ConsentRecord`-rader (`terms`/`privacy`,
+`source = 'country_change'`, `granted = true`) faktisk opprettet.
+Skjermbilder tatt og sjekket visuelt (korrekt forhåndsvalg, korrekt
+samtykketekst med klikkbare lenker).
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**258
+tester**, uendret — ingen ny ren logikk å isolere, all ny kode er
+UI som allerede gjenbruker testet biblioteklogikk), `i18n:check` (**299
+nøkler**), `design:check-tokens` (36 komponent-CSS-filer),
+`rm -rf .next && next build`, `test:integration` mot ekte lokal Postgres
+(43 tester, uendret), PLUSS ende-til-ende-nettleserverifiseringen
+beskrevet over.
+
+### Neste økt
+
+(1) den store testbarhets-refaktoreringen (`admin/`/`moderation/`-
+lib-laget) — fortsatt bevisst utsatt; (2) resten av komponentbiblioteket
+(Dialog, Toast, Card, Alert, Tabs, Table, Pagination); (3) resten av
+16.1-dashbordet; (4) den ubrukte `"approved"`-verdien i
+`request_status`-enumen; (5) OG-delingsbilde; (6) det
+oversatte-stinavn-hullet (3.7); (7) flere e-postmaler etter behov (nå 13
+gjenstår); (8) faktisk Brevo-integrasjon når en API-nøkkel finnes; (9)
+den siste ubrukte `nav.*`-nøkkelen, `nav.requests` — vurder fjerning;
+(10) alle "backend uten UI"-hullene denne natten har funnet er nå
+lukket (registrering, forespørsler, moderasjon, svarinnboks, profil,
+kontosletting, landbytte) — en god anledning i neste økt til å gjøre et
+raskt overblikk over HELE `src/app/api/`-treet mot `src/app/[locale]/`
+for å se om det finnes flere gjenværende "ruten finnes, siden gjør
+det ikke"-hull av samme type før man går videre til andre kategorier
+arbeid.

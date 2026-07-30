@@ -177,6 +177,12 @@
   "me.delete_account_description": "This permanently deletes your account. We'll send you a confirmation link by email first — the account isn't deleted until you click it.",
   "me.delete_account_button": "Request account deletion",
   "me.delete_account_requested_notice": "Check your inbox — we've sent you a confirmation link. The account isn't deleted until you click it.",
+  "me.change_country_link": "Change country",
+  "me.change_country.title": "Change country",
+  "me.change_country.responses_notice": "Responses you've already received stay with the journalists who received them — this doesn't change when you change country.",
+  "me.change_country.submit": "Change country",
+  "me.change_country.submitting": "Changing country…",
+  "me.change_country.success": "Your country has been changed. The change applies from the next daily email.",
 
   "legal.journalist_terms_title": "Journalist terms",
 
