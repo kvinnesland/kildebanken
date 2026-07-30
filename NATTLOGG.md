@@ -3445,3 +3445,89 @@ er dette et mer avgrenset stykke arbeid enn det så ut som forrige runde;
 komponentbiblioteket; (4) det notert-men-utsatte OG-delingsbildet; (5)
 det notert-men-utsatte 3.7-hullet (oversatte stinavn per locale) — når
 locale nummer to faktisk tilbys.
+
+---
+
+## Fortsettelse av økt 7 — de to første e-postmalene (SPEC-V1.md 15: `magic_link`/`confirm_email`), og en reell fargedrift funnet og rettet
+
+Fortsatte punkt (1) fra forrige "Neste økt". Før selve malene: sjekket
+DESIGN.md 7 nøye (tabellbasert, én kolonne, maks 600px, all CSS inlinet,
+`lang`, ren tekst er en REELL variant) siden dette er "det viktigste
+grensesnittet i produktet."
+
+### Et reelt funn: `digest.ts` sine fargeverdier hadde driftet fra de faktiske tokenene
+
+DESIGN.md 7 krever en byggetids-eksport av tokens til e-post nettopp for å
+unngå at noen skriver en fargeverdi direkte og den drifter fra sannheten.
+Den fulle pipelinen er ikke bygget (kjent, notert tidligere) — men jeg
+regnet FAKTISK ut hva de ekte primitivene tilsvarer i hex (samme
+`oklchToSrgbHex()` som kontrasttesten bruker) i stedet for å anta at
+`digest.ts` sine håndskrevne verdier fra en tidligere økt fortsatt stemte.
+De gjorde IKKE det — f.eks. var digestens "tekst"-farge `#21242b` mot den
+faktiske `--gray-900` sin `#16191c`, og lenkefargen `#1d5b91` mot den
+faktiske `--accent-700` sin `#0a5774`. Reell, bekreftet drift, akkurat den
+typen DESIGN.md 7 advarer mot.
+
+**Rettet ved å samle ETT sted:** `src/lib/email/colors.ts`
+(`EMAIL_COLORS`) — beregnet med den samme, verifiserte fargematematikken,
+med `colors.test.ts` som sjekker at konstantene fortsatt stemmer med de
+faktiske primitivene (den nærmeste tilnærmingen til "feiler CI ved avvik"
+uten hele eksport-pipelinen). Oppdatert `digest.ts` til å bruke disse i
+stedet for sine egne hardkodede verdier — alle 7 eksisterende
+`digest.test.ts`-tester fortsatt grønne (ingen av dem sjekket eksakte
+hex-verdier, bare struktur/escaping/innhold).
+
+### De to malene
+
+`src/lib/email/templates/simple-cta-email.ts` — ETT delt skall
+(overskrift, ett avsnitt, én CTA-lenke, en "se bort fra denne"-linje) for
+`magic_link` og `confirm_email`, som er strukturelt identiske i dag (begge
+er "her er en lenke, klikk innen 15 minutter") — ikke to dupliserte
+maloppsett for samme struktur. `magic-link.ts`/`confirm-email.ts` er tynne
+wrappere som bygger selve `GET /api/auth/verify?token=...&locale=...`-
+URL-en (formatet bestemt forrige del av økten) og henter riktige
+i18n-nøkler (nye: `email.magic_link.*`/`email.confirm_email.*`, begge
+locales).
+
+**Koblet inn i selve `sendTransactionalEmail()`-stubben** (`send.ts`):
+uten `BREVO_API_KEY` logges nå den FAKTISK rendrede malen (emne + full
+tekstversjon) for disse to, i stedet for bare malnavn+rå data — meningsfullt
+testbart selv uten en ekte Brevo-integrasjon. De andre 21 malnavnene i
+`TransactionalTemplate` faller fortsatt tilbake til det gamle, generiske
+loggformatet (ingen av dem er bygget ennå).
+
+Ekstraherte også `escapeHtml()` fra `digest.ts` til en delt
+`escape-html.ts` — den andre malen trengte den samme funksjonen, og
+duplisering av en sikkerhetsrelevant funksjon (HTML-escaping) er verre enn
+en liten fil-flytting.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**186
+tester**, +21 nye: `colors.test.ts`, `simple-cta-email.test.ts`,
+`magic-link.test.ts`, `confirm-email.test.ts`, `send.test.ts`, pluss at
+alle 7 eksisterende `digest.test.ts`-tester fortsatt er grønne etter
+fargerefaktoreringen), `i18n:check` (91 nøkler), `design:check-tokens`,
+`rm -rf .next && next build`, `test:integration` mot ekte lokal Postgres
+(40 tester, uendret). PLUSS en direkte kjøring av den faktiske
+`sendTransactionalEmail()`-stubben (ikke bare enhetstestet) som bekreftet
+at loggutskriften faktisk er lesbar og riktig.
+
+### Antagelser tatt
+
+- E-postmalene er BARE bygget for lyst tema — DESIGN.md 7 sitt
+  `prefers-color-scheme`-krav for e-post er IKKE dekket ennå (samme
+  gjenstående punkt som selve byggetids-eksport-pipelinen).
+- `magic_link`/`confirm_email` er de eneste to malene med faktisk
+  innhold nå — resten av `TransactionalTemplate` sine 21 navn er fortsatt
+  bare navn, bevisst i tråd med "bygg det som faktisk trengs, ikke alt på
+  én gang"-disiplinen som har styrt hele natten.
+
+### Neste økt
+
+(1) selve svarskjemaet (`/[locale]/foresporsler/[id]/svar`, SPEC-V1.md 12)
+— nå har både innloggingsflyten OG de e-postmalene den avhenger av faktisk
+innhold; (2) flere e-postmaler etter behov (kvittering på innsendt svar er
+trolig neste naturlige, siden svarskjemaet vil trenge den); (3) resten av
+komponentbiblioteket; (4) OG-delingsbilde; (5) det oversatte-stinavn-hullet
+(3.7); (6) `prefers-color-scheme` for e-postmaler, når/hvis prioritert.

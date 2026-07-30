@@ -47,6 +47,18 @@
   "digest.unsubscribe": "Unsubscribe",
   "digest.preferences_link": "Change settings",
 
+  "email.magic_link.subject": "Your login link",
+  "email.magic_link.heading": "Log in",
+  "email.magic_link.body": "Click the link below to log in. The link is valid for 15 minutes and can only be used once.",
+  "email.magic_link.cta": "Log in",
+  "email.magic_link.ignore": "Didn't request this email? You can safely ignore it.",
+
+  "email.confirm_email.subject": "Confirm your email address",
+  "email.confirm_email.heading": "Confirm your email address",
+  "email.confirm_email.body": "Thanks for registering. Click the link below to confirm your email address and log in. The link is valid for 15 minutes.",
+  "email.confirm_email.cta": "Confirm email",
+  "email.confirm_email.ignore": "Didn't register? You can safely ignore this email.",
+
   "request.status.published": "Open",
   "request.status.closed": "Closed",
   "request.status.expired": "Deadline has passed",

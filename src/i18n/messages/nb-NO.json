@@ -47,6 +47,18 @@
   "digest.unsubscribe": "Meld deg av",
   "digest.preferences_link": "Endre innstillinger",
 
+  "email.magic_link.subject": "Din innloggingslenke",
+  "email.magic_link.heading": "Logg inn",
+  "email.magic_link.body": "Klikk lenken under for å logge inn. Lenken er gyldig i 15 minutter og kan bare brukes én gang.",
+  "email.magic_link.cta": "Logg inn",
+  "email.magic_link.ignore": "Ba du ikke om denne e-posten? Da kan du se bort fra den.",
+
+  "email.confirm_email.subject": "Bekreft e-postadressen din",
+  "email.confirm_email.heading": "Bekreft e-postadressen din",
+  "email.confirm_email.body": "Takk for at du registrerte deg. Klikk lenken under for å bekrefte e-postadressen din og logge inn. Lenken er gyldig i 15 minutter.",
+  "email.confirm_email.cta": "Bekreft e-post",
+  "email.confirm_email.ignore": "Registrerte du deg ikke? Da kan du se bort fra denne e-posten.",
+
   "request.status.published": "Åpen",
   "request.status.closed": "Lukket",
   "request.status.expired": "Fristen har gått ut",

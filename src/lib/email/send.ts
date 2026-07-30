@@ -1,3 +1,8 @@
+import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
+import { renderMagicLinkEmail } from "./templates/magic-link";
+import { renderConfirmEmailEmail } from "./templates/confirm-email";
+import type { RenderedEmail } from "./templates/simple-cta-email";
+
 // Tynt e-postgrensesnitt. Selve jobblogikken (src/lib/jobs/tick.ts) kaller
 // bare denne — ikke Brevo sitt SDK direkte — slik at et bytte av
 // e-postleverandør (skulle det noen gang bli aktuelt) er isolert til denne
@@ -39,14 +44,44 @@ export interface SendTransactionalEmailInput {
   data: Record<string, unknown>;
 }
 
+/**
+ * Rendrer den faktiske mal-HTML-en/-teksten for de malene som har en ekte
+ * mal bygget (foreløpig bare `magic_link`/`confirm_email`, økt 7 — de andre
+ * 21 malene i `TransactionalTemplate` er ennå bare navn uten innhold, se
+ * NATTLOGG.md). `null` betyr "ingen mal bygget ennå for denne", ikke en
+ * feil — stubben under faller da tilbake til det gamle, generiske
+ * loggformatet.
+ */
+function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedEmail | null {
+  const locale = isSupportedLocale(input.to.locale) ? input.to.locale : PLATFORM_DEFAULT_LOCALE;
+  const token = input.data.token;
+  if (typeof token !== "string") return null;
+
+  switch (input.template) {
+    case "magic_link":
+      return renderMagicLinkEmail(locale, token);
+    case "confirm_email":
+      return renderConfirmEmailEmail(locale, token);
+    default:
+      return null;
+  }
+}
+
 export async function sendTransactionalEmail(
   input: SendTransactionalEmailInput
 ): Promise<void> {
   if (!process.env.BREVO_API_KEY) {
-    console.warn(
-      `[email:stub] ${input.template} → ${input.to.email} (${input.to.locale})`,
-      input.data
-    );
+    const rendered = renderTransactionalEmail(input);
+    if (rendered) {
+      console.warn(
+        `[email:stub] ${input.template} → ${input.to.email} (${input.to.locale}) — "${rendered.subject}"\n${rendered.text}`
+      );
+    } else {
+      console.warn(
+        `[email:stub] ${input.template} → ${input.to.email} (${input.to.locale})`,
+        input.data
+      );
+    }
     return;
   }
 
