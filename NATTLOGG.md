@@ -2145,3 +2145,148 @@ Ingen kjente gjenstående hull i 17.4. Naturlige neste steg: frontend, eller
 faktisk Brevo-integrasjon når en API-nøkkel finnes. Husk (igjen): sandkassens
 Postgres må startes på nytt (`service postgresql start`) ved hver ny
 sandkasse-instans — skjedde denne gangen også, som forventet.
+
+---
+
+## Fortsettelse av økt 7 — frontend-arbeidet startet: komponentbibliotek, lag 3
+
+Samme arbeidsøkt. Backend-API-et (seksjon 20) er ferdig, retensjonsjobben er
+ferdig, og Brevo-integrasjon er fortsatt blokkert (ingen API-nøkkel). Med
+det gjenstående valget mellom å begynne på frontend eller å lete etter enda
+flere FR-hull med avtagende treffrate, startet jeg frontend-arbeidet — men
+bevisst med LAG 3 (komponenter), IKKE sider/design ennå, fordi:
+
+1. `DESIGN.md` er PRESIST nok (eksakte OKLCH-verdier, eksakt lagarkitektur,
+   et konkret minimumssett komponenter) til at å bygge komponentene TRO MOT
+   DEN er en implementasjonsoppgave, ikke en smaksbeslutning — lavere risiko
+   enn å designe sider blindt uten brukerens tilbakemelding.
+2. Alt videre frontend-arbeid (sider, skjemaer) er avhengig av at
+   komponentene finnes først.
+
+### Antagelse tatt, dokumentert: React Aria Components fremfor Radix
+
+DESIGN.md 6 sier "Radix eller React Aria" — et bevisst åpent valg jeg måtte
+ta. Valgte **React Aria Components** (`react-aria-components`, Adobe),
+begrunnet med: (a) prosjektets uttalte i18n-tyngde (ICU MessageFormat,
+`Intl`-formatering overalt, 21.3) matcher React Arias opprinnelse i et
+internasjonaliseringstungt designsystem (React Spectrum) bedre enn Radix;
+(b) pakken dekker DESIGN.md 6s minimumsliste nesten navn-for-navn
+(`Button`, `TextField`, `TextArea`, `Checkbox`, `RadioGroup`, `Select`,
+`Table`, `Tabs`, `Toast` finnes alle som egne eksporter). Ingen `next build`-
+eller kjøretidsproblemer oppstått som følge av valget.
+
+### Ny testinfrastruktur for komponenter
+
+Ingen DOM-testing fantes i prosjektet før nå (all tidligere testing er
+node-miljø mot biblioteksfunksjoner eller ekte Postgres). La til:
+
+- `@vitejs/plugin-react` — PÅKREVD for at vitest i det hele tatt skal forstå
+  JSX i `.tsx`-testfiler (feilet først med "React is not defined" uten
+  denne; Next sin egen SWC-kompilator brukes fortsatt av selve appen,
+  denne pluginen er KUN for vitest sin egen transform).
+  - **Versjonsfallgruve unngått:** `@vitejs/plugin-react@6` krever
+    `vite@^8`, men `vitest@2.1.x` sitt interne `vite-node` krever
+    `vite@^5`. Installerte `@vitejs/plugin-react@4.7.0` (siste versjon som
+    faktisk støtter `vite@^5`) i stedet — `npm install` sitt eget
+    peer-dependency-avvik ved forsøk på v6 fanget dette FØR noe ble
+    committet.
+- `@testing-library/react`, `@testing-library/jest-dom`,
+  `@testing-library/user-event`, `jsdom`.
+- `vitest.config.ts`: lagt til `plugins: [react()]` og
+  `setupFiles: ["./src/test/setup-dom.ts"]` (registrerer
+  `cleanup()` mellom hver test og jest-dom sine matchers globalt — et
+  no-op i node-miljø, så resten av suiten er upåvirket).
+- Komponenttestfiler bruker `// @vitest-environment jsdom` som
+  fil-lokal overstyring (vitest sin innebygde mekanisme) — resten av
+  suiten forblir node-miljø uten noen DOM-forutsetning.
+
+### `src/components/Button.tsx` + `TextField.tsx`
+
+De to mest grunnleggende av DESIGN.md 6s 17-komponentsliste — alt annet
+(skjemaer særlig) trenger begge. Bygget STRENGT etter tokens (aldri en
+farge-/avstands-/radiusverdi direkte, kun `var(--color-*)`/`var(--space-*)`
+osv.), og etter 6.1 sine krav ordrett:
+
+- Fokusmarkering alltid synlig (`[data-focus-visible]`-selektor fra React
+  Aria → 2px ring i `--color-focus-ring`, aldri fjernet).
+- Trykkflate ≥ 44px (5, `min-height: 2.75rem`).
+- Feilmelding VED FELTET (ikke bare topp-oppsummert), knyttet med
+  `aria-describedby`, feltet får `aria-invalid`.
+
+**Reell feil funnet OG rettet under bygging, ikke antatt riktig:** skrev
+først `<FieldError>{errorMessage}</FieldError>` med `errorMessage` som en
+ren streng — testet det, og oppdaget at React Aria Components sin
+`FieldError` rendrer en streng-`children` UBETINGET, uavhengig av om
+feltet faktisk er ugyldig (ikke dokumentert tydelig noe sted jeg fant,
+oppdaget ved at en av mine egne tester feilet: "viser IKKE feiltekst når
+feltet er gyldig" viste feilteksten likevel). Rettet ved å gi `FieldError`
+en RENDER-FUNKSJON i stedet, som eksplisitt sjekker `isInvalid` fra
+valideringstilstanden før den viser noe. Nøyaktig den typen feil som ikke
+kan fanges med `tsc`/`eslint` alene — bare en faktisk kjørt test avdekket
+den.
+
+### Ny, spec-mandert lint-regel: `npm run design:check-tokens`
+
+DESIGN.md 1, ordrett: "Håndheves med lint-regel som feiler CI på
+hex-verdier, `rgb()`, `oklch()`, `px`-verdier utenfor tokenfilene, og på
+bruk av lag 1-variabler i komponentfiler." Fantes ikke. Bygget
+`src/styles/check-tokens.ts`, samme mønster som `src/i18n/check-keys.ts`
+(rene, testbare funksjoner + en `main()`): skanner alle `.css`-filer
+UTENFOR `styles/tokens/` og `styles/globals.css` for hex-farger,
+`rgb()`/`rgba()`, `oklch()`, rå `px`-verdier (unntatt `1px`/`2px` —
+kantlinje-/fokusring-bredde er en universell UI-konvensjon DESIGN.md selv
+ikke tokeniserer, se kodekommentar), og direkte bruk av lag 1-variabler
+(`--gray-*`, `--accent-*` osv.) i en komponentfil. 8 nye enhetstester.
+Kjørt mot de to nye komponentfilene: 0 brudd.
+
+**IKKE koblet til CI ennå** — det finnes ingen CI-konfigurasjon i dette
+repoet å koble den til (bygges antagelig som en GitHub Actions-workflow
+senere, utenfor denne økten sitt scope). Scriptet finnes og kan kjøres
+manuelt (`npm run design:check-tokens`) inntil videre.
+
+### Bevisst IKKE gjort denne runden (dokumentert, ikke glemt)
+
+- **OKLCH→sRGB-fargekonvertering** (for den automatiserte
+  WCAG-kontrasttesten DESIGN.md 2.4 krever, OG for e-postmalenes
+  token-eksport, DESIGN.md 7) — vurdert, men bevisst utsatt. Dette ER
+  deterministisk, veldokumentert matematikk (Björn Ottossons OKLab, brukt
+  av CSS Color 4/`culori`/`colorjs.io`) jeg kan verifisere nøyaktig for
+  akromatiske verdier for hånd (hvit/svart), men fargematematikk med reell
+  kroma/hue krever mer varsomhet enn jeg ville gitt den i samme runde som å
+  introdusere en helt ny komponent-avhengighet. Egen økt.
+- Resten av DESIGN.md 6s 17-komponentliste (`TextArea`, `Checkbox`,
+  `RadioGroup`, `Select`, `Dialog`, `Toast`, `Badge`, `Card`, `Alert`,
+  `Tabs`, `Table`, `Pagination`, `EmptyState`, `SkeletonLoader`,
+  `LanguageSwitcher`).
+- Selve sidene/skjemaene (registrering, innlogging osv.) — ingen av dem
+  bygget ennå, bevisst, siden komponentene måtte finnes først.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run`
+(**74 tester**, +15 nye: 7 komponenttester + 8 token-sjekk-tester),
+`npm run design:check-tokens` (OK, 0 brudd), `i18n:check`, `next build`
+(kompilerer rent — komponentene er ikke importert i noen side ennå, så de
+vises ikke i rutelisten, men typecheck/bundling av dem er bekreftet), OG
+`npx vitest run -c vitest.integration.config.ts` mot ekte lokal Postgres
+(39 tester, uendret — ingen av dagens endringer rører databasekode).
+
+**Merk:** `npm audit` viser 29 kjente sårbarheter (4 høy-alvorlighet
+direkte relevante: `drizzle-orm`, `postcss`/`sharp` via `next`) — alle
+PRE-EKSISTERENDE (bekreftet, ikke innført av dagens `npm install`), og
+alle krever brytende major-oppgraderinger (`next@9.x` er foreslått
+"fiksen" for `postcss`/`sharp`-kjeden, som ville vært en katastrofal
+REGRESJON, ikke en fiks). IKKE handlet på — krever en egen, forsiktig
+oppgraderingsøkt med reell testing, ikke noe å haste gjennom midt i
+frontend-arbeid.
+
+### Neste økt
+
+(1) OKLCH→sRGB-konvertering + automatisert WCAG-kontrasttest (DESIGN.md
+2.4) — egen økt, egen forsiktighet, samme nivå som retensjonsjobben fikk;
+(2) resten av komponentbiblioteket, prioritert etter hva `POST /subscribe`-
+skjemaet (det første virkelige skjemaet) faktisk trenger:
+`Checkbox`/`RadioGroup` (samtykker, 7.1) og `Select` (land/språk) er
+sannsynligvis neste i rekkefølge; (3) vurder en enkel GitHub Actions-
+workflow som kjører alle fem+ verifiseringskommandoene (inkl. den nye
+`design:check-tokens`) automatisk — finnes ikke i repoet ennå.

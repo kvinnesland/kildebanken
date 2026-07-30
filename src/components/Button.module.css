@@ -1,0 +1,87 @@
+/*
+ * Lag 3 — komponent. Refererer BARE til semantiske tokens (tokens/semantic.css)
+ * og til rom-/form-tokens (tokens/primitives.css sine --space-*/--radius-*
+ * navn brukes gjennom semantiske størrelser her, ikke rå px). Se DESIGN.md 1:
+ * en komponentfil skal aldri inneholde en farge-, avstands- eller
+ * radiusverdi direkte.
+ */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 2.75rem; /* ~44px trykkflate, DESIGN.md 5 */
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease),
+    border-color var(--duration-fast) var(--ease),
+    color var(--duration-fast) var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
+  }
+}
+
+.button[data-disabled] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* DESIGN.md 6.1: fokusmarkering er alltid synlig, aldri fjernet. */
+.button[data-focus-visible] {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.primary {
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+}
+.primary[data-hovered]:not([data-disabled]) {
+  background: var(--color-accent-hover);
+}
+
+.secondary {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+.secondary[data-hovered]:not([data-disabled]) {
+  background: var(--color-surface-hover);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--color-text);
+}
+.ghost[data-hovered]:not([data-disabled]) {
+  background: var(--color-surface-hover);
+}
+
+.danger {
+  background: var(--color-danger);
+  color: var(--color-text-inverse);
+}
+.danger[data-hovered]:not([data-disabled]) {
+  filter: brightness(0.92);
+}
+
+/* DESIGN.md 5: primærhandlingen i et skjema er full bredde på mobil. */
+.fullWidthOnMobile {
+  width: 100%;
+}
+@media (min-width: 40rem) {
+  .fullWidthOnMobile {
+    width: auto;
+  }
+}
