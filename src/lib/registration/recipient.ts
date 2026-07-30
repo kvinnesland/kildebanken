@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { consentRecords, countries, emailSubscriptions, users } from "@/db/schema";
+import { consentRecords, countries, emailSubscriptions, suppressions, users } from "@/db/schema";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
 import { requestMagicLink } from "@/lib/auth/magic-link";
 import { getRequiredLegalDocuments } from "@/lib/legal/documents";
@@ -49,6 +49,16 @@ export async function registerRecipient(
     "privacy",
   ]);
   if (!docs) return { ok: false, error: "errors.legal_documents_unavailable" };
+
+  // 10.3/19.13: en avmeldt, sperret adresse skal ikke kunne registreres inn
+  // igjen "ved en feil" — sjekket FØR eksisterende-konto-sjekken under, som
+  // en egen, sterkere sperre (ikke bare "denne kontoen finnes fra før").
+  const [suppressed] = await db
+    .select({ id: suppressions.id })
+    .from(suppressions)
+    .where(eq(suppressions.emailHash, hashToken(input.email)))
+    .limit(1);
+  if (suppressed) return { ok: false, error: "errors.email_suppressed" };
 
   const [existing] = await db
     .select({ id: users.id })

@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { authTokens, consentRecords, emailSubscriptions, users } from "@/db/schema";
+import { authTokens, consentRecords, emailSubscriptions, suppressions, users } from "@/db/schema";
 import { ensureTestCountry, TEST_COUNTRY_CODE, uniqueTestEmail } from "@/db/integration/fixtures";
+import { hashToken } from "@/lib/auth/tokens";
 import { registerRecipient } from "./recipient";
 
 describe("registerRecipient mot ekte Postgres", () => {
@@ -108,5 +109,28 @@ describe("registerRecipient mot ekte Postgres", () => {
     // er databasens unike constraint på e-post, ikke forhåndssjekken alene.
     const allUsers = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
     expect(allUsers).toHaveLength(1);
+  });
+
+  it("avviser registrering med en e-post som står på sperrelisten (10.3, 19.13)", async () => {
+    const email = uniqueTestEmail("suppressed");
+    // Bevisst IKKE lagt til createdEmails — skal ikke opprettes i det hele tatt.
+    await db.insert(suppressions).values({ emailHash: hashToken(email), reason: "unsubscribed" });
+
+    const result = await registerRecipient({
+      email,
+      countryCode: TEST_COUNTRY_CODE,
+      locale: "nb-NO",
+      consentEmailSubscription: true,
+      consentTerms: true,
+      consentMinimumAge: true,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("errors.email_suppressed");
+
+    const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
+    expect(user).toBeUndefined();
+
+    await db.delete(suppressions).where(eq(suppressions.emailHash, hashToken(email)));
   });
 });

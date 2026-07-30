@@ -88,5 +88,6 @@
   "errors.contact_request_not_pending": "Denne kontaktforespørselen er ikke lenger ventende.",
   "errors.invalid_timezone": "Dette er ikke en gyldig tidssone.",
   "errors.already_exists": "Dette finnes allerede.",
-  "errors.no_moderator_assigned": "Landet må ha minst én tildelt moderator før det kan aktiveres."
+  "errors.no_moderator_assigned": "Landet må ha minst én tildelt moderator før det kan aktiveres.",
+  "errors.email_suppressed": "Denne e-postadressen kan ikke registreres på nytt. Kontakt oss om du mener dette er feil."
 }

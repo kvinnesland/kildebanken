@@ -1543,3 +1543,59 @@ er allerede lagt fase 1, klare til bruk), eller (b) fortsette å styrke
 testdekningen av det som ER bygget innenfor de begrensningene som er
 dokumentert over. Fortsetter å lese denne filen (siste økt øverst) ved neste
 oppvåkning og velger basert på hva som gir mest verdi da.
+
+---
+
+## Fortsettelse av økt 7 — ekte hull funnet: sperrelisten ble aldri sjekket ved registrering
+
+Samme arbeidsøkt. Før frontend-arbeid eller videre testherding: gjorde en
+kort, målrettet gjennomgang av `suppressions`-tabellen (19.13) siden
+`unsubscribeByToken()` (bygget tidligere i økten) er den ENESTE koden som
+noensinne SKRIVER til den — ingen kode leste fra den.
+
+10.3, ordrett: "Avmeldte adresser beholdes hashet på en sperreliste, slik at
+de IKKE KAN registreres inn igjen ved en feil." `registerRecipient()`
+sjekket aldri sperrelisten — en avmeldt/sperret e-postadresse kunne
+registreres på nytt akkurat som om den aldri hadde vært avmeldt. Et reelt,
+funksjonelt hull (ikke bare en manglende feilmelding), oppdaget ved å følge
+dataflyten fra tabellen bakover til alle skrive- og lesesteder, ikke ved en
+eksplisitt bestilling.
+
+Rettet i `src/lib/registration/recipient.ts`: sjekker `suppressions` (hash
+av oppgitt e-post) FØR eksisterende-konto-sjekken, og avviser med en ny,
+egen feilkode `errors.email_suppressed` (bevisst forskjellig fra
+`errors.email_already_registered` — det er to forskjellige tilstander:
+"kontoen finnes" vs. "denne adressen er sperret", og brukeren fortjener et
+annet svar for hver).
+
+**Bevisst IKKE utvidet til journalistregistrering** (`applyAsJournalist()`):
+`email_subscriptions` (og dermed avmeldingslenken som eneste kilde til
+`suppressions`-rader i dag) finnes kun for mottakere — journalister har
+ingen bulk-utsendelse å melde seg av fra. 10.3 handler spesifikt om
+digest-avmelding. Å sperre journalistsøknader på samme liste uten et
+tilsvarende grunnlag i spec-en ville vært en ubegrunnet utvidelse.
+
+### Ny, faktisk verifisert integrasjonstestdekning
+
+- `src/lib/registration/recipient.integration.test.ts`, ny test: en e-post
+  som står i `suppressions` avvises med `errors.email_suppressed`, og ingen
+  bruker opprettes.
+
+Alle 26 integrasjonstester (8 testfiler) grønne.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (56 tester,
+uendret), `i18n:check`, `next build` (44 API-ruter, uendret), OG
+`npx vitest run -c vitest.integration.config.ts` mot ekte lokal Postgres
+(26 tester, alle grønne).
+
+### Neste økt
+
+Samme som forrige: (a) begynne på frontend, eller (b) fortsette å lete
+etter tilsvarende "skrevet men aldri lest" / "lest men aldri skrevet"-hull
+ved å følge datamodellen tabell for tabell — denne metoden (spore
+`suppressions` bakover) fant nettopp et reelt hull ingen eksplisitt
+oppgave ba om å se etter, og er trolig verdt å gjenta på et par andre
+tabeller (f.eks. `audit_logs`: skrives det til den fra ALLE stedene 19.12
+og FR-050 forutsetter, eller bare noen?).
