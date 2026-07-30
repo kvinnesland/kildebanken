@@ -5659,3 +5659,102 @@ retry eller å isolere filen fra parallell kjøring, IKKE en hastverksfiks
 mot symptomet; (3) Brevo-integrasjon, resten av komponentbiblioteket, og
 OG-delingsbilde forblir alle korrekt blokkert, se punktene notert i forrige
 økt.
+
+---
+
+## Fortsettelse av økt 7 — de siste 7 filene uten testdekning dekket, PLUSS et reelt hull funnet og rettet: journalistregistrering sjekket aldri sperrelisten
+
+Tok fatt på punkt (1) fra forrige "Neste økt" — alle 7 gjenværende filer
+uten testdekning fra forrige rundes audit. Skrev, i prioritert rekkefølge:
+
+- `auth/authorize.integration.test.ts` (11 tester) — `requireModeratorForCountry()`
+  (moderator får kun tilgang til SITT tildelte land, administrator får ALLE
+  land uten egen tildelingsrad, 19.4), `requireAdmin()` (nekter en moderator
+  selv med tildelt land, 16.2), `getAssignedCountryCodes()` (literalen
+  `"all"` for administrator, IKKE en tom liste — en tom liste for en
+  administrator ville feilaktig blitt tolket som "ingen land" av kallere).
+  Samme `vi.mock("next/headers")`-mønster som `session.ts`.
+- `contact-requests/contact-requests.integration.test.ts` (13 tester) —
+  FR-040/041/043 (SPEC-V1.md 14): validering (tom/for lang melding),
+  eierskapssjekk (kun JOURNALISTEN forespørselen tilhører kan opprette),
+  `contact_already_shared`-avvisningen, FR-043 sin unike indeks (ekte
+  Postgres-håndhevelse, ikke bare applikasjonssjekken), godkjenning
+  (setter delt e-post, logger revisjonslogg UTEN e-postadressen i
+  `metadata` — 14.3 — og varsler journalisten), avslag (INGEN begrunnelse i
+  e-posten, 14.2), og `getContactRequestDetail()`s asymmetriske
+  synlighetsregel (respondenten ser alltid sin egen delte adresse,
+  journalisten ser den FØRST etter godkjenning).
+- `digests/digests.integration.test.ts` (7 tester) — `listDigests()`
+  filtrert på tildelte land (samme mønster som `listModerationQueue()`),
+  `retryFailedDigestDeliveries()`: kun `failed`-leveranser sendes på nytt
+  (urørt `delivered`-rad bekreftet), avmeldingstoken roteres, revisjonslogg
+  (FR-050) skrevet med riktige tall, og en moderator uten tildelt land
+  avvist.
+- `legal/documents.integration.test.ts` (5 tester) — "nyeste PUBLISERTE
+  versjon, ikke en fremtidig" (17.2/19.2) og
+  `getRequiredLegalDocuments()`s alt-eller-ingenting-regel. Isolerte
+  bevisst hver test til sin egen (locale, type)-kombinasjon
+  (nb-NO/en-GB × terms/privacy) for å unngå å bli skjør mot
+  `admin/legal-documents.integration.test.ts`, som kjører parallelt og
+  stadig publiserer nye "terms"-versjoner for samme
+  (TEST_COUNTRY_CODE, nb-NO) — samme klasse delt-tilstand-lærdom som
+  `dashboard.integration.test.ts` fra forrige runde.
+- `email/escape-html.test.ts` (4 tester, VANLIG enhetstest — ren funksjon,
+  ingen database) — alle fem tegnene, og at `&` escapes FØRST (unngår
+  dobbel-escaping av allerede-escapede entiteter).
+- `journalist-inbox/journalist-inbox.integration.test.ts` (8 tester) —
+  `listResponsesForRequest()` (eierskapssjekk, oppsummeringstallene,
+  `hasSharedEmail` er true ved GODKJENT kontaktforespørsel selv uten delt
+  e-post i selve svaret), `getResponseDetailForJournalist()` (`viewedAt`
+  settes FØRSTE gang, uendret ved neste kall — 13: "utløser ingen
+  notifikasjon"), `updateResponseMarking()` (rører ALDRI
+  `lifecycleStatus`, som eies av respondenten alene — 19.7).
+- `registration/journalist.integration.test.ts` (6 tester) — se under, et
+  reelt hull ble funnet og rettet HER, ikke bare dekket.
+
+**Reelt hull funnet og rettet**: mens jeg skrev testene for
+`registration/journalist.ts`, oppdaget jeg at `applyAsJournalist()` ALDRI
+sjekket sperrelisten (`suppressions`, 19.13) — i sterk kontrast til
+`registerRecipient()`, som gjør nøyaktig denne sjekken (FØR
+allerede-registrert-sjekken) med en tydelig begrunnende kommentar. SPEC-V1.md
+10.3 nevner sperrelisten kun i den daglige digestens kontekst, men selve
+19.13-teksten sier eksplisitt at listen er rolleuavhengig ("en adresse som
+har klaget i ett marked, skal ikke motta e-post fra et annet" — ikke "fra
+samme rolle"), og en journalist mottar like fullt transaksjonell e-post
+(magic link, søknadsstatus) som sperrelisten skal beskytte mot. Fulgte
+"spec er sannheten, rett spec-en først"-prinsippet: presiserte SPEC-V1.md
+19.13 til eksplisitt å si at BÅDE mottaker- og journalistregistrering skal
+sjekke sperrelisten, deretter rettet `journalist.ts` til å gjøre nøyaktig
+samme sjekk som `recipient.ts` (samme feilkode `errors.email_suppressed`,
+samme posisjon i sjekkerekkefølgen). Bekreftet at
+`POST /journalists/apply`-ruten allerede videreformidler en vilkårlig
+`result.error` generisk (422-status for alt unntatt
+`email_already_registered`) — ingen rute-endring nødvendig.
+
+Etter denne rettingen: **null filer i `src/lib/**` uten testdekning**
+(bekreftet med samme audit-løkke som forrige runde — tom output).
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**335
+tester**, +4 — kun `escape-html.test.ts` er en vanlig enhetstest denne
+runden), `i18n:check` (**387 nøkler**, uendret — `errors.email_suppressed`
+fantes allerede i begge språk), `design:check-tokens` (**40**
+komponent-CSS-filer, uendret), `rm -rf .next && next build` (grønn),
+`test:integration` mot ekte lokal Postgres (**203 tester**, +50 —
+`authorize` 11, `contact-requests` 13, `digests` 7, `legal/documents` 5,
+`journalist-inbox` 8, `registration/journalist` 6).
+
+### Neste økt
+
+Ingen kjente gjenstående testdekningshull i `src/lib/**`. Gjenstår fortsatt:
+(1) den flakete `dashboard.integration.test.ts`-testen (se forrige runde)
+— vurder delta-måling med retry eller isolering fra parallell kjøring; (2)
+Brevo-integrasjon, resten av komponentbiblioteket, og OG-delingsbilde
+forblir alle korrekt blokkert (se punktene notert i tidligere økter). Neste
+gode bruk av tiden er trolig et nytt, bredt søk etter spec-vs-kode-hull
+(samme type funn som sperrelistehullet over) fremfor mer testdekning alene
+— testene i seg selv AVDEKKET dette hullet, så et tilsvarende søk i de
+gjenværende hjørnene av kodebasen (spesielt andre steder som speiler en
+etablert sjekk uten selv å ha den) kan være mer verdifullt enn ren
+dekningsjakt.

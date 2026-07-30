@@ -1324,6 +1324,18 @@ created_at
 Sperrelisten er global på tvers av land. En adresse som har klaget i ett marked,
 skal ikke motta e-post fra et annet.
 
+**Presisert under autonomt arbeid** (se `NATTLOGG.md`, økt 7): 10.3 nevner
+sperrelisten kun i sammenheng med den daglige digesten, men sjekken den
+beskriver ("avmeldte adresser ... kan ikke registreres inn igjen ved en
+feil") gjelder REGISTRERING som sådan, ikke bare mottakerrollen. Sperrelisten
+er eksplisitt rolleuavhengig ("en adresse som har klaget i ett marked, skal
+ikke motta e-post fra et annet" — ikke "fra samme rolle"), og en journalist
+mottar like fullt transaksjonell e-post (magic link, søknadsstatus) som en
+sperret adresse ikke skal motta. BÅDE mottaker- og
+journalistregistreringsflyten skal derfor avvise en sperret e-postadresse
+med samme feil (`errors.email_suppressed`), sjekket FØR
+allerede-registrert-sjekken, akkurat som i mottakerflyten.
+
 ### 19.14 AuthToken
 
 Lagt til under autonomt arbeid (se `NATTLOGG.md`, økt 2): seksjon 6

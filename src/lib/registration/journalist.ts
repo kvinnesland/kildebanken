@@ -1,9 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { consentRecords, countries, journalistProfiles, users } from "@/db/schema";
+import { consentRecords, countries, journalistProfiles, suppressions, users } from "@/db/schema";
 import { requestMagicLink } from "@/lib/auth/magic-link";
 import { getCurrentLegalDocument } from "@/lib/legal/documents";
 import { isUniqueViolation } from "@/db/errors";
+import { hashToken } from "@/lib/auth/tokens";
 
 export interface ApplyAsJournalistInput {
   fullName: string;
@@ -40,6 +41,16 @@ export async function applyAsJournalist(
     "journalist_terms"
   );
   if (!journalistTermsDoc) return { ok: false, error: "errors.legal_documents_unavailable" };
+
+  // 10.3/19.13: sperrelisten er rolleuavhengig — se presiseringen i
+  // SPEC-V1.md 19.13 (økt 7). Samme sjekk, samme rekkefølge (FØR
+  // allerede-registrert-sjekken under), som i mottakerregistreringen.
+  const [suppressed] = await db
+    .select({ id: suppressions.id })
+    .from(suppressions)
+    .where(eq(suppressions.emailHash, hashToken(input.jobEmail)))
+    .limit(1);
+  if (suppressed) return { ok: false, error: "errors.email_suppressed" };
 
   const [existing] = await db
     .select({ id: users.id })
