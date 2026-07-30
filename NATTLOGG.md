@@ -3272,3 +3272,68 @@ midt i en autonom nattøkt uten menneskelig vurdering av selve den
 juridiske teksten; (2) resten av komponentbiblioteket (Dialog, Toast, Card,
 Alert, Tabs, Table, Pagination, EmptyState, SkeletonLoader,
 LanguageSwitcher); (3) et OG-delingsbilde, når/hvis prioritert.
+
+Bekreftet i denne runden: CI for commit `15d06f9` (`RadioGroup`) er grønn.
+
+---
+
+## Fortsettelse av økt 7 — begynte på svarskjemaet, fant en STØRRE forutsetningskjede enn antatt, stanset bevisst før den ble hastverksarbeid
+
+Startet på punkt (1): selve svarskjemaet (`/[locale]/foresporsler/[id]/svar`).
+Kom raskt til et reelt, strukturelt funn som endret omfanget:
+
+**Innsending av svar krever en innlogget økt (SPEC-V1.md 6.2, 12) — men
+det finnes IKKE noen innloggings- eller bekreftelsesside i hele
+prosjektet ennå.** Bare API-rutene (`POST /auth/request-link`,
+`POST /auth/verify`) finnes. Verifiseringsruten forventer et JSON-body
+`{token}` via POST — den er IKKE en lenke en nettleser kan klikke direkte
+(ingen GET-variant) — så en ekte "bekreft innlogging"-SIDE må finnes for i
+det hele tatt å kunne kalle den. Gravde videre og fant et enda mer
+grunnleggende hull: `sendTransactionalEmail()`
+(`src/lib/email/send.ts`) er fortsatt bare en STUB som logger til
+konsollen — ingen e-postmal (`magic_link`, `confirm_email`, m.fl.) er
+faktisk bygget, og funksjonen KASTER en feil dersom `BREVO_API_KEY` noen
+gang settes. Det finnes altså heller ingen etablert URL for hva
+innloggingslenken i selve e-posten peker til — det er fritt frem å
+definere den, men det er en større, mer grunnleggende beslutning enn "bygg
+ett skjema til".
+
+**Bevisst stanset her, IKKE hastet videre inn i:** en login-side, en
+bekreft-side, OG (implisitt) e-postmal-rendring — alt i samme økt som
+allerede har bygget mye i kveld. Dette er reell, god arbeidsfordeling: en
+autonom økt som prøver å presse tre sammenhengende, delvis ubestemte
+delsystemer (autentiserings-UI, e-postmaler, svarskjemaet) inn i samme
+strekk risikerer akkurat den typen overflatisk, dårlig gjennomtenkt kode
+resten av natten bevisst har unngått ved å stoppe opp og regne/sjekke før
+hver antagelse.
+
+### Likevel gjort: én liten, ekte, ferdig forbedring
+
+`src/lib/auth/session.ts` sin `CurrentSession` manglet `email` —
+SPEC-V1.md 6.2 krever eksplisitt at siden "alltid tydelig [viser] hvilken
+e-postadresse man er innlogget som", noe svarskjemaet (og enhver annen
+innlogget side) trenger. Lagt til som et rent additivt felt (alle 26
+eksisterende kallesteder av `getCurrentSession()` bruker strukturell
+typing og påvirkes ikke) — verifisert med full `tsc`/`vitest`/
+`next build`/`test:integration` at ingenting brøt.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (162 tester,
+uendret), `rm -rf .next && next build`, `test:integration` mot ekte lokal
+Postgres (40 tester).
+
+### Neste økt — ANBEFALT REKKEFØLGE, ikke bare en liste
+
+(1) **Innloggings-UI** (`/[locale]/logg-inn` + en bekreftelsesside for
+magic link-tokenet, SPEC-V1.md 6.1) — bygg denne FØR svarskjemaet, ikke
+etter, siden svarskjemaet uansett er utilgjengelig uten den. Enkleste
+skjema i hele biblioteket (ett e-postfelt), men bekreftelsessiden må
+faktisk avgjøre URL-formatet ingen andre har bestemt ennå; (2) en minimal
+e-postmal-renderer for `magic_link`/`confirm_email` (uten dette har
+innloggings-e-posten ingen lenke å style riktig, selv om selve HTML-
+malsystemet kan bygges som et eget, avgrenset stykke arbeid uavhengig av
+login-siden — bare selve URL-formatet må stemme overens); (3) DERETTER
+selve svarskjemaet (`/[locale]/foresporsler/[id]/svar`, SPEC-V1.md 12),
+med `--color-warning-text`-vurderingen fra tidligere i baklomma; (4) resten
+av komponentbiblioteket; (5) det notert-men-utsatte OG-delingsbildet.

@@ -60,11 +60,17 @@ export interface CurrentSession {
   role: SessionRole;
   countryCode: string;
   locale: string;
+  email: string;
 }
 
 /** Slår opp gjeldende bruker fra sesjonscookien. Returnerer null dersom
  * ingen gyldig, ikke-utløpt og ikke-tilbakekalt økt finnes — utløpt og
- * tilbakekalt behandles likt (19.15: "ikke to ulike feilveier"). */
+ * tilbakekalt behandles likt (19.15: "ikke to ulike feilveier").
+ *
+ * `email` er med av én bestemt grunn (SPEC-V1.md 6.2): "Siden viser alltid
+ * tydelig hvilken e-postadresse man er innlogget som, slik at en
+ * videresendt e-post ikke fører til at noen svarer i feil navn ved et
+ * uhell" — svarskjemaet (12) trenger å vise nettopp dette. */
 export async function getCurrentSession(): Promise<CurrentSession | null> {
   const cookieStore = await cookies();
   const rawToken = cookieStore.get(SESSION_COOKIE)?.value;
@@ -81,6 +87,7 @@ export async function getCurrentSession(): Promise<CurrentSession | null> {
       status: users.status,
       countryCode: users.countryCode,
       locale: users.locale,
+      email: users.email,
     })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
@@ -101,6 +108,7 @@ export async function getCurrentSession(): Promise<CurrentSession | null> {
     role: row.role,
     countryCode: row.countryCode,
     locale: row.locale,
+    email: row.email,
   };
 }
 
