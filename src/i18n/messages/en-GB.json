@@ -65,6 +65,15 @@
   "email.journalist_application_received.cta": "Confirm email",
   "email.journalist_application_received.ignore": "Didn't apply for a journalist account? You can safely ignore this email.",
 
+  "email.journalist_approved.subject": "Your journalist account has been approved",
+  "email.journalist_approved.heading": "Your journalist account has been approved",
+  "email.journalist_approved.body": "Your application for a journalist account has been approved. You can now log in and start publishing source requests.",
+  "email.journalist_approved.cta": "Log in",
+
+  "email.journalist_rejected.subject": "Your journalist application has been rejected",
+  "email.journalist_rejected.heading": "Your journalist application has been rejected",
+  "email.journalist_rejected.body": "Unfortunately, your application for a journalist account has not been approved. Reason: {reason}",
+
   "email.response_submitted_receipt.subject": "Receipt: Your response has been sent",
   "email.response_submitted_receipt.heading": "Your response has been sent",
   "email.response_submitted_receipt.body": "We've received your response to the request “{title}”. You'll be notified by email if the journalist asks to know more.",

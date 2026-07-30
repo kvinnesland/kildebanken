@@ -65,6 +65,15 @@
   "email.journalist_application_received.cta": "Bekreft e-post",
   "email.journalist_application_received.ignore": "Søkte du ikke om en journalistkonto? Da kan du se bort fra denne e-posten.",
 
+  "email.journalist_approved.subject": "Journalistkontoen din er godkjent",
+  "email.journalist_approved.heading": "Journalistkontoen din er godkjent",
+  "email.journalist_approved.body": "Søknaden din om en journalistkonto er nå godkjent. Du kan logge inn og begynne å publisere kildeforespørsler.",
+  "email.journalist_approved.cta": "Logg inn",
+
+  "email.journalist_rejected.subject": "Journalistsøknaden din er avvist",
+  "email.journalist_rejected.heading": "Journalistsøknaden din er avvist",
+  "email.journalist_rejected.body": "Søknaden din om en journalistkonto er dessverre ikke godkjent. Begrunnelse: {reason}",
+
   "email.response_submitted_receipt.subject": "Kvittering: Svaret ditt er sendt",
   "email.response_submitted_receipt.heading": "Svaret ditt er sendt",
   "email.response_submitted_receipt.body": "Vi har mottatt svaret ditt på forespørselen «{title}». Du får beskjed på e-post dersom journalisten ber om å få vite mer.",

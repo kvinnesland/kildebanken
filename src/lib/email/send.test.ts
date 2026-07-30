@@ -96,18 +96,47 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
     );
   });
 
-  it("faller tilbake til det generiske formatet for maler uten en bygget mal ennå", async () => {
+  it("logger den faktisk rendrede malen for journalist_approved (ingen data trengs, bare token-løs godkjenning)", async () => {
     vi.stubEnv("BREVO_API_KEY", "");
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     await sendTransactionalEmail({
       template: "journalist_approved",
+      to: { email: "journalist@example.com", locale: "nb-NO" },
+      data: {},
+    });
+
+    const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
+    expect(loggedMessage).toContain("Journalistkontoen din er godkjent");
+  });
+
+  it("logger den faktisk rendrede malen for journalist_rejected, med begrunnelsen satt inn i teksten", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sendTransactionalEmail({
+      template: "journalist_rejected",
+      to: { email: "journalist@example.com", locale: "nb-NO" },
+      data: { reason: "Kunne ikke bekrefte tilknytning til oppgitt redaksjon." },
+    });
+
+    const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
+    expect(loggedMessage).toContain("Journalistsøknaden din er avvist");
+    expect(loggedMessage).toContain("Kunne ikke bekrefte tilknytning til oppgitt redaksjon.");
+  });
+
+  it("faller tilbake til det generiske formatet for maler uten en bygget mal ennå", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sendTransactionalEmail({
+      template: "contact_approved",
       to: { email: "test@example.com", locale: "nb-NO" },
       data: { requestId: "some-id" },
     });
 
     expect(warnSpy).toHaveBeenCalledWith(
-      "[email:stub] journalist_approved → test@example.com (nb-NO)",
+      "[email:stub] contact_approved → test@example.com (nb-NO)",
       { requestId: "some-id" }
     );
   });

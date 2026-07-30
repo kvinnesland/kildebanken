@@ -56,4 +56,15 @@ describe("renderSimpleCtaEmail", () => {
     });
     expect(rendered.text).toBe("heading\n\nbody\n\nhttps://example.invalid");
   });
+
+  it("ctaLabel/ctaUrl er valgfrie — utelates helt fra HTML og tekst når malen ikke har noen oppfølgingshandling (f.eks. et avslag)", () => {
+    const rendered = renderSimpleCtaEmail({
+      locale: "nb-NO",
+      subject: "Test",
+      heading: "heading",
+      body: "body",
+    });
+    expect(rendered.text).toBe("heading\n\nbody");
+    expect(rendered.html).not.toContain("<a href=");
+  });
 });

@@ -12,8 +12,13 @@ export interface SimpleCtaEmailContent {
   subject: string;
   heading: string;
   body: string;
-  ctaLabel: string;
-  ctaUrl: string;
+  // Valgfrie med hensikt: en ren beslutningsmelding uten noen selvbetjent
+  // oppfølgingshandling (f.eks. "journalistkonto avvist, med begrunnelse" —
+  // SPEC-V1.md 15 — søkeren har ingenting å klikke på, bare en begrunnelse
+  // å lese) har ingen naturlig lenke å tvinge frem. Samme begrunnelse som
+  // `ignoreNote` under.
+  ctaLabel?: string;
+  ctaUrl?: string;
   // Valgfri med hensikt: "ba du ikke om denne?"-linjen gir bare mening for
   // maler som utløses av en BRUKERHANDLING som kan gjøres ved en feiltakelse
   // (magic_link/confirm_email — noen skrev feil e-post). Rene varsler
@@ -36,6 +41,10 @@ export interface SimpleCtaEmailContent {
  * `digest.ts`.
  */
 export function renderSimpleCtaEmail(content: SimpleCtaEmailContent): RenderedEmail {
+  const ctaHtml =
+    content.ctaLabel && content.ctaUrl
+      ? `<a href="${content.ctaUrl}" style="display:inline-block;padding:10px 20px;background:${EMAIL_COLORS.accent};color:${EMAIL_COLORS.accentText};text-decoration:none;border-radius:6px;font-size:15px;">${escapeHtml(content.ctaLabel)}</a>`
+      : "";
   const ignoreNoteHtml = content.ignoreNote
     ? `<p style="margin:24px 0 0;font-size:13px;color:${EMAIL_COLORS.textMuted};">${escapeHtml(content.ignoreNote)}</p>`
     : "";
@@ -50,7 +59,7 @@ export function renderSimpleCtaEmail(content: SimpleCtaEmailContent): RenderedEm
         <tr><td style="padding:24px;">
           <h1 style="font-size:20px;margin:0 0 16px;color:${EMAIL_COLORS.text};font-family:Georgia,'Times New Roman',serif;">${escapeHtml(content.heading)}</h1>
           <p style="margin:0 0 20px;color:${EMAIL_COLORS.text};">${escapeHtml(content.body)}</p>
-          <a href="${content.ctaUrl}" style="display:inline-block;padding:10px 20px;background:${EMAIL_COLORS.accent};color:${EMAIL_COLORS.accentText};text-decoration:none;border-radius:6px;font-size:15px;">${escapeHtml(content.ctaLabel)}</a>
+          ${ctaHtml}
           ${ignoreNoteHtml}
         </td></tr>
       </table>
@@ -59,9 +68,13 @@ export function renderSimpleCtaEmail(content: SimpleCtaEmailContent): RenderedEm
 </body>
 </html>`;
 
-  const text = [content.heading, "", content.body, "", content.ctaUrl, ...(content.ignoreNote ? ["", content.ignoreNote] : [])].join(
-    "\n"
-  );
+  const text = [
+    content.heading,
+    "",
+    content.body,
+    ...(content.ctaUrl ? ["", content.ctaUrl] : []),
+    ...(content.ignoreNote ? ["", content.ignoreNote] : []),
+  ].join("\n");
 
   return { subject: content.subject, html, text };
 }

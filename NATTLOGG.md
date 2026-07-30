@@ -3762,3 +3762,84 @@ LanguageSwitcher); (3) journalistens svarinnboks (SPEC-V1.md 13); (4)
 OG-delingsbilde; (5) det oversatte-stinavn-hullet (3.7); (6)
 `prefers-color-scheme` for e-postmaler; (7) faktisk Brevo-integrasjon når
 en API-nøkkel finnes.
+
+---
+
+## Fortsettelse av økt 7 — `journalist_approved`/`journalist_rejected`-malene, PLUSS en generalisering av det delte skallet
+
+Fortsatte punkt (1) fra forrige "Neste økt". Bekreftet FØRST (ikke bare
+antatt) at `approveJournalist()`/`rejectJournalist()`
+(`src/lib/moderation/journalists.ts`) faktisk kaller disse to malnavnene
+uten innhold bak — grep bekreftet det (linje 53–57 og 100–104).
+
+**Reell forskjell fra alle tidligere maler, ikke bare kopiering:**
+- `journalist_approved` trenger INGEN token — godkjenningen er ikke en
+  klikkbar handling i seg selv, bare en beskjed om at kontoen nå kan
+  brukes. CTA-en peker i stedet på den allerede eksisterende
+  innloggingssiden (`/[locale]/logg-inn`), ikke `GET /api/auth/verify`.
+- `journalist_rejected` har INGEN naturlig oppfølgingshandling i det hele
+  tatt — bare en fritekst-begrunnelse (`reason`, skrevet av moderator,
+  IKKE oversatt, samme prinsipp som moderator-kommentarer på
+  forespørsler, 9.3) satt inn i den oversatte body-teksten via
+  ICU-interpolasjon.
+
+Det siste punktet krevde en reell endring i det delte skallet
+(`simple-cta-email.ts`), ikke bare et tomt CTA-felt: `ctaLabel`/`ctaUrl`
+var påkrevde felt i grensesnittet. Fremfor å tvinge inn en kunstig lenke
+(f.eks. til forsiden) bare for å tilfredsstille typen — samme
+resonnement som da `ignoreNote` ble gjort valgfri tidligere i natt for
+maler uten en "ba du ikke om dette"-vinkel — gjorde jeg `ctaLabel`/
+`ctaUrl` valgfrie også. HTML- og tekstrendring hopper nå over CTA-blokken
+helt når de ikke er satt, i stedet for å rendre en tom eller ugyldig
+lenke.
+
+**Fanget og rettet en test som ville blitt feil av denne endringen**: den
+eksisterende "faller tilbake til det generiske formatet for maler uten en
+bygget mal ennå"-testen i `send.test.ts` brukte nettopp `journalist_approved`
+som sitt eksempel på en IKKE-bygget mal — ville sluttet å teste det den
+faktisk skulle teste nå som malen har innhold. Byttet eksempelet til
+`contact_approved` (fortsatt reelt ubygget) i stedet for å late som om
+ingenting endret seg.
+
+- `src/lib/email/templates/journalist-approved.ts` (ny),
+  `journalist-rejected.ts` (ny), med tilhørende testfiler (3 + 4 tester).
+- `src/lib/email/templates/simple-cta-email.ts` — `ctaLabel`/`ctaUrl` fra
+  påkrevd til valgfritt, med samme begrunnelseskommentar-stil som
+  `ignoreNote` allerede hadde. Ny test i `simple-cta-email.test.ts` som
+  bekrefter at `<a href=` er fullstendig fraværende når de ikke er satt.
+- i18n-nøkler lagt til i begge språkfiler:
+  `email.journalist_approved.subject/heading/body/cta`,
+  `email.journalist_rejected.subject/heading/body` (ingen `.cta`-nøkkel —
+  det finnes ingen knapp å tekste).
+- `send.ts`: to nye switch-grener. `journalist_approved` trenger ingen
+  data i det hele tatt (`input.data` sjekkes ikke). `journalist_rejected`
+  krever `reason: string`, ellers `null` (faller tilbake til generisk
+  logging, samme mønster som alle andre grener). Dokumentasjonskommentaren
+  oppdatert fra "foreløpig fem" til "foreløpig sju".
+- Verifisert med et engangs `tsx`-skript (kjørt og slettet igjen) at
+  begge maler faktisk logger lesbar, korrekt tekst — ikke bare
+  enhetstestet i isolasjon. `journalist_rejected` sin utskrift bekreftet
+  at CTA-lenken faktisk mangler helt i den rå tekst-utskriften, ikke bare
+  i HTML-versjonen.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**218
+tester**, +10 nye), `i18n:check` (**137 nøkler**), `design:check-tokens`,
+`rm -rf .next && next build`, `test:integration` mot ekte lokal Postgres
+(`pg_isready` bekreftet på forhånd — 40 tester, uendret, denne endringen
+rører ikke databaselogikk), PLUSS en direkte kjøring av
+`sendTransactionalEmail()`-stubben for begge nye maler.
+
+### Neste økt
+
+(1) resten av komponentbiblioteket (Dialog, Toast, Card, Alert, Tabs,
+Table, Pagination, EmptyState, SkeletonLoader, LanguageSwitcher); (2)
+journalistens svarinnboks (SPEC-V1.md 13); (3) OG-delingsbilde; (4) det
+oversatte-stinavn-hullet (3.7); (5) `prefers-color-scheme` for
+e-postmaler; (6) flere e-postmaler etter behov (16 gjenstår i
+`TransactionalTemplate` uten innhold — de rundt forespørsel-livssyklusen
+og moderasjon/rapportering er nå trolig de med høyest reell
+sannsynlighet for å faktisk bli kalt fra kode som allerede finnes, samme
+mønster som de sju som er bygget så langt); (7) faktisk
+Brevo-integrasjon når en API-nøkkel finnes.
