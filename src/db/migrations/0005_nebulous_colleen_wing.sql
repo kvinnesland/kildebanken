@@ -1,0 +1,1 @@
+ALTER TABLE "contact_requests" ALTER COLUMN "response_id" DROP NOT NULL;

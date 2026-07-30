@@ -354,7 +354,10 @@ export const responses = pgTable(
 
 export const contactRequests = pgTable("contact_requests", {
   id: uuid("id").primaryKey().defaultRandom(),
-  responseId: uuid("response_id").notNull().unique().references(() => responses.id),
+  // Nullable med hensikt (rettet økt 6, se SPEC-V1.md 19.8): svaret slettes
+  // umiddelbart ved trekking (17.4), mens kontaktforespørselen har sin egen,
+  // uavhengige retensjonstid og skal overleve den slettingen.
+  responseId: uuid("response_id").unique().references(() => responses.id),
   journalistId: uuid("journalist_id").notNull().references(() => users.id),
   message: text("message").notNull(),
   requestedContactMethod: text("requested_contact_method").notNull(),

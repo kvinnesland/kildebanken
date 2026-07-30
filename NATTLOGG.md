@@ -593,3 +593,69 @@ lukker FR-029-hullet over samtidig; (2) svarinnsending
 (`POST /requests/:id/responses`) og `withdraw`; (3) `DELETE /me`
 (kontosletting, 17.5); (4) faktisk Brevo-integrasjon når en API-nøkkel
 finnes.
+
+---
+
+## Fortsettelse av økt 6 — svarinnsending og trekking
+
+Samme arbeidsøkt (00:39–01:38 UTC), fortsatte forbi punkt (2) fra listen
+over siden det fortsatt var god tid til neste planlagte gjenoppvåkning.
+
+### Nok et skjemaproblem oppdaget FØR koding, samme mønster som denne økten
+
+`ContactRequest.response_id` var `NOT NULL` — men 12.4/17.4 krever at et
+trukket svar slettes UMIDDELBART, mens kontaktforespørselen skal leve videre
+med sin egen, uavhengige 12-måneders retensjonstid (17.4). En `NOT NULL`
+fremmednøkkel mot en rad som skal kunne forsvinne før den selv gjør det, er
+umulig å implementere ærlig. Rettet i spec-en først (19.8: `response_id`
+nullable, med forklaring), deretter `schema.ts`, migrert (`0005`).
+
+Dette er nå TREDJE gang i denne natten samme klasse feil dukker opp
+(`AuthToken`/`Session` i økt 2, journaliststatus i økt 3, `requests`
+NOT NULL i denne økten, nå denne) — mønsteret er tydelig: **Fase
+1-skjelettet (økt 1) ble skrevet før noen prøvde å faktisk implementere
+flytene spec-en beskriver, og databasekolonners nullability ble gjettet
+optimistisk i stedet for utledet fra kravene.** Verdt å nevne eksplisitt til
+brukeren: resten av skjemaet (spesielt `ContactRequest` og `Response` sine
+øvrige felter) bør få samme kritiske gjennomgang før noen stoler blindt på
+at det som ikke er testet ennå, er riktig.
+
+### Bygget svarinnsending og trekking (FR-030/FR-033/FR-041, 12.1–12.4)
+
+- `src/lib/responses/validate.ts` — feltgrenser fra 12.1 (2000/4000/500/80
+  tegn), `relevanceStatement`/`answerText` obligatoriske (også mot
+  whitespace-only). 6 enhetstester.
+- `src/lib/responses/responses.ts`:
+  - `submitResponse()` — krever verifisert, aktiv mottakerkonto og at
+    forespørselen er `published`. Databasens betingede unike indeks
+    (migrasjon `0001`, fra økt 4) er den EGENTLIGE garantien mot dobbeltsvar
+    (FR-041); denne funksjonens forhåndssjekk er bare en vennligere feilvei
+    enn en rå constraint-feil ved kappløp.
+  - `withdrawResponse()` — henter ut 17.4 sin "slettes umiddelbart"
+    bokstavelig: kansellerer `pending` kontaktforespørsler, sever
+    `response_id`-koblingen for ALLE kontaktforespørsler knyttet til svaret
+    (uavhengig av status, siden svaret uansett forsvinner), og
+    HARD-SLETTER responsraden i samme kall — ikke en `withdrawn`-markering
+    som ryddes senere. `lifecycleStatus`-verdien `"withdrawn"` i
+    enum-typen brukes derfor i praksis aldri persistert; beholdt i skjemaet
+    for å matche 19.7 ordrett, men verdt å vite for neste leser.
+  - `listMineResponses()`, `getRespondentView()`.
+- Fire route handlers: `POST /api/requests/[id]/responses`,
+  `GET /api/responses/mine`, `POST /api/responses/[id]/withdraw`.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (54 tester — 6
+nye), `i18n:check`, `next build` (19 API-ruter totalt), `drizzle-kit
+generate` for `ContactRequest`-rettelsen (migrasjon `0005`).
+
+### Neste økt
+
+(1) `POST /admin/requests/:id/publish` (+ `reject`/`request-changes`) —
+fortsatt ikke bygget, og fortsatt den eneste gjenværende delen av
+FR-029-hullet; (2) `DELETE /me` (kontosletting, 17.5); (3) kontaktforespørsel-
+flyten (`POST /journalist/responses/:id/contact-request`,
+`POST /contact-requests/:id/respond`); (4) vurder å sette av litt tid til å
+lese gjennom RESTEN av `schema.ts` proaktivt for flere NOT NULL/nullable-feil
+av samme type som er funnet tre netter på rad, i stedet for å vente på at
+implementering av neste endepunkt avslører dem enkeltvis.

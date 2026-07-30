@@ -1132,7 +1132,7 @@ ligger utelukkende i `ContactRequest`.
 
 ```
 id
-response_id                 unik – én kontaktforespørsel per svar
+response_id                 unik, NULLABLE – se merknad under
 journalist_id
 message
 requested_contact_method
@@ -1143,6 +1143,19 @@ expires_at
 created_at
 updated_at
 ```
+
+**Rettet under autonomt arbeid** (økt 6, se `NATTLOGG.md`): `response_id` var
+opprinnelig `NOT NULL`, men 12.4 og 17.4 krever at selve svaret slettes
+umiddelbart ved trekking ("Trukket svar: Slettes umiddelbart"), mens
+`ContactRequest` har sin egen, uavhengige retensjonstid (12 måneder etter
+avslutning, 17.4) — en allerede besvart eller avslått kontaktforespørsel skal
+altså kunne overleve at det tilhørende svaret er slettet. En `NOT NULL`
+fremmednøkkel mot en rad som skal kunne slettes før den selv slettes, er en
+selvmotsigelse. Løsningen: `response_id` er nullable, og nulles ut (ikke hele
+raden slettet) i det svaret trekkes — status endres til `cancelled` bare
+dersom kontaktforespørselen fortsatt var `pending`; allerede avgjorte
+kontaktforespørsler ({`approved`, `declined`, `expired`) beholder sin status
+uendret, bare koblingen til det (nå slettede) svaret fjernes.
 
 ### 19.9 EmailSubscription
 
