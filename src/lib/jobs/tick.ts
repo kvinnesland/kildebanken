@@ -342,7 +342,7 @@ async function sendDigestToRecipients(
 // expire-requests — FR-026
 // ---------------------------------------------------------------------------
 
-async function runExpireRequests(dbase: Database): Promise<TickResult> {
+export async function runExpireRequests(dbase: Database): Promise<TickResult> {
   const now = new Date();
   const expired = await dbase
     .update(requests)
@@ -357,7 +357,7 @@ async function runExpireRequests(dbase: Database): Promise<TickResult> {
 // expire-contact-requests — FR-046 (14 dager)
 // ---------------------------------------------------------------------------
 
-async function runExpireContactRequests(dbase: Database): Promise<TickResult> {
+export async function runExpireContactRequests(dbase: Database): Promise<TickResult> {
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
   const expired = await dbase
@@ -378,7 +378,7 @@ async function runExpireContactRequests(dbase: Database): Promise<TickResult> {
 // deadline-reminder — varsel 24t før frist
 // ---------------------------------------------------------------------------
 
-async function runDeadlineReminders(dbase: Database): Promise<TickResult> {
+export async function runDeadlineReminders(dbase: Database): Promise<TickResult> {
   const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const errors: string[] = [];
   let processed = 0;
@@ -428,7 +428,7 @@ async function runDeadlineReminders(dbase: Database): Promise<TickResult> {
 // automatisk lukking)
 // ---------------------------------------------------------------------------
 
-async function runStaleRequestReminders(dbase: Database): Promise<TickResult> {
+export async function runStaleRequestReminders(dbase: Database): Promise<TickResult> {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const errors: string[] = [];
   let processed = 0;
@@ -477,7 +477,7 @@ async function runStaleRequestReminders(dbase: Database): Promise<TickResult> {
 // purge-unverified — FR-004 (14 dager), kjøres daglig
 // ---------------------------------------------------------------------------
 
-async function runPurgeUnverified(dbase: Database): Promise<TickResult> {
+export async function runPurgeUnverified(dbase: Database): Promise<TickResult> {
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
   const deleted = await dbase

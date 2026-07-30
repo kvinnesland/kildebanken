@@ -5142,3 +5142,68 @@ om `contact_approved`/`contact_declined` bør bli egne
 (Dialog, Toast, Card, Alert, Tabs, Table, Pagination); (5) resten av
 16.1-dashbordet; (6) den ubrukte `"approved"`-verdien i
 `request_status`-enumen; (7) OG-delingsbilde.
+
+## Fortsettelse av økt 7 — laveste-risiko-skiven av testbarhets-refaktoreringen: `tick.ts`s jobbfunksjoner
+
+Tok fatt på punkt (2), men bevisst BARE den tryggeste delen av det —
+ikke hele `admin/`/`moderation/`-lib-laget. `tick.ts`s fem jobbfunksjoner
+(`runExpireRequests`, `runExpireContactRequests`, `runDeadlineReminders`,
+`runStaleRequestReminders`, `runPurgeUnverified`) har INGEN
+sesjon/cookie-avhengighet i det hele tatt — de tar `Database` som et
+eksplisitt parameter og gjør bare lesing/skriving mot den. Grunnen til at
+de likevel hadde null test-dekning var noe helt annet og langt
+enklere å rette: de var ikke eksportert. Bare `runTick()` (hele
+orkestratoren, som kjører ALLE jobbene sammen og i tillegg styres av
+`shouldRunDailyJobNow()`s vegg-klokke-avhengighet for de daglige jobbene)
+var tilgjengelig utenfra — upraktisk å teste deterministisk.
+
+Løsning: la til `export` foran alle fem (ZERO atferdsendring, ren
+synlighetsendring), og skrev `tick.integration.test.ts` (13 nye tester)
+mot ekte Postgres — dekker både "skjer riktig ting" (forespørsel
+utløper/lukkes, kontaktforespørsel utløper, påminnelse sendes og
+idempotens-flagget settes, ubekreftet konto slettes) og "skjer riktig
+IKKE" (fremtidig frist rører ingenting, allerede sendt påminnelse sendes
+ikke på nytt, en aktiv/bekreftet konto slettes ALDRI selv om den er
+gammel).
+
+Én reell fallgruve underveis: `responses`/`contact_requests` har INGEN
+`ON DELETE CASCADE` mot `requests` (bevisst, se schema.ts) — et første
+utkast som ryddet opp ved å slette `requests`-raden direkte feilet på en
+fremmednøkkel-konflikt siden svaret fortsatt refererte til den. Rettet
+til å rydde i riktig avhengighetsrekkefølge (`contact_requests` →
+`responses` → `requests`).
+
+Presisering, ikke en ny beslutning: dette lukker BARE `tick.ts`s del av
+gapet. `moderation/requests.ts` (`publishRequest()`/`rejectRequest()`/
+`requestChanges()`) og `account-deletion.ts` er fortsatt utestet — begge
+kaller `requireModeratorForCountry()`/`requireAdmin()` internt, som
+begge leser `getCurrentSession()` (en `next/headers`-cookie), en ekte
+sesjonsavhengighet som IKKE kan løses med bare et `export`-nøkkelord.
+Det trenger enten `vi.mock("next/headers")` i testene (ingen
+produksjonskode-endring, men mer testoppsett) eller en faktisk endring
+av kallekonvensjonen (aktøren injisert som parameter, slik
+`closeRequest(requestId, actorUserId)` allerede gjør) — sistnevnte er
+den ekte, fortsatt bevisst utsatte refaktoreringen, siden den er en
+reell endring i et sikkerhetssensitivt autorisasjonslag.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**329
+tester**, uendret — kun integrasjonstester lagt til, som ikke kjøres
+her per design), `i18n:check` (uendret), `design:check-tokens`,
+`rm -rf .next && next build`, `test:integration` mot ekte lokal Postgres
+(**60 tester**, +13 nye — alle grønne, ingen regresjon).
+
+### Neste økt
+
+(1) faktisk Brevo-integrasjon når en API-nøkkel finnes; (2) resten av
+testbarhets-refaktoreringen — `moderation/requests.ts` og
+`account-deletion.ts`, som begge KREVER enten `vi.mock("next/headers")`
+i testene eller en ekte endring av kallekonvensjonen (aktøren injisert
+som parameter, se drøftingen over) — fortsatt den klart mest
+sikkerhetssensitive og derfor mest forsiktig-utsatte delen; (3) vurder
+om `contact_approved`/`contact_declined` bør bli egne
+`displayStatus`-verdier i 12.6; (4) resten av komponentbiblioteket
+(Dialog, Toast, Card, Alert, Tabs, Table, Pagination); (5) resten av
+16.1-dashbordet; (6) den ubrukte `"approved"`-verdien i
+`request_status`-enumen; (7) OG-delingsbilde.
