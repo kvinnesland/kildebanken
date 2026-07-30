@@ -2063,9 +2063,85 @@ uendret — nytt filnavn korrekt ekskludert fra standardsuiten), `i18n:check`,
 
 Retensjonsjobbens fem kategorier har nå ekte dekning mot en ekte database —
 den forsiktighets-forpliktelsen fra i går kveld er innfridd. Gjenstående
-kjente, IKKE bygget del av 17.4: avviste journalistsøknader slettes
+kjent, IKKE bygget del av 17.4: avviste journalistsøknader slettes
 fortsatt aldri (krever samme anonymiseringsrutine som kontosletting, se
 over) — verdt å bygge FERDIG en senere økt, med samme forsiktighet. Ellers:
 frontend (nå med en klarere forståelse av at token-eksport til e-post
 krever fargekonvertering som egen oppgave), eller faktisk Brevo-integrasjon
 når en API-nøkkel finnes.
+
+---
+
+## Fortsettelse av økt 7 — fullførte retensjonsjobbens siste ufullstendige kategori
+
+Samme arbeidsøkt (sandkassens Postgres hadde stoppet igjen mellom
+øktene — som ventet, startet den på nytt før noe annet).
+
+Fulgte opp punktet rett over selv: "avviste journalistsøknader" var den
+ENESTE av de fem retensjonskategoriene som fortsatt bare TALTE og aldri
+faktisk slettet noe, uansett `RETENTION_DRY_RUN`. Årsaken var dokumentert
+i kodekommentaren fra tidligere i natt: sletting av `User`-raden krysser
+flere tabeller og ble utsatt til den kunne gjøres trygt.
+
+### Analyse som gjorde det trygt å fullføre
+
+`JournalistProfile.verification_status = rejected` er ENDELIG (8.1), og
+BÅDE `pending_review` og `rejected` har "kan sende til moderering: nei" i
+samme tabell. En avvist journalist kan derfor ALDRI ha fått noen
+forespørsel til `submitted`/`published` — enhver forespørsel de måtte ha
+laget er garantert `draft | changes_requested | rejected`, og kan aldri ha
+et svar eller en kontaktforespørsel knyttet til seg (begge krever en
+`published` forespørsel). Full sletting av kontoen er dermed trygt uten
+noen egen anonymiseringslogikk — ingen risiko for å etterlate foreldreløse
+svar/kontaktforespørsler.
+
+### Rettet i `src/lib/jobs/retention.ts`
+
+`purgeRejectedJournalistApplications()` tar nå `dryRun` som parameter,
+akkurat som de fire andre kategoriene, og sletter (i riktig FK-rekkefølge:
+`requests` → `consent_records`/`auth_tokens`/`sessions` → `journalist_profiles`
+→ `users`) når `RETENTION_DRY_RUN=false`.
+
+**Bevisst IKKE via `performAccountDeletion()`** (17.5-rutinen,
+`account-deletion.ts`) — den er skrevet for en AKTIV/godkjent konto og
+sender en bekreftelses-e-post til brukeren. En avvist, aldri-godkjent
+søknad har ingen aktivitet å varsle om, og renskes STILLE, samme prinsipp
+som de fire andre kategoriene i denne jobben (ingen av dem varsler noen).
+Vurdert og bevisst avvist å gjenbruke den delte rutinen, fremfor å anta at
+"gjenbruk er alltid riktig" — de to situasjonene har reelt forskjellig
+varslingsbehov.
+
+### Oppdatert integrasjonstestdekning
+
+Erstattet den gamle testen ("teller, men sletter aldri") med tre nye i
+`retention.integration.test.ts`:
+
+- Dry run teller en avvist søknad forbi 6-månedersfristen uten å slette
+  noe.
+- Ekte kjøring sletter bruker, profil OG et tilhørende UTKAST (bekrefter
+  at antagelsen over — draft-forespørsler er trygge å slette med — faktisk
+  stemmer i praksis), men lar en NYLIG avvist søknad (innenfor fristen)
+  stå urørt.
+- En fortsatt `pending_review`-profil, uansett alder, røres ALDRI — filteret
+  er på `verification_status = rejected`, ikke bare alder.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (59 tester,
+uendret), `i18n:check`, `next build` (46 API-ruter, uendret), OG
+`npx vitest run -c vitest.integration.config.ts` mot ekte lokal Postgres
+(**39 tester**, +1 netto — én gammel test erstattet med to nye, pluss de
+seks fra forrige del av økten — 10 testfiler).
+
+### Status: SPEC-V1.md 17.4 er nå fullt ut bygget og testet
+
+Alle fem retensjonskategorier gjør nå det spec-en faktisk sier, verifisert
+mot ekte Postgres, med `RETENTION_DRY_RUN=true` fortsatt som ubetinget
+trygg standard i produksjon inntil noen eksplisitt slår den av.
+
+### Neste økt
+
+Ingen kjente gjenstående hull i 17.4. Naturlige neste steg: frontend, eller
+faktisk Brevo-integrasjon når en API-nøkkel finnes. Husk (igjen): sandkassens
+Postgres må startes på nytt (`service postgresql start`) ved hver ny
+sandkasse-instans — skjedde denne gangen også, som forventet.

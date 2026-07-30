@@ -234,19 +234,83 @@ describe("runRetention mot ekte Postgres (17.4)", () => {
     });
   });
 
-  describe("avviste journalistsøknader — KUN telling, ALDRI sletting (bevisst ufullstendig)", () => {
-    let userId: string;
-    let profileId: string;
+  describe("avviste journalistsøknader — 6 måneder, full sletting (ferdigstilt økt 7)", () => {
+    let oldUserId: string;
+    let oldProfileId: string;
+    let oldDraftRequestId: string;
+    let recentUserId: string;
+    let recentProfileId: string;
+    let stillPendingUserId: string;
+    let stillPendingProfileId: string;
 
     beforeAll(async () => {
       const now = new Date();
       const sevenMonthsAgo = new Date(now);
       sevenMonthsAgo.setUTCMonth(sevenMonthsAgo.getUTCMonth() - 7);
+      const oneMonthAgo = new Date(now);
+      oneMonthAgo.setUTCMonth(oneMonthAgo.getUTCMonth() - 1);
 
-      const [user] = await db
+      async function createRejectedApplication(reviewedAt: Date) {
+        const [user] = await db
+          .insert(users)
+          .values({
+            email: `retention-rejected-${Date.now()}-${Math.random()}@example.invalid`,
+            role: "journalist",
+            status: "active",
+            countryCode: TEST_COUNTRY_CODE,
+            locale: "nb-NO",
+            emailVerifiedAt: new Date(),
+          })
+          .returning({ id: users.id });
+        if (!user) throw new Error("Klarte ikke opprette testbruker");
+
+        const [profile] = await db
+          .insert(journalistProfiles)
+          .values({
+            userId: user.id,
+            fullName: "Avvist Journalist",
+            jobTitle: "Journalist",
+            organizationName: "Testavisen",
+            organizationUrl: "https://example.invalid",
+            verificationStatus: "rejected",
+            reviewedAt,
+            reviewNote: "Avvist i test.",
+          })
+          .returning({ id: journalistProfiles.id });
+        if (!profile) throw new Error("Klarte ikke opprette test-journalistprofil");
+
+        return { userId: user.id, profileId: profile.id };
+      }
+
+      const old = await createRejectedApplication(sevenMonthsAgo);
+      oldUserId = old.userId;
+      oldProfileId = old.profileId;
+
+      // 8.1: `pending_review` OG `rejected` blokkerer begge innsending til
+      // moderering — en avvist journalist kan derfor bare ha DRAFT-
+      // forespørsler, aldri noe med svar/kontaktforespørsel knyttet til seg.
+      const [draftRequest] = await db
+        .insert(requests)
+        .values({
+          journalistId: oldUserId,
+          countryCode: TEST_COUNTRY_CODE,
+          contentLanguage: "nb-NO",
+          status: "draft",
+        })
+        .returning({ id: requests.id });
+      if (!draftRequest) throw new Error("Klarte ikke opprette test-utkast");
+      oldDraftRequestId = draftRequest.id;
+
+      const recent = await createRejectedApplication(oneMonthAgo);
+      recentUserId = recent.userId;
+      recentProfileId = recent.profileId;
+
+      // Fortsatt PENDING_REVIEW, men gammel — skal ALDRI røres, kun
+      // `rejected` teller (`verification_status`-filteret i retention.ts).
+      const [stillPendingUser] = await db
         .insert(users)
         .values({
-          email: `retention-rejected-${Date.now()}@example.invalid`,
+          email: `retention-pending-${Date.now()}-${Math.random()}@example.invalid`,
           role: "journalist",
           status: "active",
           countryCode: TEST_COUNTRY_CODE,
@@ -254,48 +318,77 @@ describe("runRetention mot ekte Postgres (17.4)", () => {
           emailVerifiedAt: new Date(),
         })
         .returning({ id: users.id });
-      if (!user) throw new Error("Klarte ikke opprette testbruker");
-      userId = user.id;
+      if (!stillPendingUser) throw new Error("Klarte ikke opprette testbruker");
+      stillPendingUserId = stillPendingUser.id;
 
-      const [profile] = await db
+      const [stillPendingProfile] = await db
         .insert(journalistProfiles)
         .values({
-          userId,
-          fullName: "Avvist Journalist",
+          userId: stillPendingUserId,
+          fullName: "Ventende Journalist",
           jobTitle: "Journalist",
           organizationName: "Testavisen",
           organizationUrl: "https://example.invalid",
-          verificationStatus: "rejected",
-          reviewedAt: sevenMonthsAgo,
-          reviewNote: "Avvist i test.",
+          // verificationStatus defaulter til pending_review — IKKE satt her.
         })
         .returning({ id: journalistProfiles.id });
-      if (!profile) throw new Error("Klarte ikke opprette test-journalistprofil");
-      profileId = profile.id;
+      if (!stillPendingProfile) throw new Error("Klarte ikke opprette test-journalistprofil");
+      stillPendingProfileId = stillPendingProfile.id;
     });
 
     afterAll(async () => {
-      await db.delete(journalistProfiles).where(eq(journalistProfiles.id, profileId));
-      await db.delete(users).where(eq(users.id, userId));
+      // Best-effort — de fleste av disse er FORVENTET borte etter testen.
+      await db.delete(requests).where(eq(requests.id, oldDraftRequestId));
+      await db.delete(journalistProfiles).where(eq(journalistProfiles.id, oldProfileId));
+      await db.delete(users).where(eq(users.id, oldUserId));
+      await db.delete(journalistProfiles).where(eq(journalistProfiles.id, recentProfileId));
+      await db.delete(users).where(eq(users.id, recentUserId));
+      await db.delete(journalistProfiles).where(eq(journalistProfiles.id, stillPendingProfileId));
+      await db.delete(users).where(eq(users.id, stillPendingUserId));
     });
 
-    it("teller søknaden forbi 6-månedersfristen i errors[], men sletter INGENTING selv med RETENTION_DRY_RUN=false", async () => {
-      setDryRun("false");
+    it("dry run: teller søknaden forbi 6-månedersfristen, men sletter INGENTING", async () => {
+      setDryRun("true");
       const summary = await runRetention(db);
       const category = summary.results.find((r) => r.category === "rejected_journalist_applications");
+      expect(category?.dryRun).toBe(true);
+      expect(category?.affectedCount).toBeGreaterThanOrEqual(1);
 
-      expect(category?.dryRun).toBe(true); // alltid true her, uansett env — se retention.ts
-      expect(category?.affectedCount).toBe(0); // "telt", ikke "utført"
-      expect(category?.errors.some((e) => e.includes("Ingen handling utført"))).toBe(true);
+      const [stillThere] = await db.select({ id: users.id }).from(users).where(eq(users.id, oldUserId));
+      expect(stillThere).toBeDefined();
+    });
 
-      const [profileStillThere] = await db
+    it("ekte kjøring: sletter bruker+profil+utkast for den gamle avviste søknaden, lar de andre stå", async () => {
+      setDryRun("false");
+      await runRetention(db);
+
+      const [oldUserGone] = await db.select({ id: users.id }).from(users).where(eq(users.id, oldUserId));
+      expect(oldUserGone).toBeUndefined();
+      const [oldProfileGone] = await db
         .select({ id: journalistProfiles.id })
         .from(journalistProfiles)
-        .where(eq(journalistProfiles.id, profileId));
-      expect(profileStillThere).toBeDefined();
+        .where(eq(journalistProfiles.id, oldProfileId));
+      expect(oldProfileGone).toBeUndefined();
+      const [oldDraftGone] = await db
+        .select({ id: requests.id })
+        .from(requests)
+        .where(eq(requests.id, oldDraftRequestId));
+      expect(oldDraftGone).toBeUndefined();
 
-      const [userStillThere] = await db.select({ id: users.id }).from(users).where(eq(users.id, userId));
-      expect(userStillThere).toBeDefined();
+      // Nylig avvist (innenfor 6 mnd) — urørt.
+      const [recentUserStillThere] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.id, recentUserId));
+      expect(recentUserStillThere).toBeDefined();
+
+      // Fortsatt pending_review, uansett alder — urørt (filteret er på
+      // verification_status = rejected, ikke bare alder).
+      const [stillPendingUserStillThere] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.id, stillPendingUserId));
+      expect(stillPendingUserStillThere).toBeDefined();
     });
   });
 

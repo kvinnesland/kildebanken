@@ -17,12 +17,16 @@ import { and, eq, inArray, lt } from "drizzle-orm";
 import { db, type Database } from "@/db/client";
 import {
   auditLogs,
+  authTokens,
+  consentRecords,
   contactRequests,
   digestDeliveries,
   digests,
   journalistProfiles,
   requests,
   responses,
+  sessions,
+  users,
 } from "@/db/schema";
 
 const RETENTION_PERIOD = {
@@ -75,7 +79,7 @@ export async function runRetention(dbase: Database = db): Promise<RetentionSumma
 
   results.push(await purgeOldResponses(dbase, dryRun));
   results.push(await purgeOldContactRequests(dbase, dryRun));
-  results.push(await purgeRejectedJournalistApplications(dbase));
+  results.push(await purgeRejectedJournalistApplications(dbase, dryRun));
   results.push(await purgeOldAuditLogs(dbase, dryRun));
   results.push(await purgeOldDigests(dbase, dryRun));
 
@@ -153,24 +157,35 @@ async function purgeOldContactRequests(
 }
 
 /**
- * "Avvist journalistsøknad: 6 måneder." Sletter hele `JournalistProfile` OG
- * den tilhørende `User`-raden — en avvist søknad har ingen videre bruk for
- * kontoen. IKKE gjort her (bevisst, se TODO i toppen av filen): faktisk
- * sletting av `User`-raden krysser flere tabeller (ConsentRecord m.fl. har
- * FK mot user_id) og bør skje via samme anonymiseringsrutine som 17.5
- * (kontosletting), ikke en egen, parallell sti. Denne kategorien er derfor
- * kun TELT, aldri utført, selv med `RETENTION_DRY_RUN=false` — se
- * `affectedCount` og `errors` for hvorfor.
+ * "Avvist journalistsøknad: 6 måneder." Bygget ferdig under autonomt arbeid
+ * (økt 7, se NATTLOGG.md) — kun TELT frem til nå, aldri utført, fordi
+ * sletting av `User`-raden krysser flere tabeller.
+ *
+ * `verification_status = rejected` er ENDELIG (8.1), og BÅDE
+ * `pending_review` og `rejected` har "kan sende til moderering: nei" — en
+ * avvist journalist kan derfor ALDRI ha fått en forespørsel til
+ * `submitted`/`published`. Enhver forespørsel journalisten måtte ha laget
+ * er dermed GARANTERT `draft | changes_requested | rejected`, og kan aldri
+ * ha noe svar eller kontaktforespørsel knyttet til seg (begge krever en
+ * `published` forespørsel å eksistere mot). Full sletting av kontoen er
+ * derfor trygt uten noen egen anonymiseringslogikk.
+ *
+ * Bevisst IKKE via samme rutine som 17.5 (`performAccountDeletion()` i
+ * `account-deletion.ts`) — den er for en AKTIV/godkjent konto og sender en
+ * bekreftelses-e-post til brukeren. En avvist, aldri-godkjent søknad har
+ * ingen aktivitet å varsle om, og renskes STILLE — samme prinsipp som de
+ * fire andre kategoriene i denne jobben, ingen av dem varsler noen.
  */
 async function purgeRejectedJournalistApplications(
-  dbase: Database
+  dbase: Database,
+  dryRun: boolean
 ): Promise<RetentionCategoryResult> {
   const errors: string[] = [];
   const cutoff = monthsAgo(RETENTION_PERIOD.rejectedJournalistMonths);
 
   try {
     const candidates = await dbase
-      .select({ id: journalistProfiles.id })
+      .select({ id: journalistProfiles.id, userId: journalistProfiles.userId })
       .from(journalistProfiles)
       .where(
         and(
@@ -179,18 +194,28 @@ async function purgeRejectedJournalistApplications(
         )
       );
 
-    if (candidates.length > 0) {
-      errors.push(
-        `${candidates.length} avvist(e) søknad(er) passerer 6-måneders grensen, men ` +
-          "sletting av User+JournalistProfile på tvers av tabeller er ikke bygget ennå " +
-          "(krever samme anonymiseringsrutine som 17.5). Ingen handling utført."
-      );
+    if (!dryRun) {
+      for (const candidate of candidates) {
+        // Rekkefølge: alt som refererer til user_id/journalist_id FØR selve
+        // User-raden, ellers feiler FK-constraint-en.
+        await dbase.delete(requests).where(eq(requests.journalistId, candidate.userId));
+        await dbase.delete(consentRecords).where(eq(consentRecords.userId, candidate.userId));
+        await dbase.delete(authTokens).where(eq(authTokens.userId, candidate.userId));
+        await dbase.delete(sessions).where(eq(sessions.userId, candidate.userId));
+        await dbase.delete(journalistProfiles).where(eq(journalistProfiles.id, candidate.id));
+        await dbase.delete(users).where(eq(users.id, candidate.userId));
+      }
     }
 
-    return { category: "rejected_journalist_applications", dryRun: true, affectedCount: 0, errors };
+    return {
+      category: "rejected_journalist_applications",
+      dryRun,
+      affectedCount: candidates.length,
+      errors,
+    };
   } catch (err) {
     errors.push((err as Error).message);
-    return { category: "rejected_journalist_applications", dryRun: true, affectedCount: 0, errors };
+    return { category: "rejected_journalist_applications", dryRun, affectedCount: 0, errors };
   }
 }
 
