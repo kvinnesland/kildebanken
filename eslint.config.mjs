@@ -10,6 +10,19 @@ const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
 const eslintConfig = [
   { ignores: [".next/**", "node_modules/**", "src/db/migrations/**", "next-env.d.ts"] },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
+  {
+    rules: {
+      // Tillat bevisst ubrukte variabler/parametere prefikset med "_" —
+      // f.eks. ved destrukturering der bare noen felt skal beholdes, eller
+      // Route Handler-parametere (`_request`) Next.js krever i signaturen
+      // uansett om ruten bruker dem. Lagt til økt 7 (se NATTLOGG.md) da
+      // dette først ga advarsler, ikke feil.
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
+  },
 ];
 
 export default eslintConfig;

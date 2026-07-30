@@ -864,3 +864,62 @@ sandkassen gjennom hele natten).
 `PATCH /journalist/responses/:id/status` (merking + internt notat, 13.1); (2)
 `GET /me/data-export` og øvrige gjenstående `/me`-ruter; (3) faktisk
 Brevo-integrasjon når en API-nøkkel finnes.
+
+---
+
+## Fortsettelse av økt 7 — journalistens svarinnboks (siste hovedflyt)
+
+Samme arbeidsøkt (01:38–02:38 UTC).
+
+- `src/lib/journalist-inbox/journalist-inbox.ts`:
+  - `listResponsesForRequest()` — liste + tellere fra 13 (antall svar,
+    uleste, aktuelle/`shortlisted`, kontaktforespørsler). Viser kun aktive
+    svar (`lifecycle_status = submitted`) — trukne finnes ikke lenger
+    (hard-slettet), skjulte av moderator vises ikke her.
+    `hasSharedEmail` beregnes fra ENTEN `contact_sharing = email` (delt ved
+    innsending) ELLER en godkjent `ContactRequest` (delt senere) — to ulike
+    veier til samme synlige felt.
+  - `getResponseDetailForJournalist()` — setter `viewed_at` ved FØRSTE
+    åpning, ingen e-post utløses (13, ordrett: "utløser ingen notifikasjon
+    til respondenten").
+  - `updateResponseMarking()` — setter `journalist_marking` og/eller
+    `journalist_note`. Rører ALDRI `lifecycle_status`, som eies av
+    respondenten alene (19.7-prinsippet fra tidligere økter, håndhevet
+    konsekvent helt til slutt).
+- Tre route handlers: `GET /api/journalist/requests/[id]/responses`,
+  `GET /api/journalist/responses/[id]`,
+  `PATCH /api/journalist/responses/[id]/status`.
+- Lagt til en generell ESLint-regel (`argsIgnorePattern`/`varsIgnorePattern:
+  "^_"`) i `eslint.config.mjs` — ryddigere enn å bruke `void`-triks for hver
+  bevisst ubrukt destrukturert variabel, noe som dukket opp for tredje gang
+  i natt (tidligere ryddet manuelt i `retention.ts` og
+  `account-deletion.ts`).
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (54 tester,
+uendret), `i18n:check`, `next build` (**31 API-ruter totalt**).
+
+### Status: hele SPEC-V1.md seksjon 20 sin kjernefunksjonalitet er nå bygget
+
+Registrering (mottaker + journalist), autentisering (magic link, økter,
+kontosletting), forespørsel-livssyklus (utkast → moderering → publisering →
+lukking), svar (innsending → trekking → journalistens innboks), kontakt
+(forespørsel → godkjenning/avslag), og digest-utsendelse med
+klikk-gjennom-tilgang. Gjenstående, ikke-blokkerende hull: noen mindre
+`/me`-ruter (`PATCH /me`, `POST /me/change-country`, `GET /me/data-export`),
+`GET /journalists/me`/`PATCH /journalists/me`, faktisk Brevo-integrasjon, og
+integrasjonstester mot en ekte database (ingen Postgres tilgjengelig i denne
+sandkassen i natt — alt verifisert ved kodegjennomgang, typecheck og
+`next build` i stedet).
+
+### Neste økt
+
+(1) resten av `/me`-rutene (`PATCH /me`, `POST /me/change-country`,
+`GET /me/data-export`); (2) `GET /journalists/me`/`PATCH /journalists/me`;
+(3) vurder om det er tid til å sette opp en lokal Postgres i sandkassen for
+faktisk å kjøre migrasjonene og få de første ekte integrasjonstestene, i
+stedet for bare kodegjennomgang — ville fanget feil ingen mengde
+typechecking kan fange (f.eks. om den betingede unike indeksen i migrasjon
+`0001` faktisk håndheves som forventet); (4) faktisk Brevo-integrasjon når
+en API-nøkkel finnes.
