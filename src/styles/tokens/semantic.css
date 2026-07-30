@@ -12,7 +12,7 @@
   --color-surface-hover: var(--gray-100);
 
   --color-border: var(--gray-200);
-  --color-border-strong: var(--gray-300);
+  --color-border-strong: var(--gray-500);
 
   --color-text: var(--gray-900);
   --color-text-muted: var(--gray-600);
@@ -33,6 +33,18 @@
   --color-warning-subtle: var(--warning-100);
   --color-danger: var(--danger-600);
   --color-danger-subtle: var(--danger-100);
+  /* --color-danger som INNHOLDSFARGE (kant, ikonfyll, knappebakgrunn) er
+     bevisst tema-uavhengig, se DESIGN.md 2.1 ("bevisst lav metning"). Men
+     brukt direkte som TEKSTFARGE mot flatens bakgrunn (feiltekst under et
+     skjemafelt) MÅ den lysne i mørkt tema av nøyaktig samme grunn som
+     aksenten må det (DESIGN.md 2.3) — derfor en egen rolle, se 2.4-notatet
+     under om hvorfor dette ble delt i to.
+     --color-on-danger er komplementet: tekst/ikon OPPÅ en --color-danger-
+     fylt flate (faretruende-knapp). Siden --color-danger-bakgrunnen ikke
+     temabytter, skal heller ikke teksten oppå den gjøre det — i motsetning
+     til --color-accent-text, som med hensikt følger --color-accent. */
+  --color-danger-text: var(--danger-600);
+  --color-on-danger: var(--gray-0);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -43,7 +55,7 @@
     --color-surface-hover: var(--gray-800);
 
     --color-border: var(--gray-800);
-    --color-border-strong: var(--gray-700);
+    --color-border-strong: var(--gray-500);
 
     --color-text: var(--gray-100);
     --color-text-muted: var(--gray-400);
@@ -55,6 +67,8 @@
     --color-accent-subtle: var(--accent-900);
     --color-accent-text: var(--gray-950);
     --color-link: var(--accent-300);
+
+    --color-danger-text: var(--danger-100);
   }
 }
 
@@ -65,7 +79,7 @@
   --color-surface-hover: var(--gray-800);
 
   --color-border: var(--gray-800);
-  --color-border-strong: var(--gray-700);
+  --color-border-strong: var(--gray-500);
 
   --color-text: var(--gray-100);
   --color-text-muted: var(--gray-400);
@@ -77,4 +91,6 @@
   --color-accent-subtle: var(--accent-900);
   --color-accent-text: var(--gray-950);
   --color-link: var(--accent-300);
+
+  --color-danger-text: var(--danger-100);
 }

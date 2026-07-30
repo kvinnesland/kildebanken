@@ -13,7 +13,12 @@
 .meta {
   font-family: var(--font-ui);
   font-size: var(--text-sm);
-  color: var(--color-text-subtle);
+  /* IKKE --color-text-subtle: gray-500 mot --color-surface i lyst tema gir
+     bare 4.28:1, under WCAG AA sitt 4.5:1-krav for vanlig tekst (DESIGN.md
+     2.4) — se contrast-pairs.test.ts og NATTLOGG.md. --color-text-subtle er
+     trygg for store overskrifter/dekorativ bruk (≥3:1), ikke normal tekst
+     i denne størrelsen. */
+  color: var(--color-text-muted);
   margin-block-end: var(--space-4);
 }
 

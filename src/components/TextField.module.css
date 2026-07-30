@@ -52,7 +52,7 @@
 .errorMessage {
   font-family: var(--font-ui);
   font-size: var(--text-sm);
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 
 .description {

@@ -2744,4 +2744,149 @@ liste/-visning (`/[locale]/requests`, SPEC-V1.md seksjon 9) er trolig den
 neste ekte SIDEN som gir mest verdi, nå som begge registreringsskjemaene
 finnes — men den krever mer avveiing (paginering, filtre, språkvisning på
 tvers av lokaliteter) enn de to formene bygget i kveld, så vurder å bryte
-den ned i mindre economic i en egen økt fremfor å haste den frem.
+den ned i mindre biter i en egen økt fremfor å haste den frem.
+
+Bekreftet FØRST i denne runden (GitHub-verktøyene): CI for commit `0b23c01`
+(journalist-søknad) er grønn (`conclusion: "success"`).
+
+---
+
+## Fortsettelse av økt 7 — DESIGN.md 2.4-kontrasttesten bygget, og den fant ekte, usynlige feil med én gang
+
+Samme arbeidsøkt, punkt (1) fra forrige "Neste økt". Bygget selve
+"kjør over den definerte listen av par i begge temaer"-testen DESIGN.md 2.4
+krever, oppå `oklch.ts`-primitivene fra tidligere i natt.
+
+### `src/styles/color/contrast-pairs.ts` + `.test.ts`
+
+Leser `tokens/primitives.css` og `tokens/semantic.css` DIREKTE (regex,
+samme mønster som `check-keys.ts`/`check-tokens.ts`) i stedet for å
+duplisere fargetallene en fjerde gang et sted — risikoen for at testen
+stille slutter å teste de EKTE verdiene er verre enn kompleksiteten ved å
+parse CSS-en. `TOKEN_PAIRS` er en manuelt kuratert liste over
+(forgrunn, bakgrunn)-par som FAKTISK brukes i komponent-/side-CSS-en i
+kveld (gjennomgått fil for fil), hver merket med riktig WCAG-kategori
+(tekst 4.5:1, grensesnittelement/fokus 3:1). Testen itererer paret ×
+begge temaer = 32 sjekker.
+
+**Den kjørte IKKE grønt med én gang — og det var poenget.** Fire reelle,
+tidligere usynlige brudd, alle funnet ved faktisk å kjøre tallene, ikke ved
+å anta at DESIGN.md sine egne verdier automatisk oppfylte DESIGN.md sitt
+eget krav:
+
+1. **`--color-border-strong` (`--gray-300` lyst / `--gray-700` mørkt) mot
+   `--color-surface`: 1.48:1 (lyst) / 1.85:1 (mørkt).** Godt under 3:1-kravet
+   for grensesnittelementer (WCAG 1.4.11) — feltkanten på HVERT ENESTE
+   skjemafelt i hele komponentbiblioteket (TextField, Select, Checkbox) har
+   vært nesten usynlig mot flaten, i BEGGE temaer, helt siden `Button`/
+   `TextField` ble bygget tidlig i natt. Rettet ved å peke
+   `--color-border-strong` til `--gray-500` i alle tre `:root`-blokker
+   (4.28:1 lyst, 4.14:1 mørkt) — en EKSISTERENDE primitiv, ingen ny farge
+   oppfunnet.
+2. **Faretruende-knapp-tekst (`--color-text-inverse`) mot
+   `--color-danger`: 3.34:1 i mørkt tema** (`--color-text-inverse` snur til
+   nesten svart i mørkt tema, men `--color-danger`-bakgrunnen den står oppå
+   er BEVISST tema-uavhengig — feil token brukt for feil jobb). Rettet med
+   en ny, tema-UAVHENGIG rolle `--color-on-danger: var(--gray-0)`, brukt i
+   `Button.module.css` sin `.danger`-regel i stedet.
+3. **Feiltekst under skjemafelt (`--color-danger`) mot `--color-surface`:
+   3.01:1 i mørkt tema** — samme rotårsak omvendt: `--color-danger` er
+   tema-uavhengig, men brukt direkte som TEKSTFARGE mot en flate som ER
+   tema-avhengig, akkurat som aksenten allerede korrekt håndterer (2.3:
+   "Aksenten må lysne for å holde kontrast mot mørk bakgrunn"). Rettet med
+   en ny rolle `--color-danger-text` (samme som `--color-danger` i lyst
+   tema, `--danger-100` i mørkt — en EKSISTERENDE primitiv), brukt i
+   `TextField`/`Select`/`Checkbox` sine `.errorMessage`-regler.
+4. **`--color-text-subtle` (`--gray-500`) mot `--color-surface`: 4.28:1 i
+   lyst tema** — under 4.5:1-kravet for vanlig tekst (men trygt over 3:1).
+   Brukt akkurat ÉTT sted i kveld: den offentlige vilkårssidens
+   versjonslinje (`legal/.../page.module.css`, `--text-sm`, altså
+   normalstørrelse tekst). Rettet ved å bruke `--color-text-muted` der i
+   stedet — selve tokenverdien er urørt, bare presisert i DESIGN.md 2.4 at
+   `--color-text-subtle` kun er trygg for store overskrifter/dekorativ
+   bruk, ikke normal brødtekst.
+
+Alle fire rettelser bruker UTELUKKENDE allerede eksisterende primitiver
+(`--gray-500`, `--gray-0`, `--danger-100`) — ingen nye fargeverdier
+oppfunnet, ingen endring av selve DESIGN.md 2.1-skalaen. Spec (DESIGN.md
+2.2/2.3) rettet FØRST, deretter `tokens/semantic.css`, deretter de tre
+komponentfilene som konsumerte feil rolle — i tråd med "spec-en er
+sannheten"-regelen, tolket slik: 2.4 sitt eksplisitte, ufravikelige WCAG-
+krav ("feiler CI ved avvik") er den autoritative regelen; 2.1/2.2 sine
+KONKRETE tallverdier er implementasjonsdetaljer som må justeres for å
+oppfylle 2.4, ikke omvendt.
+
+### Faktisk visuelt verifisert i en ekte nettleser — første gang i hele natt
+
+Kjørte `next build` + `next start` (ekte produksjonsbygg, ikke `next dev`)
+og brukte Playwright/Chromium til å faktisk ÅPNE `/nb-NO/subscribe` i lyst
+OG mørkt tema, både i utgangspunktet og etter et mislykket
+innsendingsforsøk (for å se de nye `--color-danger-text`-feiltekstene i
+praksis, ikke bare regne dem ut). Feltkantene er nå tydelig synlige i begge
+temaer, feilteksten er lesbar i mørkt tema, og hele skjemaet (inkludert
+samtykkelenkene til Vilkår/Personvernerklæring) fungerer interaktivt.
+
+**Reell blindvei underveis, oppdaget og korrigert FØR den ble en falsk
+alarm i loggen:** et første forsøk på å teste i "produksjon" traff faktisk
+en gjenglemt `next dev`-prosess på samme port (`next start` feilet stille
+med `EADDRINUSE` i bakgrunnen mens `curl` fortsatte å svare fra den gamle
+dev-prosessen) — noe som ga et falskt signal om at HELE appens CSP
+(`Content-Security-Policy` i `src/middleware.ts`) blokkerte all
+klient-hydrering i enhver ekte nettleser (en `eval()`-relatert CSP-feil som
+KUN kommer fra `next dev` sin eval-baserte devtool, aldri fra et ekte
+produksjonsbygg). Verifisert grundig FØR det ble konkludert som en feil:
+drepte den gjenglemte prosessen, bygget på nytt, startet en EKTE
+`next start`, og bekreftet at hydrering fungerer helt fint under den
+faktiske, strenge CSP-en uten noen endring i `middleware.ts` i det hele
+tatt. Ingen kodefeil fantes — bare en feil i selve testoppsettet. Notert
+her fordi det er akkurat den typen "verifiser mot det ekte, ikke anta"-
+disiplin resten av natten har fulgt, og fordi konklusjonen (ingen endring
+nødvendig i CSP-en) er verdt å vite for neste økt som også vil teste i
+nettleser.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**134
+tester**, +33 nye for kontrastparene), `i18n:check`, `design:check-tokens`
+(OK, 9 filer), `rm -rf .next && next build` (grønt), `npx vitest run -c
+vitest.integration.config.ts` mot ekte lokal Postgres (**39 tester**,
+uendret), OG en faktisk visuell/interaktiv sjekk i en ekte Chromium-
+nettleser (Playwright) av `/nb-NO/subscribe` i lyst og mørkt tema, normal
+og feiltilstand — se over.
+
+### Antagelser tatt
+
+- `--color-border-strong` sin nye verdi (`--gray-500`) er valgt som den
+  LAVESTE eksisterende primitiv som klarer 3:1 i BEGGE temaer samtidig
+  (4.28/4.14) — ikke nødvendigvis det visuelt "riktigste" valget estetisk
+  (det er synlig mørkere enn før), men det minst dramatiske korrekte valget
+  uten å innføre en helt ny primitiv. Verifisert visuelt at det fortsatt
+  ser rolig/elegant ut (DESIGN.md sitt mål), ikke påtrengende.
+- `--color-success`/`--color-warning` har SAMME latente risiko som
+  `--color-danger` hadde (tema-uavhengige, ville feile 4.5:1 som ren tekst
+  mot en tema-avhengig flate i mørkt tema) — ikke rettet nå fordi INGEN
+  kodested faktisk bruker dem slik ennå (bare som banner-bakgrunn/-tekst
+  sammen med sin egen `-subtle`, som er tema-uavhengig og derfor trygt).
+  Neste person som bruker `--color-success`/`--color-warning` som ren
+  tekst mot `--color-surface`/`--color-bg` bør bruke samme mønster
+  (`--color-success-text`/`--color-warning-text`) FØR de gjør det, ikke
+  etter at kontrasttesten fanger det.
+- Lenkene i samtykketeksten (`Vilkår`/`Personvernerklæring`, bygget forrige
+  del av økten) har ALDRI fått egen styling — de arver nettleserens
+  standard lenkefarge, ikke `--color-link`-tokenet. Oppdaget under den
+  visuelle sjekken i denne runden. Ikke rettet nå (fungerer, ser rimelig ut
+  siden standardblått og aksentblått tilfeldigvis ligner), men bør få en
+  delt `.link`-klasse som bruker `--color-link` når noen bygger flere
+  lenker i løpende tekst.
+
+### Neste økt
+
+(1) Rett lenkestylingen nevnt over (`--color-link`, delt CSS-klasse for
+lenker i løpende tekst); (2) vurder `--color-success-text`/
+`--color-warning-text` FØR noen faktisk bruker dem som ren tekst; (3) en
+Postgres-service-container i CI for `test:integration`; (4) resten av
+komponentbiblioteket (TextArea, RadioGroup, Dialog, Toast, Badge, Card,
+Alert, Tabs, Table, Pagination, EmptyState, SkeletonLoader,
+LanguageSwitcher); (5) en offentlig forespørsel-liste/-visning
+(`/[locale]/requests`, SPEC-V1.md seksjon 9) — se forrige økts vurdering av
+hvorfor den bør brytes ned først.

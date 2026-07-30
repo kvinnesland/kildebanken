@@ -113,6 +113,12 @@ export function contrastRatio(luminanceA: number, luminanceB: number): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+export interface Oklch {
+  l: number;
+  c: number;
+  h: number;
+}
+
 /** Slår sammen OKLCH → kontrastforhold i ett steg — for de faktiske
  * token-parene i `contrast-pairs.test.ts`. */
 export function oklchContrastRatio(

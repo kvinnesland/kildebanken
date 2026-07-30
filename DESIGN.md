@@ -120,7 +120,7 @@ Dette er kontrakten. Komponentene kjenner bare disse navnene.
   --color-surface-hover:   var(--gray-100);
 
   --color-border:          var(--gray-200);
-  --color-border-strong:   var(--gray-300);
+  --color-border-strong:   var(--gray-500);
 
   --color-text:            var(--gray-900);
   --color-text-muted:      var(--gray-600);
@@ -141,6 +141,8 @@ Dette er kontrakten. Komponentene kjenner bare disse navnene.
   --color-warning-subtle:  var(--warning-100);
   --color-danger:          var(--danger-600);
   --color-danger-subtle:   var(--danger-100);
+  --color-danger-text:     var(--danger-600);
+  --color-on-danger:       var(--gray-0);
 }
 ```
 
@@ -159,7 +161,7 @@ Følger systemvalget, med en manuell overstyring som huskes på kontoen.
   --color-surface-hover:  var(--gray-800);
 
   --color-border:         var(--gray-800);
-  --color-border-strong:  var(--gray-700);
+  --color-border-strong:  var(--gray-500);
 
   --color-text:           var(--gray-100);
   --color-text-muted:     var(--gray-400);
@@ -171,11 +173,27 @@ Følger systemvalget, med en manuell overstyring som huskes på kontoen.
   --color-accent-subtle:  var(--accent-900);
   --color-accent-text:    var(--gray-950);
   --color-link:           var(--accent-300);
+
+  --color-danger-text:    var(--danger-100);
 }
 ```
 
 Mørkt tema er ikke inverterte farger. Aksenten må lysne for å holde kontrast mot
 mørk bakgrunn, og `--color-accent-text` snur.
+
+`--color-border-strong` peker på `--gray-500` i BEGGE temaer, ikke `--gray-300`/
+`--gray-700` som et tidligere utkast hadde — de sistnevnte ga bare 1.48:1
+(lyst)/1.85:1 (mørkt) mot flaten, godt under 3:1-kravet under. Rettet økt 7
+etter at `contrast-pairs.test.ts` (2.4) avdekket det som en reell, usynlig
+feil i absolutt alle skjemafelt (TextField/Select/Checkbox) sin kant.
+
+`--color-danger` som INNHOLDSFARGE (kant, knappebakgrunn) er bevisst
+tema-uavhengig, jf. 2.1. Men brukt direkte som TEKSTFARGE (feiltekst under et
+felt) må den lysne i mørkt tema, akkurat som aksenten over — derfor
+`--color-danger-text` (samme verdi som `--color-danger` i lyst tema,
+`--danger-100` i mørkt). `--color-on-danger` er komplementet: tekst/ikon OPPÅ
+en `--color-danger`-fylt flate (faretruende-knapp) — tema-uavhengig fordi
+bakgrunnen den står på er det. Rettet samme økt, samme funn.
 
 ### 2.4 Kontrast
 
@@ -185,7 +203,16 @@ fokusmarkering.
 
 Testen kjører over den definerte listen av par i begge temaer og feiler CI ved
 avvik. Dette er den eneste måten et temabytte ikke stille kan bryte
-tilgjengelighetskravet i `SPEC-V1.md` 21.2.
+tilgjengelighetskravet i `SPEC-V1.md` 21.2. Implementert i
+`src/styles/color/contrast-pairs.ts` (parene) og
+`contrast-pairs.test.ts` (selve håndhevelsen), økt 7.
+
+`--color-text-subtle` (`--gray-500`) gir 4.28:1 mot `--color-surface` i lyst
+tema — under 4.5:1-kravet for vanlig tekst, men godt over 3:1. Bruk den
+BARE til store overskrifter eller rent dekorativ tekst, aldri til
+normalstørrelse brødtekst/metatekst — bruk `--color-text-muted` der i
+stedet (se `src/app/[locale]/legal/.../page.module.css`, som gjorde nettopp
+denne feilen først).
 
 Farge er aldri eneste bærer av mening. Statusetiketter har alltid tekst, og der
 et ikon brukes, har det tekstalternativ.
