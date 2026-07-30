@@ -5207,3 +5207,86 @@ om `contact_approved`/`contact_declined` bør bli egne
 (Dialog, Toast, Card, Alert, Tabs, Table, Pagination); (5) resten av
 16.1-dashbordet; (6) den ubrukte `"approved"`-verdien i
 `request_status`-enumen; (7) OG-delingsbilde.
+
+## Fortsettelse av økt 7 — det STRUKTURELLE hinderet for `vi.mock("next/headers")` funnet og løst, pluss ekte test-dekning for `moderation/requests.ts` OG `account-deletion.ts`
+
+Startet på punkt (2) — `vi.mock("next/headers")`-tilnærmingen antatt
+mulig forrige økt. Viste seg å IKKE fungere i det hele tatt, av en helt
+annen grunn enn selve mockingen: `src/lib/auth/session.ts` (og alt som
+importerer den) har `import "server-only"` øverst, en pakke som kaster
+en feil med mindre bunteren setter `"react-server"`-eksportbetingelsen.
+Vite/Vitest setter den IKKE som standard, så ENHVER test som (transitivt)
+importerer `session.ts` feilet umiddelbart med "This module cannot be
+imported from a Client Component module" — uavhengig av om
+`next/headers` var mocket eller ei. Bekreftet med et minimalt
+reproduksjonstilfelle (en fil som BARE importerer `getCurrentSession`,
+ingen mocking) — samme feil. Dette er trolig den EKTE, strukturelle
+grunnen til at "testbarhets-refaktoreringen" har blitt vurdert som
+risikabel/stor i så mange tidligere økter: ingen sesjonsavhengig kode
+har noensinne latt seg importere i en test, uansett tilnærming.
+
+**Løsning:** `server-only` sin egen pakke inneholder allerede en tom
+`empty.js` (nøyaktig filen `"react-server"`-betingelsen ville gitt).
+Lagt til én linje i `vitest.integration.config.ts` sin `resolve.alias`
+som peker `"server-only"` dit — KUN for test-konfigurasjonen, rører
+ikke `next.config.mjs` eller noe som faktisk bygges/deployes, så
+garantien `server-only` gir i PRODUKSJON (at modulen ikke kan havne i en
+klientbunt) er fullstendig uendret. Dette er en vanlig, anerkjent
+tilnærming for å teste Next.js-serverkode med Vitest, ikke en
+hemmelighetsfull hack.
+
+Med hinderet borte, la til:
+- `src/lib/moderation/requests.integration.test.ts` (9 tester) — mocker
+  `next/headers` for å simulere en innlogget moderator/administrator/
+  journalist via en EKTE `sessions`-rad (ekte rå token, ekte hash), bare
+  selve cookie-oppslaget er stanget ut. Dekker `publishRequest()`/
+  `rejectRequest()`/`requestChanges()`: happy path + e-postvarsling,
+  landbegrensning (4: en moderator tildelt et ANNET land nektes), rolle
+  (en journalist nektes), FR-029 (en sjette samtidig publisert
+  forespørsel nektes), og at en administrator kan handle uansett land
+  (19.4).
+- `src/lib/auth/account-deletion.integration.test.ts` (8 tester) — viste
+  seg IKKE å trenge NOEN mocking i det hele tatt:
+  `requestAccountDeletion(userId)`/`confirmAccountDeletion(rawToken)` tar
+  begge eksplisitte parametere og har ALDRI kalt `getCurrentSession()` —
+  samme kategori som `tick.ts`s jobbfunksjoner (null test-dekning bare
+  fordi ingen hadde skrevet testfilen, ikke fordi det var vanskelig).
+  Dekker tokenvalidering (ikke-eksisterende/brukt/utløpt), MOTTAKER-
+  sletting (anonymiserer svar, kansellerer ventende
+  kontaktforespørsler MED varsel til journalisten, avslutter økter,
+  avmelder e-post, hasher e-postadressen, revisjonslogg), og
+  JOURNALIST-sletting (lukker publiserte forespørsler, utløper
+  TILHØRENDE ventende kontaktforespørsler — samme 14.3-regel som ble
+  lagt til `closeJournalistContentOnDeletion()` tidligere denne økten —
+  og varsler respondentene).
+
+Dette lukker BEGGE de navngitte, sikkerhetssensitive filene fra forrige
+"Neste økt". Fem filer i `admin/`/`moderation/`
+(`countries.ts`/`legal-documents.ts`/`responses.ts` i `admin/`,
+`journalists.ts`/`users.ts` i `moderation/`) har fortsatt null
+test-dekning — men hinderet som gjorde DEM vanskelige å teste er nå
+også borte (samme `server-only`-problem), så dette er nå et spørsmål om
+tid, ikke lenger et strukturelt "kan ikke".
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler, én ubrukt import rettet
+underveis), `vitest run` (**329 tester**, uendret — kun
+integrasjonstester og en test-konfigurasjonsendring), `i18n:check`
+(uendret), `design:check-tokens`, `rm -rf .next && next build`
+(bekrefter at `vitest.integration.config.ts`-endringen ikke påvirker det
+faktiske Next.js-bygget), `test:integration` mot ekte lokal Postgres
+(**77 tester**, +17 nye — alle grønne, ingen regresjon).
+
+### Neste økt
+
+(1) faktisk Brevo-integrasjon når en API-nøkkel finnes; (2) de fem
+gjenværende utestede filene i `admin/`/`moderation/`
+(`countries.ts`/`legal-documents.ts`/`responses.ts`,
+`journalists.ts`/`users.ts`) — samme `vi.mock("next/headers")`-mønster
+som nå er bevist å fungere, ikke lenger blokkert strukturelt; (3) vurder
+om `contact_approved`/`contact_declined` bør bli egne
+`displayStatus`-verdier i 12.6; (4) resten av komponentbiblioteket
+(Dialog, Toast, Card, Alert, Tabs, Table, Pagination); (5) resten av
+16.1-dashbordet; (6) den ubrukte `"approved"`-verdien i
+`request_status`-enumen; (7) OG-delingsbilde.

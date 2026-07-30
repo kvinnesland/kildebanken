@@ -10,6 +10,17 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // `server-only` (importert av src/lib/auth/session.ts m.fl.) løser seg
+      // til den KASTENDE varianten (index.js) under Vitest, siden Vite ikke
+      // setter "react-server"-eksportbetingelsen pakken sjekker mot — den
+      // varianten er ment for RSC-bygg, ikke test. Peker eksplisitt til
+      // pakkens egen `empty.js` (samme fil "react-server"-betingelsen ville
+      // gitt), KUN for denne test-konfigurasjonen — rører ikke faktisk
+      // byggekonfigurasjon (next.config.mjs), så garantien "server-only" gir
+      // i PRODUKSJON er uendret. Uten dette kan INGEN modul som (transitivt)
+      // importerer src/lib/auth/session.ts testes i det hele tatt, se
+      // NATTLOGG.md.
+      "server-only": path.resolve(__dirname, "./node_modules/server-only/empty.js"),
     },
   },
   test: {
