@@ -5881,3 +5881,80 @@ mot dobbel/samtidig handling — dette er nå den nest funnet forekomsten av
 akkurat dette mønsteret på to påfølgende økter, så det er trolig en
 produktiv jaktstrategi videre). Brevo-integrasjon, resten av
 komponentbiblioteket, og OG-delingsbilde forblir alle korrekt blokkert.
+
+---
+
+## Fortsettelse av økt 7 — audit fortsatte, og en HEL manglende funksjon oppdaget: "skjule et svar" fantes aldri
+
+Fortsatte den parvise sammenligningen fra forrige runde. Sjekket
+`admin/countries.ts` (`setCountryStatus()` er bevisst fler-retnings —
+draft/active/paused, 3.3 — så ingen "endelig tilstand"-bug er mulig der),
+`admin/legal-documents.ts` (publisering er alltid additiv, ingen
+tilstand å beskytte), `auth/account-deletion.ts` (allerede korrekt
+engangsbruk-beskyttet via `authTokens.usedAt`, samme mønster som
+magic-link), og `requests/requests.ts` (samtlige tilstandsoverganger —
+`updateDraft`, `submitRequest`, `closeRequest`, `deleteDraft` — allerede
+grundig beskyttet fra tidligere økter). Ingen nye asymmetri-bugs av SAMME
+klasse som de to forrige funnet i disse.
+
+**Fant i stedet noe større**: `reports.ts`s egen dokumentasjonskommentar
+sier ordrett at en moderator "handler manuelt (lukke, skjule, suspendere,
+sperre)" etter en rapportering (12.5) — men et systematisk søk etter hvor
+disse fire faktisk er IMPLEMENTERT viste at KUN to av fire eksisterte:
+"lukke" (`closeRequest()`) og "suspendere" (`suspendUser()`). "Skjule et
+svar" hadde INGEN kode noe sted som satte
+`responses.lifecycle_status = 'hidden_by_moderator'`, til tross for at
+selve enum-verdien (19.7) alltid har eksistert i datamodellen nettopp for
+dette formålet — en ren spec-vs-kode-drift, ikke en design-tvil. ("Sperre
+e-postadressen" som en EGEN, moderator-utløst handling mangler også
+fortsatt — kun den automatiske sperringen ved bounce/klage er bygget; se
+"Neste økt" under.)
+
+Rettet spec-en først (la til `POST /admin/responses/:id/hide` i seksjon
+20, med samme begrunnende fotnote-stil som de tre forrige tilføyelsene i
+samme liste), deretter koden:
+
+- `src/lib/moderation/responses.ts` — `hideResponse(responseId)`. Samme
+  mønster som `moderation/journalists.ts`/`requests.ts`: slår opp landet
+  via svarets forespørsel, krever `requireModeratorForCountry()`, avviser
+  et svar som ikke lenger er `submitted` (samme
+  re-håndhevelsesprinsipp som de to forrige øktenes funn — kan ikke
+  skjules to ganger, eller etter at det allerede er trukket/slettet),
+  kansellerer en ventende kontaktforespørsel (samme sideeffekt som en
+  trekking, 12.4 — svaret forsvinner uansett fra journalistens innboks),
+  og logger til revisjonsloggen (FR-050). Bevisst INGEN ny
+  `hidden_at`/`hidden_by`-kolonne — 19.7 sin fullstendige feltliste for
+  `Response` har ingen slike felt, revisjonsloggen bærer ansvarligheten i
+  stedet.
+- `POST /admin/responses/:id/hide`-ruten (samme
+  autorisasjon-inni-funksjonen-mønster som `approve`/`reject`-rutene for
+  journalister).
+- Ny feilnøkkel `errors.response_not_visible` i begge språkfiler.
+- `responses.integration.test.ts` (6 tester): ukjent svar-ID, moderator
+  tildelt feil land, vellykket skjuling, kontaktforespørsel kansellert,
+  gjentatt skjuling avvist, administrator kan skjule uansett land.
+- Bevisst INGEN ny UI-side — samme "backend uten UI"-mønster som
+  `GET /admin/responses/:id` allerede etablerte (12.5 sier eksplisitt at
+  rapportering ikke har noen egen datamodell/kø i v1, kun e-post til
+  moderator, som deretter handler manuelt via denne API-en).
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**335
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret — samme
+"konsumeres kun via API-respons"-mønster som forrige økts feilnøkkel),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next
+&& next build` (grønn, bekreftet `/api/admin/responses/[id]/hide` i
+utdataet), `test:integration` mot ekte lokal Postgres (**211 tester**, +6
+— kjørt 4 ganger på rad, alle grønne).
+
+### Neste økt
+
+(1) "sperre e-postadressen" som en EGEN, moderator-utløst handling (12.5,
+fjerde og siste av de fire tiltakene) — mangler fortsatt fullstendig,
+samme klasse hull som "skjule et svar" var; naturlig sted er trolig en ny
+`suppressEmail(email, reason)`-funksjon som setter inn i `suppressions`
+med `reason: "manual"`, pluss en tilhørende rute; (2) fortsett den
+parvise asymmetri-jakten på gjenværende hjørner av kodebasen; (3)
+Brevo-integrasjon, resten av komponentbiblioteket, og OG-delingsbilde
+forblir alle korrekt blokkert.

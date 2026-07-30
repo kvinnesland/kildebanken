@@ -433,6 +433,7 @@
   "errors.reason_required": "You must provide a reason.",
   "errors.request_not_editable": "This request can't be edited right now.",
   "errors.request_not_open": "This request isn't open.",
+  "errors.response_not_visible": "This response is no longer visible.",
   "errors.validation_failed": "One or more fields are missing or invalid.",
   "errors.too_many_published_requests": "You already have too many open requests. Close one before submitting a new one.",
   "errors.already_responded": "You've already submitted a response to this request.",

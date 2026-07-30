@@ -433,6 +433,7 @@
   "errors.reason_required": "Du må oppgi en begrunnelse.",
   "errors.request_not_editable": "Denne forespørselen kan ikke redigeres nå.",
   "errors.request_not_open": "Denne forespørselen er ikke åpen.",
+  "errors.response_not_visible": "Dette svaret er ikke synlig lenger.",
   "errors.validation_failed": "Ett eller flere felt mangler eller er ugyldige.",
   "errors.too_many_published_requests": "Du har allerede for mange åpne forespørsler. Lukk én før du sender en ny.",
   "errors.already_responded": "Du har allerede sendt et svar på denne forespørselen.",

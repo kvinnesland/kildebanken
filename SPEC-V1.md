@@ -1458,6 +1458,7 @@ POST   /admin/countries/:code/moderators
 POST   /admin/legal-documents
 
 GET    /admin/responses/:id?reason=...   krever begrunnelse fra listen i 16.2
+POST   /admin/responses/:id/hide
 ```
 
 Administrative listeendepunkter filtreres automatisk på innlogget moderators
@@ -1480,6 +1481,20 @@ hemmelighet, se `src/lib/subscriptions/email-events.ts`.
 16.2 ("åpning av et enkeltsvar ... krever ... begrunnelse ... logges")
 forutsetter begge et slikt endepunkt, men verken ruten eller en konkret
 begrunnelsesliste fantes noe sted i spec-en. Se 16.2 for listen.
+
+`POST /admin/responses/:id/hide` er lagt til av samme grunn (økt 7,
+fortsettelse): 12.5 lister "skjule et svar" som ETT av fire konkrete tiltak
+en moderator kan sette i verk etter en rapportering ("lukke forespørselen,
+skjule et svar, suspendere kontoen, sperre e-postadressen"), og
+`lifecycle_status`-verdien `hidden_by_moderator` (19.7) eksisterte allerede
+i datamodellen nettopp for dette — men INGEN kode noensinne satte den, og
+ruten manglet i denne listen. De tre andre tiltakene var allerede bygget
+(`closeRequest()`, `suspendUser()`); dette var det eneste av de fire som
+manglet fullstendig. ("Sperre e-postadressen" som en EGEN,
+moderator-utløst handling — til forskjell fra den allerede byggede
+automatiske sperringen ved bounce/klage, se `suppressions`-tabellen 19.13 —
+mangler fortsatt; notert i `NATTLOGG.md` som en kandidat for en senere
+økt.)
 
 ---
 
