@@ -3206,3 +3206,69 @@ LanguageSwitcher) — `RadioGroup` trengs trolig snart for svarskjemaets
 "del e-postadressen min"-valg (12.2, to alternativer, ikke en avkryssing);
 (4) et OG-delingsbilde for forespørselssider, når/hvis prioritert — krever
 `public/`-mappe og en bilde-renderingsstrategi som ikke finnes ennå.
+
+Bekreftet i denne runden: CI for commit `a9740d4` (forespørselssiden) er
+grønn — inkludert de ekte integrasjonstestene og produksjonsbygget mot den
+nye ruten, ingen miljøspesifikk overraskelse.
+
+**Rettelse av punkt (2) over, oppdaget ved å faktisk tenke gjennom det i
+stedet for å bare gjøre det:** vurderte å la `next build`-steget i CI kjøre
+mot en ekte, migrert database "for å fange fremtidige spørringer som
+utilsiktet kjører ved buildtid" — men logikken var baklengs. `next build`
+bruker allerede bevisst en UGYLDIG `DATABASE_URL`
+(`postgres://ci:ci@localhost:5432/ci_unused`), som betyr at HVIS en
+fremtidig side noensinne skulle spørre databasen ved buildtid, ville
+bygget feile UMIDDELBART (tilkoblingen finnes ikke) — det ER allerede
+fail-fast-oppsettet. Å bytte til en EKTE, migrert database ville gjort det
+MOTSATTE: en utilsiktet buildtid-spørring ville da bare lykkes stille, og
+nettopp SKJULE akkurat den klassen feil punktet ville fange. Droppet denne
+oppgaven — ikke fordi den ble gjort, men fordi den aldri var en god idé,
+og det er mer ærlig å stryke den enn å la den stå som en villedende
+"gjenstår"-oppgave for neste økt.
+
+---
+
+## Fortsettelse av økt 7 — `RadioGroup`-komponenten (DESIGN.md 6)
+
+Kort, avgrenset oppgave: bygget forberedende til svarskjemaet (12.2), som
+trenger et ekte gjensidig-utelukkende valg ("ikke del e-postadressen min
+ennå" / "del e-postadressen min"), ikke en avkryssingsboks.
+
+Brukte `RadioField`/`RadioButton` fra react-aria-components — sjekket
+typedefinisjonen først og fant at den eldre, enklere `<Radio>` alene er
+merket `@deprecated` til fordel for nettopp denne sammensetningen (samme
+disiplin som resten av natten: les den faktiske typedefinisjonen, ikke gjett
+API-et fra minnet). Visuelt: en sirkel/prikk-indikator i stedet for
+Checkbox sin hake, ellers samme mønster (egen `--color-focus-ring`-outline,
+`--color-danger-text` for feiltekst, ingen forhåndsvalgt alternativ satt av
+komponenten selv — kalleren bestemmer `defaultValue`/`value`, testet
+eksplisitt at INGEN alternativ er forhåndsvalgt uten det).
+
+Ingen nye designtoken-par (samme roller som Checkbox: `--color-accent` for
+valgt tilstand, `--color-border-strong`/`--color-focus-ring` for kant/fokus,
+`--color-danger-text` for feiltekst) — `contrast-pairs.ts` trengte ingen
+oppdatering.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**162 tester**,
++5 nye), `i18n:check`, `design:check-tokens` (OK, 14 komponent-CSS-filer),
+`rm -rf .next && next build`.
+
+### Neste økt
+
+(1) selve svarskjemaet (`/[locale]/foresporsler/[id]/svar`, SPEC-V1.md 12)
+— nå har `TextField`/`TextArea`/`RadioGroup`/`Button` alt som trengs.
+**Én ting å avklare/notere når den bygges:** SPEC-V1.md 12.3 sier
+bekreftelsesteksten før innsending "er juridisk relevant og skal
+gjennomgås av jurist i hvert språk... faller ikke tilbake til et annet
+språk, mangler den, kan ikke locale-en tilbys" — akkurat som vilkår/
+personvern/journalistvilkår (19.2, `legalDocumentType`), IKKE som en
+vanlig i18n-nøkkel med nb-NO-fallback. Bygges den som en vanlig
+oversettelsesstreng for enkelhets skyld i første omgang, er det en bevisst,
+notert forenkling som bør rettes (trolig en fjerde `legalDocumentType`-
+verdi) før flere enn nb-NO faktisk tilbys — ikke noe å avgjøre i farten
+midt i en autonom nattøkt uten menneskelig vurdering av selve den
+juridiske teksten; (2) resten av komponentbiblioteket (Dialog, Toast, Card,
+Alert, Tabs, Table, Pagination, EmptyState, SkeletonLoader,
+LanguageSwitcher); (3) et OG-delingsbilde, når/hvis prioritert.

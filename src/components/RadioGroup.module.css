@@ -1,0 +1,109 @@
+/*
+ * Lag 3 — komponent. Se Button.module.css for regelen (kun semantiske
+ * tokens, aldri en farge-/avstands-/radiusverdi direkte).
+ */
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.label {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+}
+
+.radioButton {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  color: var(--color-text);
+  /* DESIGN.md 5: minst 8px mellom trykkflater, 44px trykkflate selv om
+     selve den synlige prikken er mindre. */
+  padding-block: var(--space-2);
+}
+
+.radioButton[data-disabled] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.indicator {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.125rem; /* optisk justering mot tekstens første linje */
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  transition: border-color var(--duration-fast) var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .indicator {
+    transition: none;
+  }
+}
+
+.indicator::after {
+  content: "";
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  visibility: hidden;
+}
+
+.radioButton[data-selected] .indicator {
+  border-color: var(--color-accent);
+}
+
+.radioButton[data-selected] .indicator::after {
+  visibility: visible;
+}
+
+/* DESIGN.md 6.1: fokusmarkering er alltid synlig, aldri fjernet. */
+.radioButton[data-focus-visible] .indicator {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.optionLabel {
+  line-height: var(--leading-normal);
+}
+
+.description {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin-inline-start: calc(1.25rem + var(--space-2));
+}
+
+.errorMessage {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--color-danger-text);
+  margin-top: var(--space-1);
+}
