@@ -64,6 +64,7 @@ export async function requestMagicLink(email: string): Promise<void> {
 export interface VerifiedUser {
   userId: string;
   role: "recipient" | "journalist" | "moderator" | "admin";
+  locale: string;
 }
 
 /**
@@ -85,6 +86,7 @@ export async function verifyMagicLink(rawToken: string): Promise<VerifiedUser | 
       role: users.role,
       status: users.status,
       emailVerifiedAt: users.emailVerifiedAt,
+      locale: users.locale,
     })
     .from(authTokens)
     .innerJoin(users, eq(authTokens.userId, users.id))
@@ -106,5 +108,5 @@ export async function verifyMagicLink(rawToken: string): Promise<VerifiedUser | 
       .where(eq(users.id, row.userId));
   }
 
-  return { userId: row.userId, role: row.role };
+  return { userId: row.userId, role: row.role, locale: row.locale };
 }

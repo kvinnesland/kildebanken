@@ -3337,3 +3337,111 @@ login-siden — bare selve URL-formatet må stemme overens); (3) DERETTER
 selve svarskjemaet (`/[locale]/foresporsler/[id]/svar`, SPEC-V1.md 12),
 med `--color-warning-text`-vurderingen fra tidligere i baklomma; (4) resten
 av komponentbiblioteket; (5) det notert-men-utsatte OG-delingsbildet.
+
+Bekreftet: CI for `d14331b` (email i CurrentSession) er grønn.
+
+**Et reelt, tidligere ikke oppdaget hull mellom SPEC-V1.md 3.7 og forrige
+økts kode, notert her i stedet for rettet i farten:** 3.7 sier eksplisitt
+at selve STIEN skal oversettes per locale, ikke bare locale-prefikset —
+`/nb-NO/foresporsler/:id/...` OG `/en-GB/requests/:id/...` (samme
+forespørsel, ulikt stinavn). Forespørselssiden bygget forrige del av
+økten (`/[locale]/foresporsler/[id]/[slug]`) bruker "foresporsler" som en
+FAST katalogstruktur uavhengig av locale — riktig for `nb-NO`, feil for
+`en-GB` (ville blitt `/en-GB/foresporsler/...`, ikke `/en-GB/requests/...`).
+Null praktisk konsekvens i dag (ingen aktivt land tilbyr noe annet enn
+`nb-NO` ennå — se `seed.ts`), men en reell, bekreftet avvik fra spec-en.
+IKKE rettet nå: å bygge en generell løsning (trolig en middleware-
+omskrivning av innkommende stier til et kanonisk internt navn, siden
+Next.js sin fil-baserte ruting ikke støtter flere bokstavelige stinavn til
+samme side-komponent uten det) er en reell arkitekturbeslutning som bør
+gjøres når locale nummer to FAKTISK tilbys for et land, ikke spekulativt
+bygges og la stå uverifiserbar til den dagen kommer.
+
+---
+
+## Fortsettelse av økt 7 — innloggingssiden (SPEC-V1.md 6.1), og en reell Next.js-feil fanget ved faktisk å teste flyten
+
+Startet punkt (1) fra forrige "Neste økt": innloggings-UI. Bygget
+`/[locale]/logg-inn` (`LoginForm.tsx`, ett e-postfelt, samme "avslør
+ingenting uansett utfall"-prinsipp som selve API-ruten allerede har).
+
+**Reell feil fanget FØR den ble en falsk antagelse i loggen:** første
+forsøk bygget en egen server-rendret "bekreft"-SIDE
+(`/[locale]/logg-inn/bekreft`) som kalte `verifyMagicLink()` +
+`createSession()` direkte i selve side-komponentens rendring — samme
+mønster jeg (feilaktig) trodde speilet `GET /api/digest-access/:token`.
+Testet det FAKTISK i en ekte nettleser (`next build` + `next start`, ikke
+antatt fra kildekoden) og fikk en ekte Next.js-feil: *"Cookies can only be
+modified in a Server Action or Route Handler"* — `createSession()` setter
+en cookie, og det er RETT OG SLETT ikke lov fra en vanlig side-komponents
+rendring, uansett hvor likt det ser ut på papiret. `digest-access` er en
+ROUTE HANDLER (`route.ts`), ikke en side — det var ALDRI det samme
+mønsteret, bare overflatisk likt.
+
+**Rettet ved å faktisk følge presedensen riktig:** flyttet selve
+verifiserings-/økt-opprettelses-logikken til en ny `GET`-handler i den
+EKSISTERENDE `src/app/api/auth/verify/route.ts` (som fra før bare hadde en
+`POST`-variant for JSON-body-klienter) — nå en ekte, klikkbar lenke
+(`GET /api/auth/verify?token=...&locale=...`), akkurat som
+`digest-access`. Suksess: oppretter økt, viderefører til `/${locale}`
+(brukerens EGEN locale, lagt til som et nytt felt på `VerifiedUser` i
+`magic-link.ts` — rent additivt). Feil (utløpt/brukt/ugyldig — bevisst
+udifferensiert, se eksisterende kommentar i `verifyMagicLink()` og
+SPEC-V1.md 19.15 sitt "ikke to ulike feilveier"-prinsipp anvendt her også):
+viderefører til `/${locale}/logg-inn?feil=utlopt`, som viser
+`auth.verify.expired`-teksten. **Merk:** `auth.verify.already_used`
+finnes fortsatt i meldingskatalogen, men brukes ALDRI i praksis, nettopp
+fordi backend-en bevisst ikke skiller de to tilstandene — ikke en feil,
+bare en dokumentert, litt overflødig nøkkel.
+
+### Faktisk verifisert ende-til-ende i en ekte nettleser, ikke bare enhetstestet
+
+Satte inn en ekte bruker + et ekte `AuthToken` i `kildebanken_test`
+(ryddet opp igjen etterpå, inkludert `sessions`-raden `createSession()`
+selv la igjen — måtte slettes FØR brukerraden pga. fremmednøkkelen,
+oppdaget ved selve opprydningsforsøket). Bekreftet med `curl` mot en ekte
+`next start`-server: (1) et gyldig token gir `307`-omdirigering til
+`/nb-NO` MED en satt `kb_session`-cookie (riktig `HttpOnly`/`Secure`/
+`SameSite=lax`, 30 dagers utløp); (2) SAMME token brukt en gang til gir
+`feil=utlopt` (engangsbruk fungerer); (3) et oppdiktet token gir samme
+feilvei. Skjermbilder av selve login-siden og feilmeldingen i en ekte
+Chromium-nettleser bekreftet at teksten og stylingen faktisk vises riktig.
+
+**En annen, mindre feil fanget av selve testkjøringen (ikke antatt bort):**
+`LoginForm.tsx` sin `handleSubmit` hadde en `try { await fetch(...) }
+finally { ... }` UTEN en `catch` — en avvist `fetch`-promise (nettverksfeil)
+ville da forplantet seg som en uhåndtert avvisning forbi selve komponenten,
+fanget av selve testsuiten (`vitest` sin "Unhandled Rejection"-advarsel på
+akkurat den testen som simulerte en nettverksfeil), ikke antatt trygt fordi
+"UI-en ser riktig ut". Rettet med en eksplisitt, bevisst tom `catch`.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**165
+tester**, +3 nye for `LoginForm`), `i18n:check`, `design:check-tokens` (OK,
+16 komponent-CSS-filer), `rm -rf .next && next build`, `test:integration`
+mot ekte lokal Postgres (40 tester), OG en faktisk ende-til-ende-
+verifisering av hele innloggingsflyten mot en ekte kjørende server (se
+over) — ikke bare at koden kompilerer.
+
+### Antagelser tatt
+
+- Vellykket verifisering viderefører til `/${locale}` (forsiden) — det
+  finnes ingen mottaker-/journalist-dashbord å sende brukeren til ennå.
+  En `?to=`-destinasjonsparameter (samme mønster som `digest-access`) er
+  en naturlig utvidelse den dagen en beskyttet side faktisk trenger å sende
+  brukeren tilbake dit hen prøvde å gå — ikke bygget spekulativt nå.
+- `auth.verify.already_used` beholdt i meldingskatalogen selv om den er
+  ubrukt i praksis (se over) — trygt å beholde, `i18n:check` klager bare
+  på MANGLENDE nøkler, ikke ubrukte.
+
+### Neste økt
+
+(1) en minimal e-postmal-renderer for `magic_link`/`confirm_email` (og de
+andre stub-malene i `send.ts`) — nå som URL-formatet
+(`/api/auth/verify?token=...&locale=...`) faktisk er bestemt og verifisert,
+er dette et mer avgrenset stykke arbeid enn det så ut som forrige runde;
+(2) DERETTER selve svarskjemaet (SPEC-V1.md 12); (3) resten av
+komponentbiblioteket; (4) det notert-men-utsatte OG-delingsbildet; (5)
+det notert-men-utsatte 3.7-hullet (oversatte stinavn per locale) — når
+locale nummer to faktisk tilbys.
