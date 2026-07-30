@@ -1762,3 +1762,69 @@ faktisk Brevo-integrasjon bygges, bør webhook-ruten også korrelere på
 `provider_message_id` og oppdatere den enkelte leveranseraden, ikke bare
 kontoen. Ellers: samme restliste som før — frontend, eller en systematisk
 FR-for-FR-gjennomgang av seksjon 22.
+
+---
+
+## Fortsettelse av økt 7 — systematisk FR-gjennomgang fant ett hull til: `GET /admin/responses/:id`
+
+Samme arbeidsøkt (nattens `create_trigger`-fyring kom med en utdatert
+prioriteringsliste fra tidlig i natt — bekreftet mot `git log` at alt den
+nevnte for lengst er ferdig, og fortsatte i stedet herfra, siste økt).
+Gjorde en rask, målrettet skanning av FR-listen (seksjon 22) mot bygget
+kode, ikke en fullstendig gjennomgang av alle ~54 punktene, men nok til å
+finne én til av samme klasse hull som i natt for øvrig.
+
+**FR-051:** "Systemet skal kreve en registrert begrunnelse før en
+ADMINISTRATOR kan åpne et enkeltsvar." Og 16.2: "Åpning av et enkeltsvar
+... krever at administratoren velger en begrunnelse fra en LISTE.
+Oppslaget logges med begrunnelsen." Verken ruten (ingen
+`GET /admin/responses/:id` noe sted i seksjon 20) eller selve LISTEN over
+gyldige begrunnelser fantes i spec-en — enda FR-051 eksplisitt tester mot
+den.
+
+### Rettet spec-en først
+
+- **16.2**: lagt til en konkret, lukket liste over fire begrunnelser
+  (`user_support_request`, `abuse_report_investigation`,
+  `legal_or_regulatory_request`, `security_incident`) — en ANTAGELSE tatt
+  her, dokumentert eksplisitt som sådan, siden spec-en ikke oppga konkrete
+  verdier noe sted. Bevisst forskjellig fra fritekstbegrunnelser andre
+  steder (f.eks. avvisning av en forespørsel, 9.2) — der beskriver
+  moderator SITT resonnement i egne ord, mens dette er faste kategorier
+  nettopp for å kunne revidere alle oppslag av én kategori i etterkant.
+- **Seksjon 20**: lagt til `GET /admin/responses/:id?reason=...`.
+
+### `src/lib/admin/responses.ts` — `getResponseForAdmin()`
+
+Krever administrator SPESIFIKT (FR-051, ordrett — ikke moderator, til
+forskjell fra de fleste andre modereringsrutene som tillater begge).
+Loggfører oppslaget MED begrunnelsen FØR svaret returneres, slik at et
+oppslag alltid er loggført selv om noe skulle feile lenger ute i
+kallkjeden. Filtrerer bevisst IKKE på `lifecycle_status` slik
+journalistens egen innboks gjør (kun `submitted`) — poenget med denne
+ruten er nettopp unntaksvis tilgang, inkludert til svar en moderator
+allerede har skjult (`hidden_by_moderator`), f.eks. under en
+misbruksundersøkelse.
+
+### Testdekning — samme kjente begrensning som resten av `src/lib/admin/`
+
+Kan ikke integrasjonstestes direkte (samme `"server-only"`-kjede via
+`requireAdmin()` som gjorde `listDigests()` og hele
+`src/lib/admin/countries.ts`/`legal-documents.ts` untestbare tidligere i
+natt). Verifisert kun ved `tsc`/`eslint`/`next build`.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (59 tester,
+uendret), `i18n:check`, `next build` (**46 API-ruter totalt**, +1), OG
+`npx vitest run -c vitest.integration.config.ts` mot ekte lokal Postgres
+(32 tester, uendret — se begrunnelse over).
+
+### Neste økt
+
+Den systematiske FR-gjennomgangen ble bare gjort delvis (ikke alle ~54
+FR-punktene sjekket mot kode ennå) — verdt å fullføre resten neste økt før
+noe annet, siden metoden har funnet syv reelle hull på rad i natt
+(suppressions, fem audit_logs-hull, og nå denne). Ellers: samme restliste
+som før — frontend, eller faktisk Brevo-integrasjon når en API-nøkkel
+finnes.

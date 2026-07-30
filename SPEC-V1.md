@@ -841,6 +841,27 @@ administratoren velger en begrunnelse fra en liste. Oppslaget logges med
 begrunnelsen. Det finnes ingen visning som lister svar på tvers av
 forespørsler.
 
+Listen over gyldige begrunnelser (lagt til under autonomt arbeid, økt 7, se
+`NATTLOGG.md` — FR-051 og `GET /admin/responses/:id` i seksjon 20
+forutsatte begge en slik liste, men ingen konkrete verdier var oppgitt noe
+sted i spec-en):
+
+```
+user_support_request           brukerhenvendelse (mottaker eller journalist
+                                ber om hjelp med et konkret svar)
+abuse_report_investigation      undersøker en rapport mottatt via /report
+                                eller på annen måte
+legal_or_regulatory_request     juridisk eller regulatorisk pålegg
+security_incident               undersøker en sikkerhetshendelse
+```
+
+Fritekstbegrunnelser (som ved avvisning av en forespørsel, 9.2) er noe ANNET
+enn dette — der beskriver moderator SITT resonnement i egne ord. Her velges
+en av disse fire ferdige kategoriene, nettopp fordi et enkeltsvar er
+respondentens mest sensitive innhold, og en lukket liste gjør det mulig å
+revidere ALLE oppslag av en gitt kategori i etterkant (f.eks. "vis alle
+oppslag begrunnet med `security_incident` siste kvartal").
+
 ---
 
 ## 17. Personvern
@@ -1376,6 +1397,8 @@ POST   /admin/countries
 PATCH  /admin/countries/:code
 POST   /admin/countries/:code/moderators
 POST   /admin/legal-documents
+
+GET    /admin/responses/:id?reason=...   krever begrunnelse fra listen i 16.2
 ```
 
 Administrative listeendepunkter filtreres automatisk på innlogget moderators
@@ -1393,6 +1416,11 @@ punkt 9 ("behandle bounce- og klage-webhooks fortløpende") og FR-037
 men det manglet i denne listen. Ingen innlogging (kalles av
 e-postleverandøren, ikke en bruker) — beskyttet i stedet av en delt
 hemmelighet, se `src/lib/subscriptions/email-events.ts`.
+
+`GET /admin/responses/:id` er lagt til av samme grunn (økt 7): FR-051 og
+16.2 ("åpning av et enkeltsvar ... krever ... begrunnelse ... logges")
+forutsetter begge et slikt endepunkt, men verken ruten eller en konkret
+begrunnelsesliste fantes noe sted i spec-en. Se 16.2 for listen.
 
 ---
 
