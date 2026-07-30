@@ -4122,3 +4122,109 @@ ubrukte `"approved"`-verdien i `request_status`-enumen; (6)
 OG-delingsbilde; (7) det oversatte-stinavn-hullet (3.7); (8)
 `prefers-color-scheme` for e-postmaler; (9) flere e-postmaler etter
 behov; (10) faktisk Brevo-integrasjon når en API-nøkkel finnes.
+
+---
+
+## Fortsettelse av økt 7 — journalistens svarinnboks (SPEC-V1.md 13), siste ledd i den gyldne stien
+
+Fortsatte punkt (1) fra forrige "Neste økt" — nå gir det endelig mening,
+siden en forespørsel kan gå hele veien fra opprettelse (forrige del av
+økten) via moderator-godkjenning (delen før det) til publisert gjennom
+selve grensesnittet.
+
+### Et reelt spec-avvik funnet FØR bygging, ikke etterpå
+
+Før jeg bygget listevisningen, sjekket jeg `ResponseListItem`
+(`journalist-inbox.ts`, bygget tidligere i natt) mot selve teksten i
+13: "visningsnavn, FØRSTE LINJE AV PRESENTASJONEN, innsendingstidspunkt,
+merking, og om e-postadressen er delt." "Presentasjonen" er `short_bio`
+(12.1: "Kort presentasjon av deg selv"), IKKE `relevanceStatement` — men
+`ResponseListItem` eksponerte bare `relevanceStatement`. Et reelt hull
+mellom spec og kode fra tidligere i natt, ikke noe jeg selv innførte nå.
+Rettet: `shortBio` lagt til i både spørringen og typen, med
+`relevanceStatement` beholdt som fallback for "første linje" når
+presentasjonen (valgfri) mangler — ikke fordi spec-en ber om en fallback,
+men fordi å vise INGENTING når et valgfritt felt er tomt er en dårligere
+løsning enn en fornuftig reserveløsning. Verifisert i en ekte nettleser
+at begge veier faktisk vises riktig (én respondent med `shortBio`, én
+uten).
+
+### Bygget
+
+- `src/app/[locale]/journalist/requests/[id]/responses/page.tsx` —
+  tellere (totalt/uleste/aktuelle/kontaktforespørsler, fra
+  `listResponsesForRequest()`) + listevisning. "Se svar"-lenken fra
+  forrige del av økten (lagt inn i i18n-filene da, men pekte ingen steder
+  — nå brukt).
+- `src/app/[locale]/journalist/responses/[id]/page.tsx` +
+  `ResponseDetailPanel.tsx` — full detaljvisning (kort presentasjon,
+  relevans, svar, delingsstatus), merking (`RadioGroup`: ikke vurdert/
+  aktuell/ikke valgt) + internt notat (`PATCH .../status`), og en
+  kontaktforespørsel-inline-skjema (`POST .../contact-request`) som bare
+  vises når respondenten IKKE allerede har delt e-post (13: "knapp for
+  kontaktforespørsel"). Gjenbruker `ReportForm` direkte for
+  "rapporter dette svaret" (14.2/12.5 mønsteret) i stedet for å bygge en
+  ny rapporteringskomponent — se funnet under for hvorfor det avdekket en
+  ekte feil.
+- `getResponseDetailForJournalist()` setter `viewed_at` automatisk ved
+  besøk (allerede bygget tidligere i natt) — ingen ny kode nødvendig her,
+  bare bekreftet i en ekte nettleser at telleren for "uleste" faktisk
+  synker etterpå.
+
+### Et reelt, tidligere usynlig bug funnet ved førstegangsbruk av `ReportForm` på et svar
+
+`ReportForm` (bygget for `POST /report`, brukt til nå BARE på
+forespørsler) viste alltid `t("request.report_button")` — "Rapporter
+DENNE FORESPØRSELEN" — UANSETT `entityType`-prop. Usynlig helt frem til
+nå fordi ingen tidligere kalte den med `entityType="response"`. Rettet:
+knappeteksten velges nå basert på `entityType` (ny nøkkel
+`response.report_button`: "Rapporter dette svaret"), med en ny test som
+bekrefter at komponenten IKKE lenger viser forespørsel-teksten for et
+svar.
+
+### Verifisert ende til ende i en ekte nettleser
+
+Sådd en journalist med en PUBLISERT forespørsel og to svar (én med
+`shortBio` satt og `contactSharing: none`, én uten `shortBio` og
+`contactSharing: email`) direkte i databasen. I en produksjonsbygget
+instans: åpnet innboksen fra forespørsel-listen, bekreftet riktig
+tellere og "første linje"-visning for begge svarene, merket det første
+svaret som "Aktuell", lagret et internt notat, sendte en
+kontaktforespørsel — lastet innboksen på nytt og bekreftet at tellerne
+(uleste/aktuelle/kontaktforespørsler) faktisk oppdaterte seg riktig.
+Åpnet det ANDRE svaret (med delt e-post) og bekreftet at
+delingsteksten var riktig OG at kontaktforespørsel-knappen var HELT
+fraværende (riktig — 14.1: bare relevant når e-post ikke allerede er
+delt). Skjermbilder tatt og sjekket visuelt.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**235
+tester**, +1 ny — `ReportForm`-testen; ingen ny test for
+`journalist-inbox.ts`-endringen selv, siden den filen har samme
+`server-only`-testbarhetshull som `moderation/*.ts`, se forrige del av
+økten — verifisert i ekte nettleser i stedet), `i18n:check` (**234
+nøkler**), `design:check-tokens` (28 komponent-CSS-filer),
+`rm -rf .next && next build`, `test:integration` mot ekte lokal Postgres
+(41 tester, uendret), PLUSS ende-til-ende-nettleserverifiseringen
+beskrevet over.
+
+### Status: hele den journalist-vendte gyldne stien er nå bygget gjennom selve grensesnittet
+
+Søk om journalistkonto → godkjent av moderator → logg inn → opprett
+forespørsel → send til vurdering → godkjent og publisert av moderator →
+mottar svar → merk/noter/be om kontakt. Alle ledd har nå en faktisk
+side, ikke bare et API-endepunkt.
+
+### Neste økt
+
+(1) resten av komponentbiblioteket (Dialog, Toast, Card, Alert, Tabs,
+Table, Pagination, EmptyState, SkeletonLoader, LanguageSwitcher); (2)
+resten av 16.1-dashbordet (statistikk, landvelger for administrator,
+utsendelsesstatus); (3) rett testbarhetshullet i `moderation/*.ts`/
+`journalist-inbox.ts` (server-only-import-kjeden, se to deler tilbake i
+økten) FØR enda en funksjon legges til uten integrasjonstest-dekning;
+(4) den ubrukte `"approved"`-verdien i `request_status`-enumen; (5)
+OG-delingsbilde; (6) det oversatte-stinavn-hullet (3.7); (7)
+`prefers-color-scheme` for e-postmaler; (8) flere e-postmaler etter
+behov; (9) faktisk Brevo-integrasjon når en API-nøkkel finnes.

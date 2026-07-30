@@ -40,7 +40,7 @@ export function ReportForm({
   if (status === "collapsed") {
     return (
       <Button variant="ghost" onPress={() => setStatus("expanded")}>
-        {t("request.report_button")}
+        {entityType === "request" ? t("request.report_button") : t("response.report_button")}
       </Button>
     );
   }

@@ -87,6 +87,14 @@ export default async function MyRequestsPage({
                     </Link>
                   ) : null}
                   {status === "published" || status === "closed" || status === "expired" ? (
+                    <Link
+                      href={`/${locale}/journalist/requests/${request.id}/responses`}
+                      className={buttonClassName("secondary")}
+                    >
+                      {t("journalist.requests.responses_link")}
+                    </Link>
+                  ) : null}
+                  {status === "published" || status === "closed" || status === "expired" ? (
                     request.slug ? (
                       <Link
                         href={`/${locale}/foresporsler/${request.id}/${request.slug}`}

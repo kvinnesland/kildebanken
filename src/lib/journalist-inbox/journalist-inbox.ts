@@ -16,6 +16,14 @@ async function findOwnedRequest(requestId: string, journalistUserId: string) {
 export interface ResponseListItem {
   id: string;
   displayNameSnapshot: string | null;
+  // SPEC-V1.md 13: "visningsnavn, FØRSTE LINJE AV PRESENTASJONEN" — dette er
+  // `short_bio` (12.1: "Kort presentasjon av deg selv"), IKKE
+  // `relevanceStatement`. Feilet slik frem til denne rettelsen (økt 7, se
+  // NATTLOGG.md) — `relevanceStatement` var det som faktisk ble vist i
+  // listen. `shortBio` er valgfritt, så `relevanceStatement` beholdes som
+  // fallback for "første linje" når presentasjonen mangler, ikke fordi
+  // spec-en ber om det.
+  shortBio: string | null;
   relevanceStatement: string;
   submittedAt: Date;
   journalistMarking: "unreviewed" | "shortlisted" | "not_selected";
@@ -47,6 +55,7 @@ export async function listResponsesForRequest(
     .select({
       id: responses.id,
       displayNameSnapshot: responses.displayNameSnapshot,
+      shortBio: responses.shortBio,
       relevanceStatement: responses.relevanceStatement,
       submittedAt: responses.submittedAt,
       journalistMarking: responses.journalistMarking,
@@ -71,6 +80,7 @@ export async function listResponsesForRequest(
   const items: ResponseListItem[] = rows.map((r) => ({
     id: r.id,
     displayNameSnapshot: r.displayNameSnapshot,
+    shortBio: r.shortBio,
     relevanceStatement: r.relevanceStatement,
     submittedAt: r.submittedAt,
     journalistMarking: r.journalistMarking,

@@ -55,4 +55,10 @@ describe("ReportForm", () => {
     await userEvent.click(screen.getByRole("button", { name: "Avbryt" }));
     expect(screen.getByRole("button", { name: "Rapporter denne forespørselen" })).toBeInTheDocument();
   });
+
+  it("bruker riktig knappetekst for entityType='response' — ikke den samme teksten som for en forespørsel", () => {
+    render(<ReportForm locale="nb-NO" entityType="response" entityId="resp-1" />);
+    expect(screen.getByRole("button", { name: "Rapporter dette svaret" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Rapporter denne forespørselen" })).not.toBeInTheDocument();
+  });
 });
