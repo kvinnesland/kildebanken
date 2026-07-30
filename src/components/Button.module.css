@@ -1,6 +1,6 @@
 /*
  * Lag 3 — komponent. Refererer BARE til semantiske tokens (tokens/semantic.css)
- * og til rom-/form-tokens (tokens/primitives.css sine --space-*/--radius-*
+ * og til rom-/form-tokens (tokens/primitives.css sine --space- og --radius-
  * navn brukes gjennom semantiske størrelser her, ikke rå px). Se DESIGN.md 1:
  * en komponentfil skal aldri inneholde en farge-, avstands- eller
  * radiusverdi direkte.

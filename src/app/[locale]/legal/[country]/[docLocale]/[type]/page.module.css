@@ -1,0 +1,25 @@
+.main {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: var(--space-6);
+}
+
+.title {
+  font-family: var(--font-editorial);
+  font-size: var(--text-3xl);
+  color: var(--color-text);
+}
+
+.meta {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--color-text-subtle);
+  margin-block-end: var(--space-4);
+}
+
+.body {
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  color: var(--color-text);
+  white-space: pre-wrap;
+}

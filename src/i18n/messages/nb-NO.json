@@ -89,5 +89,16 @@
   "errors.invalid_timezone": "Dette er ikke en gyldig tidssone.",
   "errors.already_exists": "Dette finnes allerede.",
   "errors.no_moderator_assigned": "Landet må ha minst én tildelt moderator før det kan aktiveres.",
-  "errors.email_suppressed": "Denne e-postadressen kan ikke registreres på nytt. Kontakt oss om du mener dette er feil."
+  "errors.email_suppressed": "Denne e-postadressen kan ikke registreres på nytt. Kontakt oss om du mener dette er feil.",
+
+  "country.no.name": "Norge",
+
+  "locale.name.nb-NO": "Norsk bokmål",
+  "locale.name.en-GB": "Engelsk",
+
+  "recipient.register.submitting": "Registrerer …",
+  "recipient.register.success": "Sjekk innboksen din — vi har sendt deg en lenke for å bekrefte e-postadressen.",
+  "recipient.register.country_placeholder": "Velg et land",
+  "recipient.register.locale_placeholder": "Velg et språk",
+  "recipient.register.select_country_first": "Velg et land først."
 }

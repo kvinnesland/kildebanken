@@ -2530,3 +2530,146 @@ registreringssiden (`/[locale]/subscribe` e.l.) med disse komponentene —
 den første virkelige siden i hele natten, ikke bare en plassholder. Ellers:
 selve WCAG-kontrasttesten (DESIGN.md 2.4, byggeklossene finnes nå), eller
 en Postgres-service-container i CI.
+
+---
+
+## Fortsettelse av økt 7 — `/[locale]/subscribe` bygget, PLUSS to reelle funn (ett i18n-gap, én ekte `next build`-feil)
+
+Samme arbeidsøkt. Bekreftet først (via GitHub-verktøyene) at CI-kjøringen for
+`Select`-committen (`bf50100`) faktisk ble grønn (`conclusion: "success"`,
+kjøring 30521003748) — tredje commit på rad denne økten der jeg sjekket den
+EKTE kjøringen i stedet for å anta. Gikk så videre til NATTLOGGs eget neste
+steg: bygge selve registreringssiden.
+
+### `src/app/[locale]/subscribe/` — den første virkelige siden i natt
+
+`page.tsx` (tynn server-komponent, løser locale) + `SubscribeForm.tsx`
+("use client", selve skjemalogikken) + CSS-modul. Implementerer SPEC-V1.md
+7.1 fullt ut:
+
+- Henter aktive land fra `GET /api/countries` ved oppstart.
+- Land forhåndsvelges fra et grovt geografisk hint (`Intl.Locale(navigator
+  .language).maximize().region`), språk forhåndsvelges fra `navigator
+  .languages` matchet mot landets `availableLocales` (samme `match()` fra
+  `@formatjs/intl-localematcher` som `src/middleware.ts` allerede bruker
+  server-side) — men BEGGE feltene vises alltid og kan endres fritt, og
+  ingenting hindrer innsending før de er eksplisitt bekreftet. Dette er
+  bevisst forskjellig fra samtykkene, som ALDRI forhåndsavkrysses — 7.1
+  tillater eksplisitt det ene og forbyr eksplisitt det andre.
+- Bytte av land ELLER språk nullstiller alle tre samtykkene (7.1 siste
+  avsnitt) — implementert i selve select-handlerne, ikke som en effekt, for
+  å unngå at det utilsiktet trigges på snarveier.
+- Samtykkeraden for vilkår/personvern vises ikke i det hele tatt før BÅDE
+  land og språk er valgt (`recipient.register.select_country_first`) —
+  samtykketeksten er knyttet til akkurat den (land, språk)-kombinasjonen,
+  og skal ikke kunne krysses av mot en tekst som ikke er lastet ennå.
+- Innsending kaller `POST /api/subscribe` (fantes fra før) og viser enten
+  suksessmelding eller en OVERSATT feilmelding fra serverens `error`-nøkkel.
+
+**Reelt funn i test, ikke antatt på forhånd:** jsdom sin standard
+`navigator.language` er `"en-US"`, som gjør at `match()` fra
+`intl-localematcher` genuint foretrekker `en-GB` over et lands egen
+`defaultLocale` når begge er kandidater (samme språkgruppe "en" slår et
+usammenlignbart `nb-NO`) — IKKE en bug, bare noe testene måtte ta hensyn
+til (en av testene bytter eksplisitt til den ANDRE tilgjengelige locale-en
+for faktisk å utløse en endring, se kommentar i testfilen).
+
+### `src/app/[locale]/legal/[country]/[docLocale]/[type]/` — offentlig visning av vilkår/personvern
+
+Samtykketeksten i 7.1 ("aksept av vilkår og personvernerklæring") krever
+klikkbare lenker til noe — det fantes bare et API-endepunkt
+(`GET /api/legal/:country/:locale/:type`) fra før, ingen side som faktisk
+viser dokumentet for et menneske. Bygget en minimal offentlig side som
+gjenbruker `getCurrentLegalDocument()` direkte. Ruten har EGNE `[country]`
+og `[docLocale]`-segmenter, uavhengig av sidens eget `[locale]`-segment —
+bevisst, fordi 3.1 sier land og språk er uavhengige akser, og dokumentets
+(land, språk) kan avvike fra hvilket språk selve siden rundt er rendret i.
+
+**I18n-teknisk finesse løst uten å utvide delt infrastruktur:** meldingen
+`recipient.register.consent_terms` trenger to klikkbare lenker MIDT I en
+oversatt setning ("Jeg godtar {termsLink} og {privacyLink}."). Fremfor å
+bygge ICU-"rich text"-støtte inn i `src/i18n/get-messages.ts` (som ville
+påvirket ALLE andre bruk av `t()` i hele plattformen for ett eneste
+tilfelle), løst lokalt i `SubscribeForm.tsx` med en liten
+`interpolateNodes()`-hjelpefunksjon som bare splitter på bokstavelige
+`{navn}`-tokens og setter inn React-noder — `t(key)` uten `values` returnerer
+rå streng uendret (bekreftet i `get-messages.ts`: `format()` hopper over
+`IntlMessageFormat` helt når `values` er `undefined`), så dette kolliderer
+ikke med den vanlige ICU-tallformateringen som resten av samtykketekstene
+(`{minimumAge, number}`) fortsatt bruker normalt.
+
+### To reelle, tidligere usynlige funn — ikke antatt, faktisk oppdaget mens siden ble bygget
+
+**1) `en-GB.json` manglet FIRE nøkler som fantes i `nb-NO.json`:**
+`errors.invalid_timezone`, `errors.already_exists`,
+`errors.no_moderator_assigned`, `errors.email_suppressed`. `src/i18n/
+check-keys.ts` fanget ikke dette fordi den (helt riktig, per SPEC-V1.md
+21.3: "manglende oversettelse i andre språk gir advarsel og fallback", ikke
+byggefeil) bare validerer nøkler brukt i koden MOT `nb-NO`, aldri de andre
+localene mot hverandre. Gapet ble synlig FØRST nå fordi `SubscribeForm`
+er den første koden i hele natten som faktisk kaller `t(dynamiskFeilnøkkel)`
+med en av disse fire nøklene (serverens `error`-felt er akkurat disse
+nøklene). Rettet ved å legge til alle fire i `en-GB.json` (oversatt), pluss
+la til de nye nøklene skjemaet selv trenger
+(`country.no.name`, `locale.name.nb-NO`, `locale.name.en-GB`,
+`recipient.register.submitting/success/country_placeholder/
+locale_placeholder/select_country_first`) i BEGGE filene. Verifisert med et
+lite Node-script som differ nøkkelsettene mellom de to JSON-filene — null
+avvik i noen retning nå.
+
+**2) `next build` feilet fra en helt ren `.next`-tilstand — en ekte,
+tidligere usynlig CSS-syntaksfeil i `Button.module.css` (fra ØKT 6, den
+aller første komponentfilen i natt):** kommentarlinjen `--space-*/--radius-*`
+inneholder, helt utilsiktet, den bokstavelige sekvensen `*/` (fra
+`-*` etterfulgt av `/--radius`) — CSS-parseren tolker DENNE som slutten på
+kommentaren, ikke den faktiske `*/` fem linjer lenger ned. Alt derfra og ut
+kommentaren blir dermed forsøkt parset som ekte CSS og feiler med "Unknown
+word". Usynlig helt til nå fordi (a) `check-tokens.ts` sin egen
+kommentarstripping bruker samme naive ikke-grådige regex-svakhet, så den
+brydde seg aldri om at kommentaren faktisk var gyldig CSS, og (b) et
+`next build` fra en HELT ren `.next`-tilstand ser ikke ut til å ha kjørt mot
+akkurat denne filen tidligere i natt (tidligere `next build`-kjøringer i
+loggen har vært grønne, men mot en allerede varm `.next`-cache). Rettet ved
+å omformulere kommentaren (fjernet den utilsiktede `*/`-sekvensen) — ingen
+endring i selve reglene, bare i kommentarteksten. Bekreftet med `rm -rf
+.next && next build` på nytt: grønt.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**98 tester**,
++5 nye for `SubscribeForm`), `i18n:check`, `design:check-tokens` (OK, 7
+komponent-CSS-filer), `rm -rf .next && next build` (bekreftet grønt EKTE
+fra en helt ren tilstand, se funn 2 over — genererer nå 26 sider, inkludert
+de to nye rutene), OG `npx vitest run -c vitest.integration.config.ts` mot
+ekte lokal Postgres (**39 tester**, uendret — ingen ny databasekode denne
+runden, kun UI som kaller eksisterende, allerede dekkede API-ruter).
+
+### Antagelser tatt
+
+- Terskel for "endre land/språk nullstiller samtykker" er tolket strengt:
+  ENHVER endring (også en teknisk re-seleksjon av samme verdi via React
+  Arias `onSelectionChange`, som uansett ikke fyres når verdien er
+  uendret) nullstiller — ikke bare en faktisk ulik verdi.
+- `recipient.register.consent_terms`-lenkene åpnes i ny fane
+  (`target="_blank"`) — brukeren skal kunne lese vilkårene uten å miste
+  utfylt skjemadata. Ikke eksplisitt spesifisert i SPEC-V1.md, men et
+  rimelig, reversibelt UX-valg.
+- `errors.consent_required` vises som én samlet feilmelding (skjemabanner)
+  ved mislykket innsending, ikke som individuell feiltekst under hver
+  avkrysningsboks — det visuelle "ugyldig"-hint (rød kant) vises likevel per
+  boks via `isInvalid`. Enklere, og samsvarer med at API-et selv returnerer
+  én samlet feil for alle tre.
+
+### Neste økt
+
+(1) Selve "alle tokenpar i begge temaer"-WCAG-kontrasttesten DESIGN.md 2.4
+krever (byggeklossene i `oklch.ts` er klare, bare selve testen som itererer
+`semantic.css` gjenstår); (2) en Postgres-service-container i CI for
+`test:integration` (kjørt manuelt mot lokal Postgres hver gang så langt);
+(3) journalist-søknadsskjemaet (`/[locale]/journalists/apply`, SPEC-V1.md
+7.2) — samme mønster som subscribe-siden, API-ruten finnes fra før
+(`POST /journalists/apply`); (4) vurder om `check-tokens.ts` og
+`check-keys.ts` sin kommentarstripping/nøkkeluttrekk med regex bør erstattes
+med en ekte CSS/AST-parser på sikt — samme naive-regex-svakhet som forårsaket
+funn 2 over finnes fortsatt i selve lint-verktøyet, bare at den ikke har slått
+ut på ny igjen ennå.

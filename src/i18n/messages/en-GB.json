@@ -85,5 +85,20 @@
   "errors.already_responded": "You've already submitted a response to this request.",
   "errors.contact_already_shared": "The respondent has already shared their email address.",
   "errors.contact_request_already_sent": "You've already sent a contact request for this response.",
-  "errors.contact_request_not_pending": "This contact request is no longer pending."
+  "errors.contact_request_not_pending": "This contact request is no longer pending.",
+  "errors.invalid_timezone": "This isn't a valid time zone.",
+  "errors.already_exists": "This already exists.",
+  "errors.no_moderator_assigned": "The country must have at least one assigned moderator before it can be activated.",
+  "errors.email_suppressed": "This email address can't be registered again. Contact us if you think this is a mistake.",
+
+  "country.no.name": "Norway",
+
+  "locale.name.nb-NO": "Norwegian Bokmål",
+  "locale.name.en-GB": "English",
+
+  "recipient.register.submitting": "Registering…",
+  "recipient.register.success": "Check your inbox — we've sent you a link to confirm your email address.",
+  "recipient.register.country_placeholder": "Choose a country",
+  "recipient.register.locale_placeholder": "Choose a language",
+  "recipient.register.select_country_first": "Choose a country first."
 }
