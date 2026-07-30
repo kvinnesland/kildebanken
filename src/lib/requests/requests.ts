@@ -245,7 +245,10 @@ export async function submitRequest(
 
 /**
  * `published → closed` (9.2). Journalisten som eier forespørselen, ELLER en
- * moderator/administrator kan lukke — se 6.3/6.4.
+ * moderator/administrator kan lukke — se 6.3/6.4. Brukes av BÅDE
+ * `POST /requests/:id/close` (eier) og `POST /admin/requests/:id/close`
+ * (moderator/administrator) — samme underliggende operasjon, to ruter, som
+ * resten av modereringsflytene i denne filen.
  */
 export async function closeRequest(
   requestId: string,
@@ -258,7 +261,25 @@ export async function closeRequest(
   const isOwner = existing.journalistId === actorUserId;
   if (!isOwner) {
     const [actor] = await db.select({ role: users.role }).from(users).where(eq(users.id, actorUserId)).limit(1);
-    if (!actor || (actor.role !== "moderator" && actor.role !== "admin")) {
+    if (!actor) return { ok: false, error: "errors.not_authorized" };
+
+    if (actor.role === "moderator") {
+      // 4: "en moderator er tildelt ett eller flere land og ser bare køer og
+      // brukere tilhørende disse" — rettet her (økt 7, se NATTLOGG.md), et
+      // ekte hull der EN HVILKEN SOM HELST moderator, uavhengig av tildelt
+      // land, tidligere kunne lukke enhver forespørsel.
+      const [assignment] = await db
+        .select({ countryCode: moderatorCountries.countryCode })
+        .from(moderatorCountries)
+        .where(
+          and(
+            eq(moderatorCountries.moderatorUserId, actorUserId),
+            eq(moderatorCountries.countryCode, existing.countryCode)
+          )
+        )
+        .limit(1);
+      if (!assignment) return { ok: false, error: "errors.not_authorized" };
+    } else if (actor.role !== "admin") {
       return { ok: false, error: "errors.not_authorized" };
     }
   }

@@ -1312,3 +1312,64 @@ administrator (`GET /admin/digests`, `POST /admin/digests/:id/retry`,
 `POST /admin/countries/:code/moderators`, `POST /admin/legal-documents`) og
 `POST /admin/requests/:id/close` (admin-variant, adskilt fra journalistens
 egen). Ellers: faktisk Brevo-integrasjon når en API-nøkkel finnes.
+
+---
+
+## Fortsettelse av økt 7 — `POST /admin/requests/:id/close` + rettet en reell autorisasjonsbrist
+
+Samme arbeidsøkt.
+
+### Ekte sikkerhetshull funnet og rettet i `closeRequest()`
+
+Ved bygging av admin-varianten av lukkeruten ble det tydelig at
+`closeRequest()` (bygget tidligere i natt, brukt av `POST /requests/:id/close`)
+sin autorisasjon for ikke-eiere bare sjekket `role === "moderator" ||
+role === "admin"` — UTEN å sjekke om moderatoren faktisk er tildelt
+FORESPØRSELENS land. Dette bryter direkte med seksjon 4: "en moderator er
+tildelt ett eller flere land og ser bare køer og brukere tilhørende disse."
+En moderator tildelt ett land kunne dermed lukke en hvilken som helst
+forespørsel i et HELT ANNET land.
+
+Rettet i `src/lib/requests/requests.ts`: for en moderator (ikke eier, ikke
+administrator) sjekkes nå `moderator_countries` mot forespørselens
+`country_code` før lukking tillates. Administrator er fortsatt unntatt (har
+tilgang til alle land, 19.4). Denne funksjonen importerer bevisst IKKE
+`session.ts` (og dermed ikke `"server-only"`) — den tar `actorUserId` som
+enkel streng-parameter, samme mønster som resten av `requests.ts` — så
+rettelsen kunne integrasjonstestes direkte, i motsetning til
+`suspendUser()`/`unsuspendUser()` fra forrige del av økten.
+
+### `POST /admin/requests/:id/close`
+
+Tynn rute, samme mønster som `POST /requests/:id/close` (som allerede kalte
+den samme `closeRequest()`-funksjonen) — begge ruter er nå bevisst dokumentert
+som to innganger til én operasjon, ikke duplisert logikk.
+
+### Ny, faktisk verifisert integrasjonstestdekning
+
+- `src/lib/requests/requests.integration.test.ts`, ny describe-blokk (2
+  tester): en moderator tildelt et ANNET land nektes å lukke forespørselen
+  (og forespørselen forblir `published`), en moderator tildelt SAMME land
+  får lukke den.
+
+Alle 25 integrasjonstester (8 testfiler) grønne.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (56 tester,
+uendret), `i18n:check`, `next build` (**39 API-ruter totalt**), OG
+`npx vitest run -c vitest.integration.config.ts` mot ekte lokal Postgres
+(25 tester, alle grønne).
+
+### Neste økt
+
+Gjenstår av seksjon 20: kun det administrative "landstyrings"-settet for
+administrator (`GET /admin/digests`, `POST /admin/digests/:id/retry`,
+`GET/POST /admin/countries`, `PATCH /admin/countries/:code`,
+`POST /admin/countries/:code/moderators`, `POST /admin/legal-documents`).
+Ellers: faktisk Brevo-integrasjon når en API-nøkkel finnes. Vurder også en
+tilsvarende gjennomgang av de ANDRE modereringsfunksjonene
+(`approveJournalist`, `publishRequest` m.fl. i `src/lib/moderation/`) for
+samme klasse av feil — de bruker `requireModeratorForCountry()` internt via
+`session.ts`, som antas riktig, men er ikke bekreftet med en dedikert test
+slik `closeRequest()` nå er.

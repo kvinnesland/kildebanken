@@ -1,9 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { requests, users } from "@/db/schema";
-import { createActiveJournalist, ensureTestCountry, TEST_COUNTRY_CODE } from "@/db/integration/fixtures";
-import { getPublicRequest } from "./requests";
+import { moderatorCountries, requests, users } from "@/db/schema";
+import {
+  createActiveJournalist,
+  ensureSecondTestCountry,
+  ensureTestCountry,
+  TEST_COUNTRY_CODE,
+  TEST_COUNTRY_CODE_2,
+  uniqueTestEmail,
+} from "@/db/integration/fixtures";
+import { closeRequest, getPublicRequest } from "./requests";
 
 describe("getPublicRequest mot ekte Postgres", () => {
   let journalistId: string;
@@ -53,5 +60,100 @@ describe("getPublicRequest mot ekte Postgres", () => {
     await db.update(users).set({ status: "active" }).where(eq(users.id, journalistId));
     const visibleAgain = await getPublicRequest(requestId);
     expect(visibleAgain?.id).toBe(requestId);
+  });
+});
+
+describe("closeRequest mot ekte Postgres — moderator er begrenset til tildelt land (4)", () => {
+  let journalistId: string;
+  let requestId: string;
+  let moderatorOtherCountryId: string;
+  let moderatorSameCountryId: string;
+
+  beforeAll(async () => {
+    await ensureTestCountry();
+    await ensureSecondTestCountry();
+
+    const journalist = await createActiveJournalist();
+    journalistId = journalist.id;
+
+    const [request] = await db
+      .insert(requests)
+      .values({
+        journalistId,
+        countryCode: TEST_COUNTRY_CODE,
+        contentLanguage: "nb-NO",
+        title: "Lukketest",
+        summary: "En testforespørsel for lukkeautorisasjon.",
+        description: "Full beskrivelse.",
+        targetPersonDescription: "Hvem som helst.",
+        responseDeadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        status: "published",
+        allowsAnonymousParticipation: true,
+        mayBeRecorded: false,
+        mayInvolvePhotoVideo: false,
+        publishedAt: new Date(),
+      })
+      .returning({ id: requests.id });
+    if (!request) throw new Error("Klarte ikke opprette testforespørsel");
+    requestId = request.id;
+
+    const [moderatorOtherCountry] = await db
+      .insert(users)
+      .values({
+        email: uniqueTestEmail("moderator-other-country"),
+        role: "moderator",
+        status: "active",
+        countryCode: TEST_COUNTRY_CODE,
+        locale: "nb-NO",
+        emailVerifiedAt: new Date(),
+      })
+      .returning({ id: users.id });
+    if (!moderatorOtherCountry) throw new Error("Klarte ikke opprette testmoderator");
+    moderatorOtherCountryId = moderatorOtherCountry.id;
+    await db
+      .insert(moderatorCountries)
+      .values({ moderatorUserId: moderatorOtherCountryId, countryCode: TEST_COUNTRY_CODE_2 });
+
+    const [moderatorSameCountry] = await db
+      .insert(users)
+      .values({
+        email: uniqueTestEmail("moderator-same-country"),
+        role: "moderator",
+        status: "active",
+        countryCode: TEST_COUNTRY_CODE,
+        locale: "nb-NO",
+        emailVerifiedAt: new Date(),
+      })
+      .returning({ id: users.id });
+    if (!moderatorSameCountry) throw new Error("Klarte ikke opprette testmoderator");
+    moderatorSameCountryId = moderatorSameCountry.id;
+    await db
+      .insert(moderatorCountries)
+      .values({ moderatorUserId: moderatorSameCountryId, countryCode: TEST_COUNTRY_CODE });
+  });
+
+  afterAll(async () => {
+    await db.delete(moderatorCountries).where(eq(moderatorCountries.moderatorUserId, moderatorOtherCountryId));
+    await db.delete(moderatorCountries).where(eq(moderatorCountries.moderatorUserId, moderatorSameCountryId));
+    await db.delete(users).where(eq(users.id, moderatorOtherCountryId));
+    await db.delete(users).where(eq(users.id, moderatorSameCountryId));
+    await db.delete(requests).where(eq(requests.id, requestId));
+  });
+
+  it("nekter en moderator som IKKE er tildelt forespørselens land å lukke den", async () => {
+    const result = await closeRequest(requestId, moderatorOtherCountryId);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("errors.not_authorized");
+
+    const [row] = await db.select({ status: requests.status }).from(requests).where(eq(requests.id, requestId));
+    expect(row?.status).toBe("published");
+  });
+
+  it("lar en moderator tildelt SAMME land lukke forespørselen", async () => {
+    const result = await closeRequest(requestId, moderatorSameCountryId);
+    expect(result.ok).toBe(true);
+
+    const [row] = await db.select({ status: requests.status }).from(requests).where(eq(requests.id, requestId));
+    expect(row?.status).toBe("closed");
   });
 });
