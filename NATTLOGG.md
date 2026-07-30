@@ -2893,3 +2893,60 @@ RadioGroup, Dialog, Toast, Badge, Card, Alert, Tabs, Table, Pagination,
 EmptyState, SkeletonLoader, LanguageSwitcher); (4) en offentlig
 forespørsel-liste/-visning (`/[locale]/requests`, SPEC-V1.md seksjon 9) —
 se forrige økts vurdering av hvorfor den bør brytes ned først.
+
+Bekreftet i denne runden (GitHub-verktøyene, via en delegert bakgrunnssjekk
+for å spare kontekst): CI for commit `1d175bf` (kontrasttesten) OG `7fa687f`
+(NATTLOGG-rettelsen) er begge grønne.
+
+---
+
+## Fortsettelse av økt 7 — Postgres-service-container i CI (`test:integration` automatisert)
+
+Samme arbeidsøkt, punkt (2) fra forrige "Neste økt". `.github/workflows/
+ci.yml` har fra starten av natten IKKE kjørt `npm run test:integration` —
+bevisst utsatt fordi det krever en ekte Postgres. Lagt til en
+`postgres:16`-service-container (samme versjon som INFRASTRUCTURE.md
+forutsetter i produksjon), med `pg_isready`-helsesjekk, pluss to nye steg
+etter produksjonsbygget: `npm run db:migrate` (kjører de ekte migrasjonene
+mot en HELT TOM database — denne stien var faktisk aldri testet fra bunnen
+av i denne økten før nå) og deretter `npm run test:integration`.
+
+**Verifisert lokalt FØR push, mot en helt fersk database** (ikke den
+gjenbrukte `kildebanken_test` med etter hvert ganske mye testfixture-
+rusk fra kveldens mange kjøringer): opprettet en splitter ny, tom
+Postgres-database, kjørte `db:migrate` mot den fra bunnen av (aldri gjort
+i denne sesjonen før — bekreftet at migrasjonshistorikken faktisk
+reproduserer skjemaet fra scratch, ikke bare "fungerer på en database som
+allerede har kjørt migrasjoner én gang før i en tidligere økt"), og kjørte
+så hele integrasjonstestsuiten mot den (39 tester, grønt). Droppet
+databasen igjen etterpå.
+
+Ingen hemmeligheter involvert — bruker/passord er `ci`/`ci`, gyldig kun for
+den kortlevde, engangs Actions-containeren, akkurat som `DATABASE_URL`
+verdien allerede brukt for produksjonsbygget («bevisst ugyldig, skal aldri
+faktisk kontaktes»-kommentaren i samme fil). Oppdaterte README.md sin
+"Verifisering"-seksjon til å reflektere at integrasjonstestene nå faktisk
+kjører i CI.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (134 tester,
+uendret — ingen ny enhetstestkode denne runden), `i18n:check`, `design:
+check-tokens`, `rm -rf .next && next build`, en YAML-syntakssjekk av selve
+`ci.yml`-filen (`python3 -c "import yaml; yaml.safe_load(...)"`), OG selve
+migrate-fra-bunnen-av-pluss-integrasjonstest-flyten mot en helt fersk,
+midlertidig database (se over) — den mest presise, tro-mot-CI-simuleringen
+som var mulig å gjøre lokalt.
+
+### Neste økt
+
+(1) vurder `--color-success-text`/`--color-warning-text` FØR noen faktisk
+bruker dem som ren tekst; (2) resten av komponentbiblioteket (TextArea,
+RadioGroup, Dialog, Toast, Badge, Card, Alert, Tabs, Table, Pagination,
+EmptyState, SkeletonLoader, LanguageSwitcher); (3) en offentlig
+forespørsel-liste/-visning (`/[locale]/requests`, SPEC-V1.md seksjon 9) —
+se tidligere økters vurdering av hvorfor den bør brytes ned først; (4) nå
+som CI dekker BÅDE enhetstester og integrasjonstester, er det verdt å
+vurdere om selve `next build`-steget også burde kjøre MOT en migrert
+database (ikke bare den bevisst ugyldige URL-en) for å fange eventuelle
+fremtidige tilfeller av spørringer som utilsiktet kjører ved buildtid.

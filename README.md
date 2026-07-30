@@ -64,8 +64,9 @@ npx next build
 (`DATABASE_URL`) og kjøres separat — se `vitest.integration.config.ts`.
 
 Kjøres automatisk i CI (`.github/workflows/ci.yml`) på hver push og PR —
-IKKE inkludert i CI ennå: integrasjonstestene (krever en Postgres-service-
-container, egen vurdering av hemmeligheter/oppsett).
+inkludert integrasjonstestene, mot en midlertidig Postgres 16-service-
+container (ingen hemmeligheter involvert, bare et engangspassord for en
+kortlevd container som forsvinner når jobben er ferdig).
 
 ## Status
 

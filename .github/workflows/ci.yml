@@ -2,10 +2,11 @@ name: CI
 
 # Kjører hele den manuelle verifiseringskjeden README.md/INFRASTRUCTURE.md
 # forutsetter før enhver commit — automatisert her for første gang (se
-# NATTLOGG.md, økt 7). Dekker IKKE integrasjonstestene
-# (`npm run test:integration`) ennå — de krever en ekte Postgres (en
-# Postgres-service-container i Actions er en egen, større utvidelse, bevisst
-# utsatt til en egen gjennomgang av hemmeligheter/miljøoppsett).
+# NATTLOGG.md, økt 7). Inkluderer nå også integrasjonstestene
+# (`npm run test:integration`) mot en ekte Postgres-service-container
+# (økt 7, samme runde som DESIGN.md 2.4-kontrasttesten) — ingen hemmelige
+# credentials involvert, bare et engangs lokalt passord for en engangs
+# kortlevd container.
 on:
   push:
   pull_request:
@@ -13,6 +14,20 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -46,3 +61,13 @@ jobs:
           # bare typesjekk og statisk sidegenerering. Verdien her er bevisst
           # ugyldig; den skal aldri faktisk kontaktes.
           DATABASE_URL: "postgres://ci:ci@localhost:5432/ci_unused"
+
+      - name: Migrer test-databasen
+        run: npm run db:migrate
+        env:
+          DATABASE_URL: "postgres://ci:ci@localhost:5432/ci_test"
+
+      - name: Integrasjonstester (ekte Postgres)
+        run: npm run test:integration
+        env:
+          DATABASE_URL: "postgres://ci:ci@localhost:5432/ci_test"
