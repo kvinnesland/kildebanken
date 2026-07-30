@@ -2480,3 +2480,53 @@ slutter); (2) selve "alle tokenpar i begge temaer"-WCAG-testen DESIGN.md
 2.4 krever, bygget PÅ de nå ferdige `oklch.ts`-primitivene; (3) en
 Postgres-service-container i CI for `test:integration`; (4) resten av
 komponentbiblioteket.
+
+---
+
+## Fortsettelse av økt 7 — CI bekreftet grønn på ekte Node 20, PLUSS `Select`-komponenten
+
+Samme arbeidsøkt. Ventet på den faktiske CI-kjøringen (GitHub-verktøyene
+tilgjengelige denne runden) i stedet for å anta fiksen virket —
+**bekreftet**: `conclusion: "success"` på commit `d548d48`, ekte Node 20,
+alle seks steg grønne. Nedgraderingen av `jsdom`/`@testing-library/jest-dom`
+løste den reelle inkompatibiliteten fra forrige del av økten. Punkt (1) i
+forrige "Neste økt" er dermed lukket, verifisert — ikke bare antatt.
+
+### `src/components/Select.tsx` (SPEC-V1.md 7.1: land/språk-valg)
+
+Bygget mens CI-kjøringen pågikk. Sammensatt av flere React Aria Components-
+deler (`Select` > `Label` + `Button` (trigger) + `Popover` > `ListBox` >
+`ListBoxItem`) — mer sammensatt enn `Checkbox`, og en reell, ukjent risiko
+før den faktisk ble testet: fungerer Popover/portal-mønsteret i det hele
+tatt i jsdom? Testet det empirisk i stedet for å anta — **det fungerer
+uendret**, ingen `ResizeObserver`/portal-relaterte jsdom-hull dukket opp.
+
+**Reelt funn under testing (ikke antatt riktig på forhånd):**
+triggerknappens tilgjengelige navn er `SelectValue`-teksten (placeholder
+ELLER valgt verdi) OG selve `<Label>`-teksten sammen, i den rekkefølgen
+(`aria-labelledby` peker på begge) — IKKE bare label-teksten alene, som
+mine første testantakelser forutsatte. Rettet testene til å spørre etter
+DEN ENE knappen i treet og sjekke verdi-/placeholder-teksten separat
+(`within(trigger)`), i stedet for et forhåndsanntatt eksakt tilgjengelig
+navn.
+
+Ingen forhåndsvalgt alternativ satt av komponenten selv (samme prinsipp
+som `Checkbox` — SPEC-V1.md 7.1: "Ingenting avgjøres stille på brukerens
+vegne"), testet eksplisitt. 4 nye komponenttester.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**93 tester**,
++4 nye), `design:check-tokens` (OK, 4 komponent-CSS-filer), `i18n:check`,
+`next build`, OG `npx vitest run -c vitest.integration.config.ts` mot ekte
+lokal Postgres (39 tester, uendret).
+
+### Neste økt
+
+Komponentbiblioteket dekker nå akkurat det mottakerregistreringsskjemaet
+(7.1) trenger: `Checkbox` (samtykker), `TextField` (e-post),
+`Select` (land/språk). Naturlig neste steg er derfor å FAKTISK BYGGE selve
+registreringssiden (`/[locale]/subscribe` e.l.) med disse komponentene —
+den første virkelige siden i hele natten, ikke bare en plassholder. Ellers:
+selve WCAG-kontrasttesten (DESIGN.md 2.4, byggeklossene finnes nå), eller
+en Postgres-service-container i CI.
