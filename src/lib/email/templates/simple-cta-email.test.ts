@@ -44,4 +44,16 @@ describe("renderSimpleCtaEmail", () => {
     });
     expect(rendered.html).toContain('lang="en-GB"');
   });
+
+  it("ignoreNote er valgfri — utelates helt fra HTML og tekst når den ikke er satt (rene varsler har ingen 'ba du ikke om dette'-vinkel)", () => {
+    const rendered = renderSimpleCtaEmail({
+      locale: "nb-NO",
+      subject: "Test",
+      heading: "heading",
+      body: "body",
+      ctaLabel: "cta",
+      ctaUrl: "https://example.invalid",
+    });
+    expect(rendered.text).toBe("heading\n\nbody\n\nhttps://example.invalid");
+  });
 });

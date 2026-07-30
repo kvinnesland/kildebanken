@@ -3629,3 +3629,70 @@ journalistens svarinnboks (SPEC-V1.md 13) — nå som svar faktisk kan
 opprettes, er dette den naturlige måten en journalist ser dem; (4)
 OG-delingsbilde; (5) det oversatte-stinavn-hullet (3.7); (6)
 `prefers-color-scheme` for e-postmaler.
+
+Bekreftet: CI for `7e99184` (svarskjemaet) OG `b91d463` (e-postmalene fra
+forrige del av økten) er begge grønne.
+
+---
+
+## Fortsettelse av økt 7 — de neste to e-postmalene (`response_submitted_receipt`/`new_response_received`)
+
+Fortsatte punkt (1) fra forrige "Neste økt". Begge sendes allerede fra
+`submitResponse()` (`responses.ts`) — bare uten en faktisk mal bak
+malnavnet, akkurat som `magic_link`/`confirm_email` var før forrige del av
+økten.
+
+Utvidet `getPublicRequest`-mønsteret videre: `submitResponse()` hentet fra
+før `request.title`, men ikke `slug` — lagt til, siden begge de nye malene
+trenger å lenke til forespørselens offentlige side.
+
+**Justerte det delte skallet (`simple-cta-email.ts`) i stedet for å bygge
+et fjerde, duplisert oppsett:** de to nye malene er strukturelt identiske
+med `magic_link`/`confirm_email` (overskrift + avsnitt + lenke) MINUS selve
+"ba du ikke om dette"-linjen, som ikke gir mening for en ren kvittering/et
+rent varsel (ingen selvbetjent handling å angre). Gjorde `ignoreNote`
+valgfri i stedet for å tvinge en kunstig "se bort fra denne"-setning inn i
+en e-post som ikke har den vinkelen.
+
+`send.ts` sin `renderTransactionalEmail()`-dispatcher krevde før et
+`token`-felt UBETINGET for alle maler — ville aldri truffet de to nye
+(som bruker `requestId`/`requestTitle`/`requestSlug`, ikke `token`).
+Omstrukturert til å sjekke feltene HVER mal faktisk trenger, gren for
+gren, i stedet for én felles forutsetning for alle.
+
+**`new_response_received` lenker foreløpig til forespørselens EGEN
+offentlige side**, ikke en ekte svarinnboks — SPEC-V1.md 13 ("journalistens
+svarinnboks") er ikke bygget ennå. Tydelig kommentert som en midlertidig
+destinasjon i selve malfilen, ikke stille antatt riktig for alltid.
+
+### En reell, men uskyldig driftsforstyrrelse underveis
+
+`test:integration` feilet først med `ECONNREFUSED 127.0.0.1:5432` — den
+lokale Postgres-klyngen i selve sandkassen hadde stoppet (ikke noe
+kodeendring gjorde det, bekreftet med `pg_isready`/`pg_lsclusters` FØR jeg
+konkluderte noe). Startet den på nytt (`pg_ctlcluster 16 main start`), og
+alle 40 integrasjonstester gikk gjennom uendret. Notert fordi neste økt
+kan støte på det samme og bør sjekke akkurat dette FØR den antar en reell
+kodefeil.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**204
+tester**, +11 nye), `i18n:check` (125 nøkler), `design:check-tokens`,
+`rm -rf .next && next build`, `test:integration` mot ekte lokal Postgres
+(40 tester, etter at Postgres-klyngen ble startet på nytt), PLUSS en
+direkte kjøring av selve `sendTransactionalEmail()`-stubben for begge nye
+maler (ikke bare enhetstestet) som bekreftet lesbar, riktig utskrift.
+
+### Neste økt
+
+(1) resten av komponentbiblioteket (Dialog, Toast, Card, Alert, Tabs,
+Table, Pagination, EmptyState, SkeletonLoader, LanguageSwitcher); (2)
+journalistens svarinnboks (SPEC-V1.md 13) — ville gjort
+`new_response_received`-lenken riktig i stedet for midlertidig; (3)
+OG-delingsbilde; (4) det oversatte-stinavn-hullet (3.7); (5)
+`prefers-color-scheme` for e-postmaler; (6) flere e-postmaler etter behov
+(f.eks. `journalist_application_received`/`journalist_approved`/
+`journalist_rejected` — journalistregistreringen som ble bygget tidlig i
+natt kaller allerede disse malnavnene uten innhold bak dem, akkurat som
+mottakerflyten gjorde før i går natt).

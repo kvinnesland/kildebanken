@@ -36,6 +36,7 @@ export async function submitResponse(
       status: requests.status,
       journalistId: requests.journalistId,
       title: requests.title,
+      slug: requests.slug,
     })
     .from(requests)
     .where(eq(requests.id, requestId))
@@ -70,7 +71,7 @@ export async function submitResponse(
     await sendTransactionalEmail({
       template: "response_submitted_receipt",
       to: { email: respondent.email, locale: respondent.locale },
-      data: { requestId },
+      data: { requestId, requestTitle: request.title, requestSlug: request.slug },
     });
 
     // SPEC-V1.md 20.1 nevner at journalisten varsles "dersom journalisten
@@ -85,7 +86,7 @@ export async function submitResponse(
       await sendTransactionalEmail({
         template: "new_response_received",
         to: { email: journalist.email, locale: journalist.locale },
-        data: { requestId },
+        data: { requestId, requestTitle: request.title, requestSlug: request.slug },
       });
     }
 

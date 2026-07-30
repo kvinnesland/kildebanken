@@ -59,6 +59,16 @@
   "email.confirm_email.cta": "Confirm email",
   "email.confirm_email.ignore": "Didn't register? You can safely ignore this email.",
 
+  "email.response_submitted_receipt.subject": "Receipt: Your response has been sent",
+  "email.response_submitted_receipt.heading": "Your response has been sent",
+  "email.response_submitted_receipt.body": "We've received your response to the request “{title}”. You'll be notified by email if the journalist asks to know more.",
+  "email.response_submitted_receipt.cta": "View the request",
+
+  "email.new_response_received.subject": "New response received",
+  "email.new_response_received.heading": "New response received",
+  "email.new_response_received.body": "You've received a new response to the request “{title}”.",
+  "email.new_response_received.cta": "View the request",
+
   "request.status.published": "Open",
   "request.status.closed": "Closed",
   "request.status.expired": "Deadline has passed",
