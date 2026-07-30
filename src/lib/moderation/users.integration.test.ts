@@ -8,6 +8,7 @@ import {
   requests,
   responses,
   sessions,
+  suppressions,
   users,
 } from "@/db/schema";
 import {
@@ -20,7 +21,7 @@ import {
   uniqueTestEmail,
 } from "@/db/integration/fixtures";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
-import { suspendUser, unsuspendUser } from "./users";
+import { suppressUserEmail, suspendUser, unsuspendUser } from "./users";
 
 // Samme mønster som de andre moderation/-integrasjonstestene: mocker
 // next/headers for å simulere en innlogget moderator/administrator via en
@@ -229,5 +230,103 @@ describe("suspendUser/unsuspendUser mot ekte Postgres", () => {
       .from(journalistProfiles)
       .where(eq(journalistProfiles.userId, journalist.id));
     expect(profile?.verificationStatus).toBe("approved");
+  });
+});
+
+describe("suppressUserEmail mot ekte Postgres (SPEC-V1.md 12.5)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("krever en ikke-tom begrunnelse", async () => {
+    await ensureTestCountry();
+    const recipient = await createActiveRecipient();
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    await loginAs(moderator.id);
+
+    const result = await suppressUserEmail(recipient.id, "  ");
+
+    expect(result).toEqual({ ok: false, error: "errors.reason_required" });
+  });
+
+  it("legger e-postens hash til sperrelisten med reason 'manual', OG logger revisjonslogg", async () => {
+    await ensureTestCountry();
+    const recipient = await createActiveRecipient();
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    await loginAs(moderator.id);
+
+    const result = await suppressUserEmail(recipient.id, "Gjentatt misbruk.");
+
+    expect(result).toEqual({ ok: true });
+    const [row] = await db
+      .select()
+      .from(suppressions)
+      .where(eq(suppressions.emailHash, hashToken(recipient.email)));
+    expect(row?.reason).toBe("manual");
+
+    await db.delete(suppressions).where(eq(suppressions.emailHash, hashToken(recipient.email)));
+  });
+
+  it("rører IKKE kontoens status — en uavhengig handling fra suspendUser()", async () => {
+    await ensureTestCountry();
+    const recipient = await createActiveRecipient();
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    await loginAs(moderator.id);
+
+    await suppressUserEmail(recipient.id, "Gjentatt misbruk.");
+
+    const [user] = await db.select().from(users).where(eq(users.id, recipient.id));
+    expect(user?.status).toBe("active");
+
+    await db.delete(suppressions).where(eq(suppressions.emailHash, hashToken(recipient.email)));
+  });
+
+  it("er idempotent — kalt to ganger feiler ikke, kun én rad på sperrelisten", async () => {
+    await ensureTestCountry();
+    const recipient = await createActiveRecipient();
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    await loginAs(moderator.id);
+
+    const first = await suppressUserEmail(recipient.id, "Første rapport.");
+    const second = await suppressUserEmail(recipient.id, "Andre rapport.");
+
+    expect(first).toEqual({ ok: true });
+    expect(second).toEqual({ ok: true });
+    const rows = await db
+      .select()
+      .from(suppressions)
+      .where(eq(suppressions.emailHash, hashToken(recipient.email)));
+    expect(rows).toHaveLength(1);
+
+    await db.delete(suppressions).where(eq(suppressions.emailHash, hashToken(recipient.email)));
+  });
+
+  it("avviser en allerede SLETTET konto (e-posten er allerede erstattet med en hash, 17.5)", async () => {
+    await ensureTestCountry();
+    const recipient = await createActiveRecipient();
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    await loginAs(moderator.id);
+    await db.update(users).set({ status: "deleted" }).where(eq(users.id, recipient.id));
+
+    const result = await suppressUserEmail(recipient.id, "For sent.");
+
+    expect(result).toEqual({ ok: false, error: "errors.not_found" });
+  });
+
+  it("en moderator tildelt et ANNET land nektes (SPEC-V1.md 4)", async () => {
+    await ensureTestCountry();
+    await ensureSecondTestCountry();
+    const recipient = await createActiveRecipient();
+    const moderator = await createModerator(TEST_COUNTRY_CODE_2);
+    await loginAs(moderator.id);
+
+    const result = await suppressUserEmail(recipient.id, "Gjentatt misbruk.");
+
+    expect(result).toEqual({ ok: false, error: "errors.not_authorized" });
+    const rows = await db
+      .select()
+      .from(suppressions)
+      .where(eq(suppressions.emailHash, hashToken(recipient.email)));
+    expect(rows).toHaveLength(0);
   });
 });

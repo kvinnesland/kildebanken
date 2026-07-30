@@ -1443,6 +1443,7 @@ POST   /admin/journalists/:id/approve
 POST   /admin/journalists/:id/reject
 POST   /admin/users/:id/suspend
 POST   /admin/users/:id/unsuspend
+POST   /admin/users/:id/suppress-email
 GET    /admin/moderation/requests
 POST   /admin/requests/:id/publish
 POST   /admin/requests/:id/reject
@@ -1491,10 +1492,16 @@ i datamodellen nettopp for dette — men INGEN kode noensinne satte den, og
 ruten manglet i denne listen. De tre andre tiltakene var allerede bygget
 (`closeRequest()`, `suspendUser()`); dette var det eneste av de fire som
 manglet fullstendig. ("Sperre e-postadressen" som en EGEN,
-moderator-utløst handling — til forskjell fra den allerede byggede
-automatiske sperringen ved bounce/klage, se `suppressions`-tabellen 19.13 —
-mangler fortsatt; notert i `NATTLOGG.md` som en kandidat for en senere
-økt.)
+moderator-utløst handling ble bygget rett etter, se
+`POST /admin/users/:id/suppress-email` under.)
+
+`POST /admin/users/:id/suppress-email` er lagt til av samme grunn (økt 7,
+fortsettelse): det fjerde og siste av de fire tiltakene i 12.5 — til
+forskjell fra den allerede byggede AUTOMATISKE sperringen ved
+bounce/klage/avmelding (`suppressions`-tabellen 19.13, `reason`-verdiene
+`hard_bounce`/`complaint`/`unsubscribed`), fantes ingen moderator-utløst
+variant (`reason: manual`) noe sted, til tross for at selve `manual`-verdien
+alltid har eksistert i enumen.
 
 ---
 

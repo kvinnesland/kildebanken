@@ -5958,3 +5958,61 @@ med `reason: "manual"`, pluss en tilhørende rute; (2) fortsett den
 parvise asymmetri-jakten på gjenværende hjørner av kodebasen; (3)
 Brevo-integrasjon, resten av komponentbiblioteket, og OG-delingsbilde
 forblir alle korrekt blokkert.
+
+---
+
+## Fortsettelse av økt 7 — det fjerde og siste av 12.5s moderatortiltak bygget: "sperre e-postadressen" (manuell)
+
+Fullførte punkt (1) fra forrige "Neste økt" — det siste gjenstående hullet
+i 12.5s fire moderatortiltak. `suppressions.reason`-enumen har alltid hatt
+en `manual`-verdi (19.13), men INGEN kode noe sted satte den — kun de tre
+automatiske grunnene (`unsubscribed`, `hard_bounce`, `complaint`) ble
+noensinne brukt. Rettet spec-en først (la til
+`POST /admin/users/:id/suppress-email` i seksjon 20, samme
+fotnote-stil), deretter koden:
+
+- `suppressUserEmail(userId, reason)` i `src/lib/moderation/users.ts`
+  (samme fil som `suspendUser()`/`unsuspendUser()`, siden alle tre er
+  moderatortiltak mot EN konto). Krever begrunnelse (samme mønster som
+  `suspendUser()`), slår opp brukerens land og krever
+  `requireModeratorForCountry()`, avviser en allerede SLETTET konto
+  (kontoens `email`-felt er på det tidspunktet allerede erstattet med en
+  hash av den ekte adressen av `account-deletion.ts` — å hashe DEN på nytt
+  ville sperret feil verdi), setter inn i `suppressions` med
+  `.onConflictDoNothing()` (idempotent via den unike indeksen på
+  `email_hash`, samme mønster som `unsubscribeByToken()`), og logger til
+  revisjonsloggen. Bevisst en UAVHENGIG handling fra `suspendUser()` — 12.5
+  lister de fire tiltakene som distinkte verktøy, ikke en bunt; rører
+  derfor ikke kontoens `status`.
+- `POST /admin/users/:id/suppress-email`-ruten (samme mønster som
+  `/admin/users/:id/suspend`).
+- 6 nye tester i `users.integration.test.ts`: manglende begrunnelse,
+  riktig hash+reason satt inn PLUSS revisjonslogg, rører ikke kontoens
+  status, idempotent (kalt to ganger gir kun én rad), avviser en slettet
+  konto, og en moderator tildelt feil land nektes.
+
+Med dette er ALLE FIRE av 12.5s moderatortiltak nå bygget
+(`closeRequest()`, `hideResponse()`, `suspendUser()`,
+`suppressUserEmail()`) — ingen kjente gjenstående hull i selve
+rapporteringsflyten.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**335
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret — ingen nye
+nøkler trengtes, gjenbrukte `errors.reason_required`/`not_found`/
+`not_authorized`), `design:check-tokens` (**40** komponent-CSS-filer,
+uendret), `rm -rf .next && next build` (grønn, bekreftet
+`/api/admin/users/[id]/suppress-email` i utdataet), `test:integration` mot
+ekte lokal Postgres (**217 tester**, +6).
+
+### Neste økt
+
+Ingen kjente gjenstående hull i 12.5-rapporteringsflyten eller i de
+modulene sjekket over to økter med den parvise
+asymmetri-sammenligningsteknikken. Kandidater videre: (1) fortsett samme
+teknikk på resten av kodebasen (spesielt `subscriptions/`- og
+`journalists/`-mappene, ikke grundig sjekket ennå med denne spesifikke
+linsen); (2) Brevo-integrasjon, resten av komponentbiblioteket, og
+OG-delingsbilde forblir alle korrekt blokkert (se punktene notert i
+tidligere økter).
