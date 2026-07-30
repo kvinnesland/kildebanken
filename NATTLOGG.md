@@ -3001,3 +3001,67 @@ antakelig trenger et flerlinjers felt, ikke bare `TextField`; (2) en
 offentlig forespørsel-liste/-visning (`/[locale]/requests`, SPEC-V1.md
 seksjon 9); (3) vurder om `next build`-steget i CI også bør kjøre mot en
 migrert database.
+
+---
+
+## Fortsettelse av økt 7 — `TextArea`-komponenten (DESIGN.md 6: "med tegnteller")
+
+Ny time, ny cron-oppvåkning med samme (foreldede) prompt som vanlig —
+sjekket faktisk `git log`/`git status` og NATTLOGG sitt eget siste
+"Neste økt"-notat i stedet for å stole på prompten, som fortsatt lister
+registrerings-API-er og retensjonsjobben som om de gjenstår (de er
+committet for lengst). Fortsatte fra punkt (1): `TextArea`.
+
+Sjekket SPEC-V1.md 9.1 og 12.1 først for å bekrefte at et flerlinjers felt
+faktisk trengs, ikke anta det: forespørselens "Full beskrivelse" (5 000
+tegn), "Hvem søkes" (500 tegn), og svarskjemaets "Hvorfor er du relevant?"
+(2 000 tegn)/"Svar på journalistens spørsmål" (4 000 tegn) er alle
+fritekstfelt med en EKSPLISITT, håndhevet tegngrense — og DESIGN.md 6 sier
+uttrykkelig "`TextArea` med tegnteller" i minimumssettet, ikke bare
+"TextArea". Telleren er altså et spesifikt krav, ikke noe jeg la til av
+eget tiltak.
+
+### `src/components/TextArea.tsx`
+
+Samme mønster som `TextField.tsx` (React Aria sin `<TextField>`-wrapper,
+her med `<TextArea>` i stedet for `<Input>` som selve feltet — begge er
+gyldige barn av samme `<TextField>`-kontekst, ifølge react-aria-components
+sin egen typedefinisjon). Telleren (`{brukt}/{grense}`) beregnes fra den
+KALLER-kontrollerte `value`-propen (`props.value.length`), ikke en egen
+intern tilstand — unngår å duplisere sannheten om feltets innhold, og
+matcher at ALLE skjemaene bygget i kveld (Subscribe/JournalistApplyForm)
+allerede bruker kontrollerte felt konsekvent. `aria-live="polite"` på selve
+telleren, slik at skjermlesere får vite når den endrer seg uten å avbryte
+brukeren midt i skriving.
+
+Ingen nye designtoken-par introdusert (samme roller som `TextField`:
+`--color-danger-text` for feiltekst, `--color-text-muted` for
+beskrivelse/teller, `--color-border-strong`/`--color-focus-ring` for
+kant/fokus) — `contrast-pairs.ts` sin `TOKEN_PAIRS`-liste trengte derfor
+ingen oppdatering.
+
+8 nye komponenttester, inkludert én som faktisk skriver tegn for tegn
+(`userEvent.type`) i en ekte kontrollert wrapper-komponent og bekrefter at
+telleren oppdaterer seg live — ikke bare at den viser riktig tall ved
+første rendering.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**142
+tester**, +8 nye), `i18n:check`, `design:check-tokens` (OK, 10
+komponent-CSS-filer), `rm -rf .next && next build`.
+
+### Neste økt
+
+(1) resten av komponentbiblioteket (RadioGroup, Dialog, Toast, Badge, Card,
+Alert, Tabs, Table, Pagination, EmptyState, SkeletonLoader,
+LanguageSwitcher) — komponentbiblioteket dekker nå BÅDE
+registreringsskjemaene OG svarskjemaets fritekstfelt; naturlig neste steg
+kan derfor være å faktisk bygge selve SVARSKJEMAET
+(`/[locale]/requests/[id]/respond` e.l., SPEC-V1.md 12) siden `TextArea`
+var den siste manglende brikken for det, i stedet for å fortsette rett
+komponent for komponent; (2) en offentlig forespørsel-liste/-visning
+(`/[locale]/requests`, SPEC-V1.md seksjon 9) — sannsynligvis et
+nødvendig steg FØR svarskjemaet uansett, siden en respondent må kunne
+FINNE en forespørsel før hen kan svare på den; (3) vurder om
+`next build`-steget i CI også bør kjøre mot en migrert database.

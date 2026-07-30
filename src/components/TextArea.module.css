@@ -1,0 +1,76 @@
+/*
+ * Lag 3 — komponent. Se Button.module.css for regelen (kun semantiske
+ * tokens, aldri en farge-/avstands-/radiusverdi direkte).
+ */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.label {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+/* DESIGN.md 3.1: brødtekst/skjemafelt aldri under 16px, ellers zoomer iOS
+   Safari inn og ødelegger skjemaet. */
+.textarea {
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  padding-block: var(--space-2);
+  padding-inline: var(--space-3);
+  resize: vertical;
+}
+
+.textarea[data-focused] {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+  border-color: var(--color-focus-ring);
+}
+
+.textarea[data-invalid] {
+  border-color: var(--color-danger);
+}
+
+.textarea[data-disabled] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.footer {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.description {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.counter {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* DESIGN.md 6.1: feiltekst er ALDRI bare rød — den har alltid en tekstlig
+   forklaring, og feltet får aria-invalid (håndtert av React Aria via
+   isInvalid). Fargen her er en støtte, ikke bæreren av mening. */
+.errorMessage {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--color-danger-text);
+}
