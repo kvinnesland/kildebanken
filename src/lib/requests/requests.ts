@@ -343,6 +343,23 @@ export async function closeRequest(
       )
     );
 
+  // SPEC-V1.md 15: "Forespørsel lukket | journalist" — manglet helt frem
+  // til nå (null kallere noe sted i kodebasen). Sendes uansett hvem som
+  // lukket den (journalisten selv eller moderator/administrator), siden
+  // spec-raden ikke skiller mellom disse.
+  const [journalist] = await db
+    .select({ email: users.email, locale: users.locale })
+    .from(users)
+    .where(eq(users.id, existing.journalistId))
+    .limit(1);
+  if (journalist) {
+    await sendTransactionalEmail({
+      template: "request_closed",
+      to: { email: journalist.email, locale: journalist.locale },
+      data: { requestId, title: existing.title },
+    });
+  }
+
   return { ok: true, id: requestId };
 }
 

@@ -39,3 +39,9 @@
   padding-block: var(--space-3);
   padding-inline: var(--space-4);
 }
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}

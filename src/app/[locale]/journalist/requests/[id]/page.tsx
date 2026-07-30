@@ -10,6 +10,7 @@ import {
   journalistRequestStatusTone,
 } from "@/lib/requests/status-badge";
 import { RequestEditForm } from "./RequestEditForm";
+import { CloseRequestAction } from "./CloseRequestAction";
 import styles from "./page.module.css";
 
 const EDITABLE_STATUSES = new Set(["draft", "changes_requested"]);
@@ -57,6 +58,9 @@ export default async function EditRequestPage({
             <strong>{t("journalist.request_form.rejection_reason_label")}:</strong>{" "}
             {request.moderatorComment}
           </p>
+        ) : null}
+        {status === "published" ? (
+          <CloseRequestAction locale={locale} requestId={request.id} />
         ) : null}
       </main>
     );

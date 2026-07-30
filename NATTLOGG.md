@@ -4796,20 +4796,97 @@ tester**, +16 nye), `i18n:check` (**326 nøkler**), `design:check-tokens`
 `test:integration` mot ekte lokal Postgres (47 tester, +4 nye), PLUSS
 ende-til-ende-nettleserverifiseringen beskrevet over (begge roller).
 
+## Fortsettelse av økt 7 — lukkeknapp for journalisten, og et reelt "manglende varsel"-hull rettet
+
+Startet på "flere e-postmaler etter behov" fra forrige "Neste økt". Av de
+10 gjenstående malene i `TransactionalTemplate` (`send.ts`) hadde
+`request_closed` ("Forespørsel lukket | journalist", SPEC-V1.md 15) NULL
+kallere noe sted i kodebasen — verken `closeRequest()` (eier- ELLER
+moderator-/administratorlukking, samme funksjon for begge ruter) sendte
+den. Dette er et reelt hull (spec-en lister raden, koden manglet den),
+ikke en ny beslutning — rettet i `closeRequest()` selv, ETT sted, siden
+begge rutene (`/requests/:id/close` og `/admin/requests/:id/close`)
+allerede går gjennom den.
+
+Underveis i å bygge `stale_request_reminder_30d` (som SPEC-V1.md 9.2
+krever skal ha "lenke til å lukke den") ble et ANNET, større hull
+oppdaget: journalistens egen forespørselsside
+(`/journalist/requests/[id]`) hadde ingen lukkeknapp i det hele tatt for
+en publisert forespørsel, til tross for at `closeRequest()` og BEGGE
+API-rutene alltid har fungert. Moderator/administrator kunne altså
+lukke enhver forespørsel, men journalisten selv hadde ingen
+selvbetjent vei til det samme — konsistent med denne øktens
+gjennomgående prinsipp om å aldri sende en e-post-CTA som peker på noe
+som ikke finnes, ble knappen bygget FØR e-postmalen som lenker til den.
+
+Lagt til:
+- `CloseRequestAction.tsx` — klientkomponent i samme mønster som
+  `ContactRequestActions.tsx` (samme fil-plassering, samme
+  `useState`/`router.refresh()`-oppskrift), men med ett ekstra
+  bekreftelsessteg (`variant="danger"` + `variant="ghost"`) siden
+  lukking er irreversibelt (fører bl.a. til at ventende
+  kontaktforespørsler utløper umiddelbart). Vist på
+  `/journalist/requests/[id]` kun når `status === "published"`.
+- Fem nye `journalist.requests.close_*`-nøkler (begge locales).
+- `.actions`-klasse i `page.module.css` (samme oppskrift som
+  `contact-requests/[id]/page.module.css`).
+- `renderRequestClosedEmail()` (`templates/request-closed.ts`) + test +
+  fire `email.request_closed.*`-nøkler (begge locales) + wiret inn i
+  `send.ts` (trettende ekte mal, ti gjenstår).
+- I `closeRequest()`: etter at forespørselen er satt til `closed` og
+  ventende kontaktforespørsler er utløpt, slås journalistens
+  e-post/locale opp og `request_closed` sendes — uansett hvem som
+  faktisk utførte lukkingen, siden spec-raden ikke skiller mellom disse.
+
+### Verifisert ende til ende i en ekte nettleser
+
+Sådd en journalist med én PUBLISERT forespørsel direkte i databasen
+(ingen fixture-hjelper fantes for dette, satt inn rått). Besøkte
+siden — viste "Åpen"-badge og "Lukk forespørselen"-knappen. Klikket
+den — viste bekreftelsesraden ("Ja, lukk forespørselen" / "Avbryt").
+Bekreftet — badgen ble umiddelbart "Lukket" (via `router.refresh()`,
+samme oppførsel som `ContactRequestActions` — komponentens egen
+"lukket"-tekst rekker aldri å vises lenge før forelderen fjerner den
+fra treet, siden `status === "published"`-betingelsen ikke lenger er
+sann; dette er IKKE en feil, men samme etablerte mønster som
+`ContactRequestActions` allerede bruker). Lastet siden på nytt — status
+forble "Lukket". Bekreftet i serverloggen at `request_closed` faktisk
+ble sendt, med riktig tittel og lenke til journalistens egen side.
+Skjermbilder tatt og sjekket visuelt.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**276
+tester**, +2 nye), `i18n:check` (**335 nøkler**), `design:check-tokens`
+(38 komponent-CSS-filer), `rm -rf .next && next build`,
+`test:integration` mot ekte lokal Postgres (47 tester, uendret — ingen
+nye integrasjonstester denne runden, men eksisterende `closeRequest`-
+tester bekreftet at den nye e-postutsendelsen ikke brøt noe), PLUSS
+ende-til-ende-nettleserverifiseringen beskrevet over.
+
 ### Neste økt
 
-(1) vurder om `contact_approved`/`contact_declined` bør bli egne
-`displayStatus`-verdier i 12.6 (se "akseptert forenkling" over) — ikke
-en feil, men en reell forbedringsmulighet; (2) den store
-testbarhets-refaktoreringen (`admin/`/`moderation/`-lib-laget) —
-fortsatt bevisst utsatt; (3) resten av komponentbiblioteket (Dialog,
-Toast, Card, Alert, Tabs, Table, Pagination); (4) resten av
-16.1-dashbordet; (5) den ubrukte `"approved"`-verdien i
-`request_status`-enumen; (6) OG-delingsbilde; (7) det
-oversatte-stinavn-hullet (3.7); (8) flere e-postmaler etter behov (nå
-10 gjenstår); (9) faktisk Brevo-integrasjon når en API-nøkkel finnes;
-(10) den siste ubrukte `nav.*`-nøkkelen, `nav.requests`; (11) alle
-kjente "backend uten UI"-hull er nå lukket — vurder om et nytt
-overblikk over `src/app/api/` fortsatt er verdt å gjøre, eller om det
-er tid for å gå videre til de andre kategoriene (komponentbibliotek,
-16.1-dashbord, Brevo).
+(1) fortsett med de resterende 9 e-postmalene (nå bygget:
+`request_closed` — 13 av 23. Gjenstår: `request_approved_published`,
+`changes_requested`, `request_rejected`, `deadline_approaching_24h`,
+`stale_request_reminder_30d`, `response_request_closed` (allerede har
+en kaller i `account-deletion.ts`, se `notifyJournalist`-mønsteret),
+`contact_request_cancelled_account_deleted`,
+`legal_terms_material_change`, `new_request_for_moderation` (allerede
+har en kaller i `submitRequest()`), `content_reported` (allerede har en
+kaller i `reports.ts`)); husk å utvide `findSubmitted()` i
+`moderation/requests.ts` med `slug`/`title` for
+`request_approved_published`, og `runDeadlineReminders()`/
+`runStaleRequestReminders()` i `tick.ts` med `title`; oppdater
+`send.test.ts`s fallback-test til en genuint ubygget mal når
+`request_approved_published` er bygget; (2) vurder om
+`contact_approved`/`contact_declined` bør bli egne
+`displayStatus`-verdier i 12.6 — ikke en feil, men en reell
+forbedringsmulighet; (3) den store testbarhets-refaktoreringen
+(`admin/`/`moderation/`-lib-laget) — fortsatt bevisst utsatt; (4)
+resten av komponentbiblioteket (Dialog, Toast, Card, Alert, Tabs,
+Table, Pagination); (5) resten av 16.1-dashbordet; (6) den ubrukte
+`"approved"`-verdien i `request_status`-enumen; (7) OG-delingsbilde;
+(8) det oversatte-stinavn-hullet (3.7); (9) faktisk Brevo-integrasjon
+når en API-nøkkel finnes; (10) den siste ubrukte `nav.*`-nøkkelen,
+`nav.requests`.

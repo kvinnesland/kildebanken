@@ -11,6 +11,7 @@ import { renderAccountDeletionConfirmedEmail } from "./templates/account-deletio
 import { renderContactRequestReceivedEmail } from "./templates/contact-request-received";
 import { renderContactApprovedEmail } from "./templates/contact-approved";
 import { renderContactDeclinedEmail } from "./templates/contact-declined";
+import { renderRequestClosedEmail } from "./templates/request-closed";
 import type { RenderedEmail } from "./templates/simple-cta-email";
 
 // Tynt e-postgrensesnitt. Selve jobblogikken (src/lib/jobs/tick.ts) kaller
@@ -56,7 +57,7 @@ export interface SendTransactionalEmailInput {
 
 /**
  * Rendrer den faktiske mal-HTML-en/-teksten for de malene som har en ekte
- * mal bygget (foreløpig tolv, økt 7 — de andre 11 malene i
+ * mal bygget (foreløpig tretten, økt 7 — de andre 10 malene i
  * `TransactionalTemplate` er ennå bare navn uten innhold, se NATTLOGG.md).
  * `null` betyr "ingen mal bygget ennå for denne, ELLER dataene som kreves
  * mangler", ikke en feil — stubben under faller da tilbake til det gamle,
@@ -130,6 +131,11 @@ function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedE
     }
     case "contact_declined":
       return renderContactDeclinedEmail(locale);
+    case "request_closed": {
+      const { requestId, title } = input.data;
+      if (typeof requestId !== "string" || typeof title !== "string") return null;
+      return renderRequestClosedEmail(locale, requestId, title);
+    }
     default:
       return null;
   }

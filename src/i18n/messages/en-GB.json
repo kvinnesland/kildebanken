@@ -49,6 +49,11 @@
   "journalist.requests.responses_link": "View responses",
   "journalist.requests.untitled": "(no title yet)",
   "journalist.requests.creating": "Creating…",
+  "journalist.requests.close_button": "Close the request",
+  "journalist.requests.close_confirm_button": "Yes, close the request",
+  "journalist.requests.close_cancel_button": "Cancel",
+  "journalist.requests.close_success": "The request is now closed.",
+  "journalist.requests.close_error": "Could not close the request. Please try again.",
 
   "journalist.request_form.title_label": "Title",
   "journalist.request_form.summary_label": "Short summary (shown in the email)",
@@ -249,6 +254,11 @@
   "email.contact_declined.subject": "Contact declined",
   "email.contact_declined.heading": "Contact declined",
   "email.contact_declined.body": "The respondent has declined your contact request. No reason has been given.",
+
+  "email.request_closed.subject": "Your request is now closed",
+  "email.request_closed.heading": "Your request is now closed",
+  "email.request_closed.body": "The request \"{title}\" is now closed and no longer accepts new responses.",
+  "email.request_closed.cta": "View the request",
 
   "contact_request.title": "Request for further contact",
   "contact_request.message_label": "Message from the journalist",

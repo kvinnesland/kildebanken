@@ -49,6 +49,11 @@
   "journalist.requests.responses_link": "Se svar",
   "journalist.requests.untitled": "(uten tittel ennå)",
   "journalist.requests.creating": "Oppretter …",
+  "journalist.requests.close_button": "Lukk forespørselen",
+  "journalist.requests.close_confirm_button": "Ja, lukk forespørselen",
+  "journalist.requests.close_cancel_button": "Avbryt",
+  "journalist.requests.close_success": "Forespørselen er nå lukket.",
+  "journalist.requests.close_error": "Kunne ikke lukke forespørselen. Prøv igjen.",
 
   "journalist.request_form.title_label": "Tittel",
   "journalist.request_form.summary_label": "Kort oppsummering (vises i e-posten)",
@@ -249,6 +254,11 @@
   "email.contact_declined.subject": "Kontakt avslått",
   "email.contact_declined.heading": "Kontakt avslått",
   "email.contact_declined.body": "Respondenten har avslått kontaktforespørselen din. Ingen begrunnelse er oppgitt.",
+
+  "email.request_closed.subject": "Forespørselen din er lukket",
+  "email.request_closed.heading": "Forespørselen din er lukket",
+  "email.request_closed.body": "Forespørselen «{title}» er nå lukket og tar ikke imot flere svar.",
+  "email.request_closed.cta": "Se forespørselen",
 
   "contact_request.title": "Forespørsel om videre kontakt",
   "contact_request.message_label": "Melding fra journalisten",
