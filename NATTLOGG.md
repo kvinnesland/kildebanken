@@ -1364,8 +1364,7 @@ uendret), `i18n:check`, `next build` (**39 API-ruter totalt**), OG
 ### Neste økt
 
 Gjenstår av seksjon 20: kun det administrative "landstyrings"-settet for
-administrator (`GET /admin/digests`, `POST /admin/digests/:id/retry`,
-`GET/POST /admin/countries`, `PATCH /admin/countries/:code`,
+administrator (`GET/POST /admin/countries`, `PATCH /admin/countries/:code`,
 `POST /admin/countries/:code/moderators`, `POST /admin/legal-documents`).
 Ellers: faktisk Brevo-integrasjon når en API-nøkkel finnes. Vurder også en
 tilsvarende gjennomgang av de ANDRE modereringsfunksjonene
@@ -1373,3 +1372,62 @@ tilsvarende gjennomgang av de ANDRE modereringsfunksjonene
 samme klasse av feil — de bruker `requireModeratorForCountry()` internt via
 `session.ts`, som antas riktig, men er ikke bekreftet med en dedikert test
 slik `closeRequest()` nå er.
+
+---
+
+## Fortsettelse av økt 7 — `GET /admin/digests`, `POST /admin/digests/:id/retry`
+
+Samme arbeidsøkt.
+
+### `src/lib/digests/digests.ts`
+
+- `listDigests(session)` — samme filtreringsmønster som
+  `listModerationQueue()`: moderator ser bare tildelte land, administrator
+  ser alle.
+- `retryFailedDigestDeliveries(digestId)` — SPEC-V1.md 16.2: "kjør på nytt
+  ved feil." Sender KUN på nytt til `DigestDelivery`-rader med status
+  `failed` (ikke til de som allerede fikk digesten — en delvis mislykket
+  utsendelse skal ikke bli en dobbel levering til de som lyktes). Roterer
+  BÅDE `access_token_hash` (på selve leveransen) og
+  `email_subscriptions.unsubscribe_token_hash` på nytt — nøyaktig samme to
+  rotasjoner som førstegangsutsendelsen i `tick.ts`, siden en mislykket
+  sending kan ha rotert token-en uten at mottakeren noensinne fikk lenken.
+
+**Bevisst duplisert, ikke delt kode:** rendrings-/sendeløkken her er en nær
+kopi av `sendDigestToRecipients()` i `src/lib/jobs/tick.ts`, fremfor å
+refaktorere ut en felles funksjon midt i en lang autonom økt. Risikoen ved å
+røre selve digest-utsendelsesløpet (allerede testet og i produksjon-lignende
+bruk hele natten) oppveier gevinsten av mindre duplisering her. Kandidat for
+opprydding i dagslys, notert eksplisitt i kodekommentaren også.
+
+### Testdekning — samme kjente begrensning som resten av `moderation/`
+
+Forsøkte først å integrasjonsteste `listDigests()` direkte (den tar en
+`CurrentSession` som VANLIG PARAMETER, i motsetning til f.eks.
+`suspendUser()`) — men selve MODULEN `digests.ts` importerer
+`requireModeratorForCountry` fra `src/lib/auth/authorize.ts`, som selv gjør
+et ekte (ikke type-only) import av `getCurrentSession` fra `session.ts`.
+Det er nok til at HELE `digests.ts`-modulen drar med seg `"server-only"`
+ved import, uavhengig av hvilken funksjon i filen som faktisk testes.
+Skrev først en test, fikk `"This module cannot be imported from a Client
+Component module"` fra vitest, og slettet testfilen igjen — samme kjente,
+aksepterte begrensning som resten av `src/lib/moderation/` (se forrige del
+av økt 7). Verifisert kun ved `tsc`/`eslint`/`next build`.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (56 tester,
+uendret), `i18n:check`, `next build` (**41 API-ruter totalt**), OG
+`npx vitest run -c vitest.integration.config.ts` mot ekte lokal Postgres
+(25 tester, uendret siden forrige del — ingen nye integrasjonstester denne
+runden, se begrunnelse over).
+
+### Neste økt
+
+Gjenstår av seksjon 20: kun det administrative "landstyrings"-settet for
+administrator (`GET/POST /admin/countries`, `PATCH /admin/countries/:code`,
+`POST /admin/countries/:code/moderators`, `POST /admin/legal-documents`).
+Dette er det SISTE gjenstående settet — når det er bygget er HELE
+SPEC-V1.md seksjon 20 dekket. Ellers: faktisk Brevo-integrasjon når en
+API-nøkkel finnes, og vurder om `retryFailedDigestDeliveries()` bør
+refaktoreres til å dele kode med `tick.ts` fremfor å duplisere (se over).
