@@ -1126,12 +1126,105 @@ inkludert 2 nye for `isValidTimezone`), `i18n:check`, `next build`
 `npx vitest run -c vitest.integration.config.ts` mot ekte lokal Postgres
 (14 tester, alle grønne).
 
+### Rettet en feil i tidligere økters egne notater — IKKE et hull i spec/kode
+
+Før neste steg ble påbegynt: sjekket `GET /me/data-export`, som har stått på
+"neste økt"-listen flere ganger i natt, mot selve spec-en. Den finnes IKKE i
+seksjon 20s API-liste, og seksjon 25 ("Kuttet fra v1"), punkt 13, sier
+eksplisitt: **"Selvbetjent dataeksport ... GDPR krever at retten oppfylles,
+ikke at den er selvbetjent. Manuell rutine med 30 dagers frist er
+tilstrekkelig."** Bekreftet også av 17.3: nedlasting av egne data er uttrykkelig
+listet under "Manuelt i v1", ikke "Selvbetjent i v1".
+
+Dette er altså IKKE et hull mellom spec og kode som skal rettes ved å bygge
+noe — det er en feil i mine egne tidligere "neste økt"-notater, som gjentok
+et punkt uten å sjekke det mot spec-en først. Retter herved: ingen
+`GET /me/data-export`-rute skal bygges i v1. En manuell rutine (moderator
+eksporterer på forespørsel til personvern-kontaktadressen) er alt spec-en
+krever, og krever ikke applikasjonskode.
+
 ### Neste økt
 
-(1) `GET /me/data-export`; (2) vurder om flere kritiske
-databasenivå-invarianter bør få integrasjonstester (kontosletting-
-anonymisering, `contact_requests.response_id`-unikheten, FR-029 sitt maks-5-
-samtidig-publiserte-forespørsler); (3) faktisk Brevo-integrasjon når en
-API-nøkkel finnes; (4) husk at Postgres-instansen i sandkassen må startes på
+(1) vurder om flere kritiske databasenivå-invarianter bør få
+integrasjonstester (kontosletting-anonymisering,
+`contact_requests.response_id`-unikheten, FR-029 sitt
+maks-5-samtidig-publiserte-forespørsler); (2) faktisk Brevo-integrasjon når en
+API-nøkkel finnes; (3) husk at Postgres-instansen i sandkassen må startes på
 nytt (`service postgresql start`) i en ny sandkasse-økt — se merknad i
-forrige del av denne økten.
+forrige del av denne økten. Alle rutene i SPEC-V1.md seksjon 20 er nå bygget
+bortsett fra admin/moderator-rutene som ikke er prioritert i natt
+(`/admin/users/:id/suspend`, `/admin/digests*`, `/admin/countries*`,
+`/admin/legal-documents`, `/report`, `/unsubscribe/:token`) — vurder disse
+som neste kandidat dersom det fortsatt er tid.
+
+---
+
+## Fortsettelse av økt 7 — `/legal/:country/:locale/:type`, `/unsubscribe/:token`, `/report`
+
+Samme arbeidsøkt. Plukket videre fra restlisten over.
+
+### Ekte hull funnet: `POST /report` forutsetter en e-postmal som ikke fantes i spec-en
+
+12.5 sier "sender e-post til moderatorene for det aktuelle landet", og
+seksjon 20 lister ruten — men seksjon 15s maltabell hadde ingen rad for
+dette. Rettet spec-en FØRST (lagt til "Innhold rapportert (forespørsel eller
+svar) | moderator", med forklarende merknad i teksten under tabellen, samme
+mønster som de to forrige tilføyelsene i økt 7), deretter lagt
+`"content_reported"` til `TransactionalTemplate`-unionen i
+`src/lib/email/send.ts`.
+
+### `src/lib/reports/reports.ts` — `submitReport()` (`POST /report`)
+
+Ingen egen datamodell (25, punkt 10 — bevisst kuttet fra v1). Slår opp
+landet til den rapporterte entiteten (`request.country_code` direkte, eller
+via forespørselen et `response` tilhører), henter moderatorene tildelt DET
+landet (`moderator_countries`), og sender ett `content_reported`-varsel til
+hver. Lagrer ingenting selv — moderator vurderer og logger selve TILTAKET
+manuelt (12.5, ordrett).
+
+### `src/lib/subscriptions/unsubscribe.ts` — `unsubscribeByToken()` (`POST /unsubscribe/:token`)
+
+Verifiserer tokenet mot `email_subscriptions.unsubscribe_token_hash` (samme
+hash-mønster som alle andre tokens i kodebasen). Idempotent — et andre klikk
+på en allerede brukt (men ennå ikke rotert) lenke er ok, ikke en feil. 17.4:
+"Avmeldt adresse — Hashet på sperreliste, ubegrenset" — derfor settes
+IKKE bare `status = unsubscribed` på abonnementet, adressen legges også inn i
+`suppressions` (hash av e-post, ikke selve adressen), en tabell som fantes i
+skjemaet men som ingen kode faktisk skrev til før nå.
+
+### `GET /legal/:country/:locale/:type`
+
+Tynn wrapper rundt den allerede eksisterende `getCurrentLegalDocument()`
+(bygget tidligere i natt for registreringsflytene) — offentlig, ingen
+innlogging, siden vilkår og personvernerklæring må kunne leses FØR
+registrering.
+
+### Ny, faktisk verifisert integrasjonstestdekning
+
+- `src/lib/reports/reports.integration.test.ts` (4 tester): finner riktig
+  land for både en rapportert forespørsel og et rapportert svar (via
+  forespørselen det tilhører), avviser ukjent `entity_id`, avviser tom
+  begrunnelse.
+- `src/lib/subscriptions/unsubscribe.integration.test.ts` (3 tester): melder
+  av og legger adressen på sperrelisten, idempotent ved andre klikk, avviser
+  ukjent token.
+
+Alle 21 integrasjonstester (7 testfiler) grønne.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (56 tester,
+uendret), `i18n:check`, `next build` (**36 API-ruter totalt**), OG
+`npx vitest run -c vitest.integration.config.ts` mot ekte lokal Postgres
+(21 tester, alle grønne).
+
+### Neste økt
+
+Gjenstår av seksjon 20: kun admin/moderator-administrasjonsrutene
+(`/admin/users/:id/suspend`, `GET /admin/digests`,
+`POST /admin/digests/:id/retry`, `/admin/countries*`,
+`POST /admin/countries/:code/moderators`, `POST /admin/legal-documents`) —
+et sammenhengende "landadministrasjon for administrator"-sett (16.2, siste
+kulepunkt), naturlig neste byggeblokk. Ellers: faktisk Brevo-integrasjon når
+en API-nøkkel finnes, og flere integrasjonstester for kritiske invarianter
+nå som riggen finnes.

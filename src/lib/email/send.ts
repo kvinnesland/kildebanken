@@ -30,7 +30,8 @@ export type TransactionalTemplate =
   | "account_deletion_confirmed"
   | "contact_request_cancelled_account_deleted"
   | "legal_terms_material_change"
-  | "new_request_for_moderation";
+  | "new_request_for_moderation"
+  | "content_reported";
 
 export interface SendTransactionalEmailInput {
   template: TransactionalTemplate;

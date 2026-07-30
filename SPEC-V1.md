@@ -792,14 +792,18 @@ hvilken journalist som fikk tilgang og hvilket samtykke som lå til grunn.
 | Kontaktforespørsel kansellert (respondentens konto slettet) | journalist |
 | Vesentlig endring i vilkår eller personvernerklæring | mottaker |
 | Ny forespørsel til moderering | moderator |
+| Innhold rapportert (forespørsel eller svar) | moderator |
 
-De to siste radene er lagt til under autonomt arbeid (økt 7, se
-`NATTLOGG.md`), som del av å bygge `DELETE /me` (17.5). "Kontosletting
-bekreftet" gjelder nå begge roller, ikke bare mottaker — en journalistkonto
-kan også slettes (17.5, siste avsnitt). Bekreftelseslenken er en egen mal,
-adskilt fra den vanlige innloggingslenken, fordi den utløser en irreversibel
-handling og bør si det tydelig i teksten (24.3: "særlig sensitive handlinger
-skal kreve ny autentisering").
+De tre siste radene er lagt til under autonomt arbeid (økt 7, se
+`NATTLOGG.md`), som del av å bygge `DELETE /me` (17.5) og `POST /report`
+(12.5). "Kontosletting bekreftet" gjelder nå begge roller, ikke bare
+mottaker — en journalistkonto kan også slettes (17.5, siste avsnitt).
+Bekreftelseslenken er en egen mal, adskilt fra den vanlige innloggingslenken,
+fordi den utløser en irreversibel handling og bør si det tydelig i teksten
+(24.3: "særlig sensitive handlinger skal kreve ny autentisering"). "Innhold
+rapportert" manglet i denne tabellen selv om 12.5 og 20 begge forutsetter at
+den finnes ("sender e-post til moderatorene for det aktuelle landet") — et
+reelt hull mellom to deler av spec-en, ikke en ny beslutning.
 
 Alle maler finnes i HTML og ren tekst, i alle aktive locales, og sendes på
 mottakerens locale. Alle skal fungere med skjermleser.
