@@ -923,3 +923,107 @@ stedet for bare kodegjennomgang — ville fanget feil ingen mengde
 typechecking kan fange (f.eks. om den betingede unike indeksen i migrasjon
 `0001` faktisk håndheves som forventet); (4) faktisk Brevo-integrasjon når
 en API-nøkkel finnes.
+
+---
+
+## Fortsettelse av økt 7 — ekte Postgres oppdaget, første integrasjonstester
+
+Samme arbeidsøkt. Antagelsen fra hele natten ("ingen database tilgjengelig i
+denne sandkassen") viste seg å være feil — `psql` og `postgresql-16` er
+installert, bare ikke startet.
+
+### Oppsett
+
+- `service postgresql start` → `16/main (port 5432): online`.
+- Opprettet rolle og to databaser som `postgres`-OS-brukeren: `kildebanken`
+  (bruker, med `CREATEDB`), `kildebanken` og `kildebanken_test` (databaser).
+- Kjørte alle 6 migrasjoner mot `kildebanken_test` via
+  `DATABASE_URL=... npx tsx src/db/migrate.ts` — alle gikk gjennom uten feil.
+- Bekreftet med `psql ... -c "\d responses"` at den hånd-skrevne partielle
+  unike indeksen (migrasjon `0001`, kan ikke uttrykkes i Drizzles skjema-API)
+  faktisk eksisterer nøyaktig som tiltenkt.
+
+### Ny testinfrastruktur, adskilt fra den vanlige enhetstestsuiten
+
+Standard `npx vitest run` skal ALDRI forutsette en database — det har vært
+en bevisst egenskap hele natten og skal fortsette å være det (bl.a. fordi
+selve CI-miljøet for enhetstester ikke nødvendigvis har Postgres). Derfor en
+helt separat konfigurasjon for de nye, ekte databasetestene:
+
+- `vitest.integration.config.ts` (ny) — egen config, `include: ["**/*.integration.test.ts"]`.
+- `vitest.config.ts` — lagt til `exclude: [..., "**/*.integration.test.ts"]`
+  slik at standardkjøringen aldri plukker dem opp.
+- `package.json` — ny script `test:integration` (`vitest run -c
+  vitest.integration.config.ts`), krever `DATABASE_URL` satt manuelt av den
+  som kjører den (aldri i CI for enhetstester).
+- `src/db/integration/fixtures.ts` (ny) — hjelpefunksjoner:
+  `ensureTestCountry()` (testland `XT` + tre publiserte juridiske dokumenter,
+  forutsetning for FR-009), `uniqueTestEmail()`, `createActiveRecipient()`,
+  `createActiveJournalist()`. Dokumentert eksplisitt i filen at dette IKKE er
+  et fullverdig testrammeverk (ingen transaksjons-rollback per test) — greit
+  for en engangs sandkasse-database, bør erstattes med rollback eller en
+  fersk database per kjøring (f.eks. en Neon-branch) i et ekte CI-oppsett.
+
+### To ekte feil funnet og rettet i selve testriggen (ikke i applikasjonskoden)
+
+1. **Kappløp mellom parallelle testfiler:** `ensureTestCountry()` brukte
+   først sjekk-så-sett-inn for `legalDocuments`. Vitest kjører testfiler
+   parallelt som standard, så begge testfilenes `beforeAll` så "ingen
+   eksisterende rad" samtidig og forsøkte begge å sette inn samme rad →
+   unik constraint-feil. Rettet ved å bruke `.onConflictDoNothing()` (samme
+   mønster som allerede brukt for `countries`-innsettingen), og fjernet den
+   nå ubrukte `eq`-importen.
+2. **FK-rekkefølgefeil i testopprydding:**
+   `recipient.integration.test.ts` sin `afterAll` forsøkte å slette
+   `users`-raden mens en `auth_tokens`-rad (satt inn av
+   `registerRecipient()` sitt interne kall til `requestMagicLink()`) fortsatt
+   refererte til den → FK-brudd. Rettet ved å importere `authTokens` og
+   slette fra den FØRST, før `consentRecords`, `emailSubscriptions` og
+   `users`.
+
+Begge er feil i testinfrastrukturen selv, ikke i produksjonskoden — men
+verdt å nevne fordi de er nøyaktig den typen feil kodegjennomgang og
+typechecking alene aldri ville fanget.
+
+### Ny, faktisk verifisert integrasjonstestdekning
+
+- `src/lib/responses/responses.integration.test.ts` (3 tester): FR-041
+  håndheves av den partielle unike indeksen mot en ekte Postgres (ikke bare
+  lest i migrasjons-SQL-en) — ett svar tillatt, et andre svar fra samme
+  respondent på samme forespørsel avvist, og et NYTT svar tillatt etter at
+  det forrige er trukket (bekrefter at trukket svar faktisk er hard-slettet
+  fra databasen, ikke bare markert).
+- `src/lib/registration/recipient.integration.test.ts` (3 tester):
+  `registerRecipient()` oppretter bruker + e-postabonnement + FIRE
+  samtykkerader fra ÉN avkrysningsboks, avviser manglende samtykke, og
+  avviser en andre registrering med samme e-post — bekrefter at
+  beskyttelsen er databasens unike constraint, ikke bare forhåndssjekken i
+  applikasjonskoden.
+
+Alle 6 tester grønne ved endelig kjøring:
+`DATABASE_URL="postgres://kildebanken:kildebanken@localhost:5432/kildebanken_test" npx vitest run -c vitest.integration.config.ts`
+→ "Test Files 2 passed (2)", "Tests 6 passed (6)".
+
+**Merk for morgendagen / neste sandkasse-økt:** denne Postgres-installasjonen
+lever i selve sandkasseboksen, ikke i noe persistent lagringssted git kan se.
+Det betyr at `service postgresql start` + rolle/database-oppsett trolig må
+gjentas fra bunnen neste gang en ny sandkasse-instans startes — selve
+testfilene og riggen (som ER committet) trenger ingen endring, bare en
+databaseinstans å peke `DATABASE_URL` mot.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (54 tester,
+uendret — integrasjonstestene korrekt ekskludert, 9 testfiler ikke 11),
+`i18n:check`, `next build` (31 API-ruter, uendret), OG (nytt denne runden)
+`npx vitest run -c vitest.integration.config.ts` mot en ekte lokal Postgres
+(6 tester, alle grønne).
+
+### Neste økt
+
+(1) resten av `/me`-rutene (`PATCH /me`, `POST /me/change-country`,
+`GET /me/data-export`); (2) `GET /journalists/me`/`PATCH /journalists/me`;
+(3) vurder å utvide integrasjonstestdekningen til flere av de kritiske
+databasenivå-invariantene (f.eks. `contact_requests.response_id`-unikheten,
+kontosletting-anonymisering) nå som riggen finnes; (4) faktisk
+Brevo-integrasjon når en API-nøkkel finnes.

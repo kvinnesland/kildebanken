@@ -9,5 +9,9 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // Integrasjonstester (krever ekte Postgres) kjøres via en egen
+    // konfigurasjon (`npm run test:integration`), ikke her — se
+    // vitest.integration.config.ts.
+    exclude: ["node_modules/**", "**/*.integration.test.ts"],
   },
 });
