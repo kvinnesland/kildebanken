@@ -1,6 +1,7 @@
 import { and, count, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
+  auditLogs,
   contactRequests,
   countries,
   journalistProfiles,
@@ -282,6 +283,21 @@ export async function closeRequest(
     } else if (actor.role !== "admin") {
       return { ok: false, error: "errors.not_authorized" };
     }
+
+    // FR-050: "logge ALLE moderator- og administratorhandlinger ... med
+    // land." Manglet her frem til nå — et reelt hull, ikke bare i denne
+    // funksjonen (se NATTLOGG.md, økt 7, for de andre stedene samme hull ble
+    // funnet). Logges KUN når det faktisk ER en moderator/administrator som
+    // handler — journalistens egen lukking av sin egen forespørsel er ikke
+    // en "moderator-/administratorhandling".
+    await db.insert(auditLogs).values({
+      actorType: "user",
+      actorUserId,
+      countryCode: existing.countryCode,
+      action: "request.close",
+      entityType: "request",
+      entityId: requestId,
+    });
   }
 
   await db

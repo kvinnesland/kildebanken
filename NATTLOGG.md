@@ -1599,3 +1599,68 @@ ved å følge datamodellen tabell for tabell — denne metoden (spore
 oppgave ba om å se etter, og er trolig verdt å gjenta på et par andre
 tabeller (f.eks. `audit_logs`: skrives det til den fra ALLE stedene 19.12
 og FR-050 forutsetter, eller bare noen?).
+
+---
+
+## Fortsettelse av økt 7 — fulgte opp `audit_logs`-sjekken selv, fant fem til
+
+Samme arbeidsøkt. Fulgte opp forslaget rett over selv: grep'et alle
+`insert(auditLogs)`-kall og sammenlignet mot FR-050 ("logge ALLE moderator-
+og administratorhandlinger ... med land") for hver moderator-/
+administratorfunksjon bygget i natt.
+
+**Fem reelle hull funnet — alle i kode bygget senere i akkurat DENNE
+økten, ikke eldre kode:**
+
+1. `closeRequest()` (`src/lib/requests/requests.ts`) — loggførte aldri når
+   en moderator/administrator (til forskjell fra eieren selv) lukket en
+   forespørsel.
+2. `createCountry()`, `updateCountry()`, `setCountryStatus()`,
+   `assignModeratorToCountry()` (`src/lib/admin/countries.ts`) — INGEN av
+   de fire administrator-handlingene ble loggført.
+3. `publishLegalDocument()` (`src/lib/admin/legal-documents.ts`) — loggførte
+   aldri publisering av en ny dokumentversjon.
+4. `retryFailedDigestDeliveries()` (`src/lib/digests/digests.ts`) — loggførte
+   aldri en gjenutsendelse.
+
+Rettet alle fem ved å legge til `db.insert(auditLogs)` med
+`actorType: "user"`, `actorUserId` (fra økten/sesjonen som utførte
+handlingen), `countryCode` (FR-050: "med land"), en `action`-streng per
+type handling (`request.close`, `country.create/update/status_change/
+assign_moderator`, `legal_document.publish`, `digest.retry`), og
+`metadata` der det ga tilleggsverdi (f.eks. ny status, antall
+gjenutsendte).
+
+`closeRequest()` logger KUN når det faktisk er en moderator/administrator
+som handler — journalistens egen lukking av sin egen forespørsel er ikke en
+"moderator-/administratorhandling" og skal ikke telle med.
+
+### Ny, faktisk verifisert integrasjonstestdekning
+
+- `src/lib/requests/requests.integration.test.ts`, utvidet siste test: en
+  moderator som lukker en forespørsel etterlater nå en `audit_logs`-rad med
+  riktig `actor_user_id`, `country_code` og `action = "request.close"`.
+- De fire funksjonene i `src/lib/admin/countries.ts`, `legal-documents.ts`
+  og `digests.ts` kunne IKKE testes direkte (samme `"server-only"`-kjede via
+  `requireAdmin()`/`requireModeratorForCountry()` som gjorde `listDigests()`
+  untestbar tidligere i økten) — verifisert kun ved `tsc`/`eslint`/
+  `next build`.
+
+Alle 26 integrasjonstester (8 testfiler) fortsatt grønne.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (56 tester,
+uendret), `i18n:check`, `next build` (44 API-ruter, uendret), OG
+`npx vitest run -c vitest.integration.config.ts` mot ekte lokal Postgres
+(26 tester, alle grønne).
+
+### Neste økt
+
+Metoden "spor tabell X bakover til alle lese-/skrivesteder" fant seks reelle
+hull på rad i natt (suppressions + fem audit_logs-hull). Verdt å gjenta på
+flere tabeller neste økt, f.eks. `Suppression.reason` (håndheves
+`hard_bounce`/`complaint`/`three-strikes`-reglene fra 10.3 noe sted, eller
+er bare `unsubscribed` faktisk implementert?), eller en systematisk
+gjennomgang av hvilke FR-punkter i seksjon 22 som IKKE har tilsvarende kode
+ennå. Ellers: samme som før — frontend, eller faktisk Brevo-integrasjon.

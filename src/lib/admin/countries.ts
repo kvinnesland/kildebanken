@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { countries, legalDocuments, moderatorCountries, users } from "@/db/schema";
+import { auditLogs, countries, legalDocuments, moderatorCountries, users } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth/authorize";
 
 export type CountryActionResult = { ok: true } | { ok: false; error: string };
@@ -51,6 +51,18 @@ export async function createCountry(input: CreateCountryInput): Promise<CountryA
 
   await db.insert(countries).values({ ...input, status: "draft" });
 
+  // FR-050: "logge alle moderator- og administratorhandlinger ... med
+  // land." Manglet i hele src/lib/admin/ frem til nå — et reelt hull
+  // oppdaget ved å spore audit_logs bakover (se NATTLOGG.md, økt 7).
+  await db.insert(auditLogs).values({
+    actorType: "user",
+    actorUserId: session.userId,
+    countryCode: input.code,
+    action: "country.create",
+    entityType: "country",
+    entityId: input.code,
+  });
+
   return { ok: true };
 }
 
@@ -88,6 +100,15 @@ export async function updateCountry(
     .update(countries)
     .set({ ...input, updatedAt: new Date() })
     .where(eq(countries.code, code));
+
+  await db.insert(auditLogs).values({
+    actorType: "user",
+    actorUserId: session.userId,
+    countryCode: code,
+    action: "country.update",
+    entityType: "country",
+    entityId: code,
+  });
 
   return { ok: true };
 }
@@ -139,6 +160,16 @@ export async function setCountryStatus(
   }
 
   await db.update(countries).set({ status, updatedAt: new Date() }).where(eq(countries.code, code));
+
+  await db.insert(auditLogs).values({
+    actorType: "user",
+    actorUserId: session.userId,
+    countryCode: code,
+    action: "country.status_change",
+    entityType: "country",
+    entityId: code,
+    metadata: { status },
+  });
 
   return { ok: true };
 }
@@ -196,6 +227,15 @@ export async function assignModeratorToCountry(
     .insert(moderatorCountries)
     .values({ moderatorUserId, countryCode: code })
     .onConflictDoNothing();
+
+  await db.insert(auditLogs).values({
+    actorType: "user",
+    actorUserId: session.userId,
+    countryCode: code,
+    action: "country.assign_moderator",
+    entityType: "user",
+    entityId: moderatorUserId,
+  });
 
   return { ok: true };
 }

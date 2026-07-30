@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { moderatorCountries, requests, users } from "@/db/schema";
+import { auditLogs, moderatorCountries, requests, users } from "@/db/schema";
 import {
   createActiveJournalist,
   ensureSecondTestCountry,
@@ -133,6 +133,7 @@ describe("closeRequest mot ekte Postgres — moderator er begrenset til tildelt 
   });
 
   afterAll(async () => {
+    await db.delete(auditLogs).where(eq(auditLogs.entityId, requestId));
     await db.delete(moderatorCountries).where(eq(moderatorCountries.moderatorUserId, moderatorOtherCountryId));
     await db.delete(moderatorCountries).where(eq(moderatorCountries.moderatorUserId, moderatorSameCountryId));
     await db.delete(users).where(eq(users.id, moderatorOtherCountryId));
@@ -149,11 +150,18 @@ describe("closeRequest mot ekte Postgres — moderator er begrenset til tildelt 
     expect(row?.status).toBe("published");
   });
 
-  it("lar en moderator tildelt SAMME land lukke forespørselen", async () => {
+  it("lar en moderator tildelt SAMME land lukke forespørselen, og logger handlingen (FR-050)", async () => {
     const result = await closeRequest(requestId, moderatorSameCountryId);
     expect(result.ok).toBe(true);
 
     const [row] = await db.select({ status: requests.status }).from(requests).where(eq(requests.id, requestId));
     expect(row?.status).toBe("closed");
+
+    const [log] = await db
+      .select()
+      .from(auditLogs)
+      .where(and(eq(auditLogs.entityId, requestId), eq(auditLogs.action, "request.close")));
+    expect(log?.actorUserId).toBe(moderatorSameCountryId);
+    expect(log?.countryCode).toBe(TEST_COUNTRY_CODE);
   });
 });

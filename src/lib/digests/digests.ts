@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
+  auditLogs,
   digestDeliveries,
   digests,
   emailSubscriptions,
@@ -155,6 +156,18 @@ export async function retryFailedDigestDeliveries(digestId: string): Promise<Ret
       .set({ status: "sent", recipientCount: digest.recipientCount + retriedCount })
       .where(eq(digests.id, digestId));
   }
+
+  // FR-050. Manglet frem til nå — samme klasse av hull som resten av
+  // src/lib/admin/ (se NATTLOGG.md, økt 7).
+  await db.insert(auditLogs).values({
+    actorType: "user",
+    actorUserId: session.userId,
+    countryCode: digest.countryCode,
+    action: "digest.retry",
+    entityType: "digest",
+    entityId: digestId,
+    metadata: { retried: retriedCount, failedFound: failedDeliveries.length },
+  });
 
   return { ok: true, retried: retriedCount };
 }

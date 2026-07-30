@@ -1,6 +1,13 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { countries, emailSubscriptions, legalDocuments, legalDocumentType, users } from "@/db/schema";
+import {
+  auditLogs,
+  countries,
+  emailSubscriptions,
+  legalDocuments,
+  legalDocumentType,
+  users,
+} from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { requireAdmin } from "@/lib/auth/authorize";
 
@@ -51,14 +58,30 @@ export async function publishLegalDocument(
     .limit(1);
   if (!country) return { ok: false, error: "errors.invalid_country" };
 
-  await db.insert(legalDocuments).values({
+  const [published] = await db
+    .insert(legalDocuments)
+    .values({
+      countryCode: input.countryCode,
+      locale: input.locale,
+      documentType: input.documentType,
+      version: input.version,
+      body: input.body,
+      isMaterialChange: input.isMaterialChange,
+      publishedAt: new Date(),
+    })
+    .returning({ id: legalDocuments.id });
+  if (!published) throw new Error("insert av juridisk dokument returnerte ingen rad");
+
+  // FR-050. Manglet frem til nå — samme klasse av hull som resten av
+  // src/lib/admin/ (se NATTLOGG.md, økt 7).
+  await db.insert(auditLogs).values({
+    actorType: "user",
+    actorUserId: session.userId,
     countryCode: input.countryCode,
-    locale: input.locale,
-    documentType: input.documentType,
-    version: input.version,
-    body: input.body,
-    isMaterialChange: input.isMaterialChange,
-    publishedAt: new Date(),
+    action: "legal_document.publish",
+    entityType: "legal_document",
+    entityId: published.id,
+    metadata: { documentType: input.documentType, version: input.version, locale: input.locale },
   });
 
   if (input.isMaterialChange && (input.documentType === "terms" || input.documentType === "privacy")) {
