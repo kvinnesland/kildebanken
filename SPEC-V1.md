@@ -1402,11 +1402,13 @@ GET    /legal/:country/:locale/:type   gjeldende versjon av et dokument
 POST   /auth/request-link
 POST   /auth/verify
 POST   /auth/logout
+GET    /digest-access/:token        6.2: bytter tokenet inn i en 30-dagers økt, redirect med ?to=
 
 GET    /me
 PATCH  /me                          visningsnavn, locale, timezone
 POST   /me/change-country           krever aksept av nye vilkår
-DELETE /me                          krever fersk innlogging
+POST   /me/request-deletion         steg 1 av 2 (24.3: fersk autentisering)
+POST   /me/confirm-deletion         steg 2 av 2, { token } — ingen økt kreves, tokenet er autoriteten
 
 POST   /unsubscribe/:token          uten innlogging, ett klikk
 POST   /subscribe                   registrering som mottaker
@@ -1430,11 +1432,12 @@ POST   /responses/:id/withdraw
 
 GET    /journalist/requests/:id/responses
 GET    /journalist/responses/:id
-PATCH  /journalist/responses/:id/marking
+PATCH  /journalist/responses/:id/status    journalist_marking og/eller journalist_note
 POST   /journalist/responses/:id/contact-request
 
 GET    /contact-requests/:id
-POST   /contact-requests/:id/respond    { decision: approved | declined }
+POST   /contact-requests/:id/approve
+POST   /contact-requests/:id/decline
 
 POST   /report                      { entity_type, entity_id, reason, comment }
 
@@ -1502,6 +1505,44 @@ bounce/klage/avmelding (`suppressions`-tabellen 19.13, `reason`-verdiene
 `hard_bounce`/`complaint`/`unsubscribed`), fantes ingen moderator-utløst
 variant (`reason: manual`) noe sted, til tross for at selve `manual`-verdien
 alltid har eksistert i enumen.
+
+`POST /me/request-deletion` og `POST /me/confirm-deletion` erstatter den
+opprinnelige `DELETE /me`-linjen (økt 7, fortsettelse, funnet ved å
+sammenligne denne listen mot de faktiske rutene i `src/app/api/`) — koden
+har alltid vært bygget som en topunkts bekreftelsesflyt
+(`src/lib/auth/account-deletion.ts`, "Steg 1 av 2"/"Steg 2 av 2"), nøyaktig
+som 24.3 krever ("særlig sensitive handlinger skal kreve ny
+autentisering") og som e-postmaltabellen i seksjon 15 allerede henviste
+til under navnet "kontosletting" — men selve API-referansen i DENNE
+seksjonen ble aldri oppdatert til å vise de to faktiske rutene. Ren
+dokumentasjonsdrift, ingen atferdsendring i koden.
+
+`PATCH /journalist/responses/:id/status` erstatter den opprinnelige
+`.../marking`-linjen (økt 7, fortsettelse, samme rutesammenligning) — den
+faktisk bygde og allerede fungerende ruten
+(`src/app/api/journalist/responses/[id]/status/route.ts`, kalt fra
+`ResponseDetailPanel.tsx`) har alltid hett `/status`, aldri `/marking`.
+Rettet spec-en til å matche den fungerende koden i stedet for å endre en
+allerede testet, brukt sti for en ren navnedrift uten funksjonell
+betydning.
+
+`POST /contact-requests/:id/approve` og `.../decline` erstatter den
+opprinnelige `.../respond { decision }`-linjen, av samme grunn (økt 7,
+fortsettelse) — de faktisk bygde rutene
+(`src/app/api/contact-requests/[id]/approve/route.ts` og
+`.../decline/route.ts`) er allerede i bruk fra
+`ContactRequestActions.tsx` (`fetch(\`/api/contact-requests/${id}/${decision}\`)`),
+som to atskilte, kroppsløse endepunkter — ikke ett endepunkt med et
+beslutningsfelt i body-en. Samme resonnement som de to forrige rettingene:
+spec-en tilpasset seg den fungerende, brukte koden.
+
+`GET /digest-access/:token` manglet i denne listen HELT (økt 7,
+fortsettelse) — ikke en navnedrift som de tre over, men en total
+utelatelse. Ruten (`src/app/api/digest-access/[token]/route.ts`) er en
+reell, fullt fungerende og allerede tidligere dokumentert del av 6.2
+("«Les og svar»-lenken ... gir en innlogget økt på 30 dager") og bygget av
+en tidligere økt (se filens egen kommentar, økt 5), men ble aldri lagt til
+i selve API-referansen.
 
 ---
 

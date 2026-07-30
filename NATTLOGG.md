@@ -6016,3 +6016,69 @@ teknikk på resten av kodebasen (spesielt `subscriptions/`- og
 linsen); (2) Brevo-integrasjon, resten av komponentbiblioteket, og
 OG-delingsbilde forblir alle korrekt blokkert (se punktene notert i
 tidligere økter).
+
+---
+
+## Fortsettelse av økt 7 — `subscriptions/`/`journalists/`/`me/` sjekket (rene), pluss en full rutediff mot SPEC-V1.md seksjon 20 fant fire dokumentasjonshull
+
+Fullførte punkt (1) fra forrige "Neste økt": sjekket `subscriptions/`
+(`email-events.ts`, `bounce-policy.ts`, `unsubscribe.ts`), `journalists/`
+(`journalist-profile.ts`), og `me/` (`profile.ts`, `change-country.ts`)
+med samme parvise asymmetri-linse som de tre forrige funnene. Ingen nye
+guard-hull av samme klasse — disse modulene var allerede korrekte
+(`unsubscribeByToken()` er idempotent, `email-events.ts` håndterer alle
+fire hendelsestypene konsistent, `changeCountry()` sjekker samtykke FØR
+noe skrives, akkurat som registreringsflytene).
+
+Med denne spesifikke bug-klassen tilsynelatende uttømt for denne runden,
+prøvde jeg en beslektet, men bredere teknikk: en FULL diff av hver eneste
+rute i SPEC-V1.md seksjon 20 mot hver eneste faktiske `route.ts` i
+`src/app/api/`. Fant FIRE reelle avvik — alle dokumentasjonsdrift, ingen
+atferdsendring i kode:
+
+1. **`DELETE /me` fantes aldri i kode** — den faktiske, allerede bygde og
+   testede flyten er `POST /me/request-deletion` + `POST
+   /me/confirm-deletion` (topunkts bekreftelse, 24.3: "særlig sensitive
+   handlinger skal kreve ny autentisering", se `account-deletion.ts`s egen
+   "Steg 1 av 2"/"Steg 2 av 2"-dokumentasjon). Erstattet linjen i spec-en.
+2. **`PATCH /journalist/responses/:id/marking` het aldri det i kode** —
+   den faktiske, fungerende ruten (kalt fra `ResponseDetailPanel.tsx`) er
+   `/status`. Rettet spec-en til å matche koden, IKKE omvendt — en
+   omdøping av en allerede testet, brukt sti hadde vært ubedt churn for en
+   ren navnedrift.
+3. **`POST /contact-requests/:id/respond { decision }` ble aldri bygget
+   slik** — den faktiske implementasjonen er to atskilte,
+   beslutning-i-stien-endepunkter (`.../approve`, `.../decline`), allerede
+   i bruk fra `ContactRequestActions.tsx`. Samme resonnement: rettet
+   spec-en til koden.
+4. **`GET /digest-access/:token` manglet i listen HELT** — ikke en
+   navnedrift som de tre over, men en total utelatelse. Ruten er reell,
+   fungerende, og allerede dokumentert i SPEC-V1.md 6.2 og bygget av en
+   tidligere økt (økt 5) — den ble bare aldri lagt til i selve
+   API-referansen i seksjon 20. Lagt til.
+
+Bekreftet ved en systematisk kryssjekk (skriptbasert diff av begge
+listene, normalisert for path-parameternavn) at ALLE andre ruter nå
+stemmer eksakt overens, inkludert at kombinerte multi-verb-ruter (f.eks.
+`/requests/:id` med GET+PATCH+DELETE i samme fil, `/admin/countries/:code`
+sin bevisste kombinering av felt-PATCH og statusbytte i ÉN rute) allerede
+var korrekt implementert som spec-en beskriver.
+
+### Verifisert før commit
+
+Ren spec-/dokumentasjonsendring, ingen kodeendring — men kjørte likevel
+hele verifiseringskjeden per standing rule: `tsc --noEmit` (ren),
+`eslint .` (0 feil/advarsler), `vitest run` (**335 tester**, uendret),
+`i18n:check` (**387 nøkler**, uendret), `design:check-tokens` (**40**
+komponent-CSS-filer, uendret), `rm -rf .next && next build` (grønn),
+`test:integration` mot ekte lokal Postgres (**217 tester**, uendret).
+
+### Neste økt
+
+Rutereferansen i seksjon 20 stemmer nå fullstendig overens med faktisk
+kode. Ingen kjente gjenstående spec-vs-kode-hull av noen av de typene
+funnet denne økten (verken guard-asymmetri eller rutedrift). Kandidater
+videre: (1) en tilsvarende diff av seksjon 15 (e-postmaltabellen) mot de
+faktiske malfilene i `src/lib/email/templates/`, samme teknikk anvendt på
+et annet inventar; (2) Brevo-integrasjon, resten av komponentbiblioteket,
+og OG-delingsbilde forblir alle korrekt blokkert.
