@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { auditLogs, contactRequests, requests, responses, users } from "@/db/schema";
+import { auditLogs, contactRequests, journalistProfiles, requests, responses, users } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { isUniqueViolation } from "@/db/errors";
 
@@ -33,9 +33,13 @@ export async function createContactRequest(
       lifecycleStatus: responses.lifecycleStatus,
       contactSharing: responses.contactSharing,
       requestJournalistId: requests.journalistId,
+      requestTitle: requests.title,
+      journalistName: journalistProfiles.fullName,
+      organizationName: journalistProfiles.organizationName,
     })
     .from(responses)
     .innerJoin(requests, eq(responses.requestId, requests.id))
+    .innerJoin(journalistProfiles, eq(requests.journalistId, journalistProfiles.userId))
     .where(eq(responses.id, responseId))
     .limit(1);
 
@@ -79,7 +83,12 @@ export async function createContactRequest(
       await sendTransactionalEmail({
         template: "contact_request_received",
         to: { email: respondent.email, locale: respondent.locale },
-        data: { contactRequestId: created.id },
+        data: {
+          contactRequestId: created.id,
+          requestTitle: response.requestTitle ?? "",
+          journalistName: response.journalistName,
+          organizationName: response.organizationName,
+        },
       });
     }
 

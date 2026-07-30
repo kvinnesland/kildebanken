@@ -62,9 +62,14 @@ export default async function MePage({
       />
 
       {session.role === "recipient" ? (
-        <Link href={`/${locale}/me/bytt-land`} className={buttonClassName("secondary")}>
-          {t("me.change_country_link")}
-        </Link>
+        <div className={styles.actions}>
+          <Link href={`/${locale}/me/svar`} className={buttonClassName("secondary")}>
+            {t("me.responses_link")}
+          </Link>
+          <Link href={`/${locale}/me/bytt-land`} className={buttonClassName("secondary")}>
+            {t("me.change_country_link")}
+          </Link>
+        </div>
       ) : null}
 
       {session.role === "journalist" && journalistProfile ? (

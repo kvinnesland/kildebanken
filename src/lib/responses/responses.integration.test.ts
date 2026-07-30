@@ -1,14 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { requests, responses } from "@/db/schema";
+import { contactRequests, requests, responses } from "@/db/schema";
 import {
   createActiveJournalist,
   createActiveRecipient,
   ensureTestCountry,
   TEST_COUNTRY_CODE,
 } from "@/db/integration/fixtures";
-import { submitResponse, withdrawResponse } from "./responses";
+import { listMineResponses, submitResponse, withdrawResponse } from "./responses";
 
 // Første gang i natt et av disse invariantene faktisk kjøres mot en ekte
 // Postgres, ikke bare leses i migrasjons-SQL-en. Se NATTLOGG.md, økt 7.
@@ -107,5 +107,135 @@ describe("submitResponse / withdrawResponse mot ekte Postgres", () => {
       contactSharing: "none",
     });
     expect(second.ok).toBe(true);
+  });
+});
+
+describe("listMineResponses mot ekte Postgres — utledet displayStatus (SPEC-V1.md 12.6)", () => {
+  let journalistId: string;
+  let requestId: string;
+
+  beforeAll(async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+    journalistId = journalist.id;
+
+    const [request] = await db
+      .insert(requests)
+      .values({
+        journalistId,
+        countryCode: TEST_COUNTRY_CODE,
+        contentLanguage: "nb-NO",
+        title: "Testforespørsel for svarliste",
+        summary: "sum",
+        description: "desc",
+        targetPersonDescription: "target",
+        responseDeadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        status: "published",
+        allowsAnonymousParticipation: true,
+        mayBeRecorded: false,
+        mayInvolvePhotoVideo: false,
+        publishedAt: new Date(),
+      })
+      .returning({ id: requests.id });
+    if (!request) throw new Error("Klarte ikke opprette testforespørsel");
+    requestId = request.id;
+  });
+
+  afterAll(async () => {
+    const responseIdsForRequest = db
+      .select({ id: responses.id })
+      .from(responses)
+      .where(eq(responses.requestId, requestId));
+    await db
+      .delete(contactRequests)
+      .where(inArray(contactRequests.responseId, responseIdsForRequest));
+    await db.delete(responses).where(eq(responses.requestId, requestId));
+    await db.delete(requests).where(eq(requests.id, requestId));
+  });
+
+  it("prioriterer not_selected over contact_requested/viewed når flere er sanne samtidig", async () => {
+    const respondent = await createActiveRecipient();
+    const submitted = await submitResponse(requestId, respondent.id, {
+      relevanceStatement: "Relevant.",
+      answerText: "Svar.",
+      contactSharing: "none",
+    });
+    if (!submitted.ok) throw new Error("fail submit");
+
+    await db
+      .update(responses)
+      .set({ viewedAt: new Date(), journalistMarking: "not_selected" })
+      .where(eq(responses.id, submitted.id));
+    await db.insert(contactRequests).values({
+      responseId: submitted.id,
+      journalistId,
+      message: "Kan jeg få vite mer?",
+      requestedContactMethod: "e-post",
+      status: "pending",
+      expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+    });
+
+    const mine = await listMineResponses(respondent.id);
+    const item = mine.find((r) => r.id === submitted.id);
+    expect(item?.displayStatus).toBe("not_selected");
+    expect(item?.canWithdraw).toBe(true);
+  });
+
+  it("viser contact_requested når en kontaktforespørsel finnes, men ingen not_selected-markering", async () => {
+    const respondent = await createActiveRecipient();
+    const submitted = await submitResponse(requestId, respondent.id, {
+      relevanceStatement: "Relevant.",
+      answerText: "Svar.",
+      contactSharing: "none",
+    });
+    if (!submitted.ok) throw new Error("fail submit");
+
+    await db.insert(contactRequests).values({
+      responseId: submitted.id,
+      journalistId,
+      message: "Kan jeg få vite mer?",
+      requestedContactMethod: "e-post",
+      status: "pending",
+      expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+    });
+
+    const mine = await listMineResponses(respondent.id);
+    const item = mine.find((r) => r.id === submitted.id);
+    expect(item?.displayStatus).toBe("contact_requested");
+  });
+
+  it("viser viewed når svaret er sett, men ingen kontaktforespørsel/markering finnes", async () => {
+    const respondent = await createActiveRecipient();
+    const submitted = await submitResponse(requestId, respondent.id, {
+      relevanceStatement: "Relevant.",
+      answerText: "Svar.",
+      contactSharing: "none",
+    });
+    if (!submitted.ok) throw new Error("fail submit");
+
+    await db.update(responses).set({ viewedAt: new Date() }).where(eq(responses.id, submitted.id));
+
+    const mine = await listMineResponses(respondent.id);
+    const item = mine.find((r) => r.id === submitted.id);
+    expect(item?.displayStatus).toBe("viewed");
+  });
+
+  it("viser submitted som standard, og canWithdraw=false når forespørselen ikke lenger er published", async () => {
+    const respondent = await createActiveRecipient();
+    const submitted = await submitResponse(requestId, respondent.id, {
+      relevanceStatement: "Relevant.",
+      answerText: "Svar.",
+      contactSharing: "none",
+    });
+    if (!submitted.ok) throw new Error("fail submit");
+
+    let mine = await listMineResponses(respondent.id);
+    expect(mine.find((r) => r.id === submitted.id)?.displayStatus).toBe("submitted");
+
+    await db.update(requests).set({ status: "closed" }).where(eq(requests.id, requestId));
+    mine = await listMineResponses(respondent.id);
+    expect(mine.find((r) => r.id === submitted.id)?.canWithdraw).toBe(false);
+
+    await db.update(requests).set({ status: "published" }).where(eq(requests.id, requestId));
   });
 });

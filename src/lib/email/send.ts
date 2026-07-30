@@ -8,6 +8,9 @@ import { renderResponseSubmittedReceiptEmail } from "./templates/response-submit
 import { renderNewResponseReceivedEmail } from "./templates/new-response-received";
 import { renderConfirmAccountDeletionEmail } from "./templates/confirm-account-deletion";
 import { renderAccountDeletionConfirmedEmail } from "./templates/account-deletion-confirmed";
+import { renderContactRequestReceivedEmail } from "./templates/contact-request-received";
+import { renderContactApprovedEmail } from "./templates/contact-approved";
+import { renderContactDeclinedEmail } from "./templates/contact-declined";
 import type { RenderedEmail } from "./templates/simple-cta-email";
 
 // Tynt e-postgrensesnitt. Selve jobblogikken (src/lib/jobs/tick.ts) kaller
@@ -53,7 +56,7 @@ export interface SendTransactionalEmailInput {
 
 /**
  * Rendrer den faktiske mal-HTML-en/-teksten for de malene som har en ekte
- * mal bygget (foreløpig ni, økt 7 — de andre 14 malene i
+ * mal bygget (foreløpig tolv, økt 7 — de andre 11 malene i
  * `TransactionalTemplate` er ennå bare navn uten innhold, se NATTLOGG.md).
  * `null` betyr "ingen mal bygget ennå for denne, ELLER dataene som kreves
  * mangler", ikke en feil — stubben under faller da tilbake til det gamle,
@@ -102,6 +105,31 @@ function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedE
         ? renderResponseSubmittedReceiptEmail(locale, requestId, requestTitle, requestSlug)
         : renderNewResponseReceivedEmail(locale, requestId, requestTitle, requestSlug);
     }
+    case "contact_request_received": {
+      const { contactRequestId, requestTitle, journalistName, organizationName } = input.data;
+      if (
+        typeof contactRequestId !== "string" ||
+        typeof requestTitle !== "string" ||
+        typeof journalistName !== "string" ||
+        typeof organizationName !== "string"
+      ) {
+        return null;
+      }
+      return renderContactRequestReceivedEmail(
+        locale,
+        contactRequestId,
+        requestTitle,
+        journalistName,
+        organizationName
+      );
+    }
+    case "contact_approved": {
+      const contactRequestId = input.data.contactRequestId;
+      if (typeof contactRequestId !== "string") return null;
+      return renderContactApprovedEmail(locale, contactRequestId);
+    }
+    case "contact_declined":
+      return renderContactDeclinedEmail(locale);
     default:
       return null;
   }

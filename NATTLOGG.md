@@ -4694,3 +4694,122 @@ raskt overblikk over HELE `src/app/api/`-treet mot `src/app/[locale]/`
 for å se om det finnes flere gjenværende "ruten finnes, siden gjør
 det ikke"-hull av samme type før man går videre til andre kategorier
 arbeid.
+
+---
+
+## Fortsettelse av økt 7 — respondentens svaroversikt + hele kontaktforespørsel-flyten (SPEC-V1.md 12.6, 14), det siste store "backend uten UI"-hullet
+
+Fulgte forrige del av øktens eget forslag (punkt 10): et raskt overblikk
+over `src/app/api/` mot `src/app/[locale]/` FØR neste kategori arbeid.
+Fant det klart største gjenværende hullet: HELE respondentens
+("mottakerens") egen oversikt over innsendte svar og videre kontakt
+(SPEC-V1.md 14) manglet UI fullstendig — `GET /responses/mine`,
+`POST /responses/:id/withdraw`, `GET /contact-requests/:id`,
+`POST /contact-requests/:id/approve|decline` fantes alle, men ingen side
+kalte noen av dem. En egen, ubrukt funksjon (`getRespondentView()` i
+`responses.ts`) sto der som et tegn på nøyaktig dette — skrevet for en
+side som aldri ble bygget.
+
+### Et reelt spec-hull funnet FØR bygging, ikke gjettet under veis
+
+Fire i18n-nøkler (`response.status.submitted/viewed/contact_requested/
+not_selected`) har ligget klare siden økt 1, tydelig ment for nøyaktig
+denne siden — men INGEN del av spec-en beskrev innholdet i den. Søkte
+eksplisitt etter en "respondentens egen svarliste"-seksjon og fant
+ingen. Rettet spec-en FØRST (regelen: "spec-en er sannheten... rett
+spec-en først, deretter koden"): la til en ny **12.6 "Respondentens
+oversikt over egne svar"** i `SPEC-V1.md`, som formaliserer nøyaktig det
+de fire eksisterende nøklene allerede antydet — inkludert en eksplisitt
+PRIORITERINGSREKKEFØLGE for når flere utledede statuser er sanne
+samtidig (`not_selected` > `contact_requested` > `viewed` > `submitted`,
+den mest informative vinner), siden dette ikke kan utledes fra
+nøklene alene.
+
+### Bygget
+
+- `listMineResponses()` (`responses.ts`) utvidet fra et rått felt-sett
+  til å returnere en UTLEDET `displayStatus` (per 12.6 sin
+  prioriteringsregel) og `canWithdraw` (om den underliggende
+  forespørselen fortsatt er `published`) — ikke bare et tynnere
+  api-object. 4 nye integrasjonstester som dekker alle fire
+  prioriteringskombinasjonene.
+- `src/app/[locale]/me/svar/page.tsx` + `MyResponsesList.tsx` — listen,
+  med `Badge` for utledet status og en "Trekk svaret"-knapp der
+  `canWithdraw`. Fanget en reell React-antimønster-feil FØR den ble
+  committet: skrev først en komponent DEFINERT INNI en annen
+  komponent-funksjon (ny type ved hver rendring, ville mistet
+  tilstand/remountet ved enhver forelder-rerendering) — flyttet
+  `ResponseListItem` ut til modulnivå før commit.
+- `src/app/[locale]/contact-requests/[id]/page.tsx` +
+  `ContactRequestActions.tsx` — ÉN side for BEGGE partene (journalisten
+  som sendte forespørselen, OG respondenten den gjelder), siden
+  `getContactRequestDetail()` allerede håndhever hvem som ser hva
+  (bl.a. skjuler `shared_email` for journalisten før godkjenning).
+  Godkjenn-/avslå-knapper vises KUN for respondenten når status er
+  `pending`.
+- Tre nye e-postmaler (`contact_request_received`, `contact_approved`,
+  `contact_declined`) — `createContactRequest()` (`contact-requests.ts`)
+  utvidet til å hente journalistnavn/redaksjon/forespørselstittel (én
+  ekstra join) for at e-posten faktisk skal si HVEM som ber om kontakt
+  og OM HVA, ikke bare en generisk varsling. `contact_approved` peker
+  til SAMME kontaktforespørsel-side (der journalisten kan se den delte
+  e-postadressen), i stedet for å legge selve adressen rått i
+  e-postteksten. `contact_declined` har bevisst ingen data og ingen CTA
+  (14.2, ordrett: "uten begrunnelse").
+- `src/lib/responses/status-badge.ts` og
+  `src/lib/contact-requests/status-badge.ts` (nye, små filer) — samme
+  ett-sted-for-fargetilordning-prinsipp (DESIGN.md 6.2) som
+  `requests/status-badge.ts` fra tidligere i natt.
+
+### En akseptert forenkling, ikke en feil — notert eksplisitt
+
+Etter at en kontaktforespørsel er BESVART (godkjent/avslått),
+viser `/me/svar` fortsatt `displayStatus = "contact_requested"` for det
+svaret — `listMineResponses()` sjekker bare at en kontaktforespørsel
+FINNES, ikke dens nåværende status. Selve kontaktforespørsel-siden viser
+riktig, oppdatert status (`Godkjent`/`Avslått`); listen viser bare at
+"noe skjedde her". Vurdert bevisst som god nok for v1 fremfor å innføre
+enda flere utledede statuser (`contact_approved`/`contact_declined`
+som EGNE `displayStatus`-verdier) — ikke lagt til 12.6 i spec-en heller,
+siden det ville vært en gjetning uten en klar begrunnelse. Notert her
+for en fremtidig økt å vurdere, ikke glemt.
+
+### Verifisert ende til ende i en ekte nettleser, uavhengig av UI-teksten
+
+Sådd en journalist med en publisert forespørsel og en respondent med et
+innsendt svar (`contactSharing: none`). Sendte en faktisk
+kontaktforespørsel via API-et, hentet den EKTE lenken fra
+`contact_request_received`-loggen, besøkte `/me/svar` (viste riktig
+"Forespørsel om videre kontakt"-status), åpnet kontaktforespørsel-siden
+som respondent (viste melding, kontaktform, utløpsdato, riktige
+knapper), godkjente den — og besøkte SAMME side som journalisten
+etterpå, som nå viste "Godkjent" og den delte e-postadressen. Bekreftet
+UAVHENGIG i databasen at `contact_requests.status = 'approved'` og
+`shared_email` faktisk var satt. Skjermbilder tatt og sjekket visuelt
+for begge roller.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**274
+tester**, +16 nye), `i18n:check` (**326 nøkler**), `design:check-tokens`
+(38 komponent-CSS-filer), `rm -rf .next && next build`,
+`test:integration` mot ekte lokal Postgres (47 tester, +4 nye), PLUSS
+ende-til-ende-nettleserverifiseringen beskrevet over (begge roller).
+
+### Neste økt
+
+(1) vurder om `contact_approved`/`contact_declined` bør bli egne
+`displayStatus`-verdier i 12.6 (se "akseptert forenkling" over) — ikke
+en feil, men en reell forbedringsmulighet; (2) den store
+testbarhets-refaktoreringen (`admin/`/`moderation/`-lib-laget) —
+fortsatt bevisst utsatt; (3) resten av komponentbiblioteket (Dialog,
+Toast, Card, Alert, Tabs, Table, Pagination); (4) resten av
+16.1-dashbordet; (5) den ubrukte `"approved"`-verdien i
+`request_status`-enumen; (6) OG-delingsbilde; (7) det
+oversatte-stinavn-hullet (3.7); (8) flere e-postmaler etter behov (nå
+10 gjenstår); (9) faktisk Brevo-integrasjon når en API-nøkkel finnes;
+(10) den siste ubrukte `nav.*`-nøkkelen, `nav.requests`; (11) alle
+kjente "backend uten UI"-hull er nå lukket — vurder om et nytt
+overblikk over `src/app/api/` fortsatt er verdt å gjøre, eller om det
+er tid for å gå videre til de andre kategoriene (komponentbibliotek,
+16.1-dashbord, Brevo).

@@ -703,6 +703,37 @@ Moderator handler manuelt og logger tiltaket i revisjonsloggen.
 Tiltak moderator kan sette i verk: lukke forespørselen, skjule et svar,
 suspendere kontoen, sperre e-postadressen.
 
+### 12.6 Respondentens oversikt over egne svar
+
+Lagt til under autonomt arbeid (økt 7, se NATTLOGG.md) — et reelt hull mellom
+spec og kode, ikke en ny beslutning: `GET /responses/mine` (seksjon 20) og
+fire status-oversettelser (`response.status.submitted/viewed/
+contact_requested/not_selected`, satt opp allerede i økt 1) forutsatte
+tydelig at denne siden skulle finnes, men ingen del av spec-en beskrev
+innholdet.
+
+En innlogget mottaker kan se en liste over sine egne innsendte svar, med per
+svar: forespørselens tittel, redaksjonen som mottok det, innsendingstidspunkt,
+og én utledet status – ikke råe databasefelter:
+
+```
+sendt              → standard, ingen av det under gjelder ennå
+sett av journalisten → viewed_at er satt
+forespørsel om videre kontakt → en kontaktforespørsel (14) finnes for svaret
+ikke valgt         → journalistens markering (13) er not_selected
+```
+
+Rekkefølgen over er prioriteringsrekkefølgen når flere er sanne samtidig
+(f.eks. et sett OG ikke valgt svar viser «ikke valgt», som er den mest
+informative av de to for respondenten).
+
+Herfra kan respondenten trekke et svar (12.4) så lenge forespørselen
+fortsatt er åpen — knappen vises, men et forsøk mot en lukket/utløpt
+forespørsel avvises av samme regel som allerede håndheves server-side.
+
+Ingen filtrering, sortering eller søk i v1 – samme begrunnelse som 13
+("volumet forsvarer det ikke").
+
 ---
 
 ## 13. Journalistens svarinnboks

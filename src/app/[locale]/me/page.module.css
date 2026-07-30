@@ -28,3 +28,8 @@
   color: var(--color-text);
   margin-bottom: var(--space-3);
 }
+
+.actions {
+  display: flex;
+  gap: var(--space-3);
+}

@@ -167,26 +167,76 @@ export async function getRespondentView(responseId: string, respondentUserId: st
   return row ?? null;
 }
 
+export type MineResponseDisplayStatus =
+  | "submitted"
+  | "viewed"
+  | "contact_requested"
+  | "not_selected";
+
+export interface MineResponseItem {
+  id: string;
+  requestId: string;
+  requestTitle: string;
+  organizationName: string;
+  submittedAt: Date;
+  displayStatus: MineResponseDisplayStatus;
+  canWithdraw: boolean;
+}
+
 /**
- * GET /responses/mine (SPEC-V1.md 20). Kun statuser med reell verdi for
- * respondenten (17): trukne svar finnes ikke lenger i det hele tatt
+ * GET /responses/mine (SPEC-V1.md 12.6, 20). Kun statuser med reell verdi
+ * for respondenten: trukne svar finnes ikke lenger i det hele tatt
  * (hard-slettet, se withdrawResponse over), så denne lister uansett bare
- * det som fortsatt eksisterer.
+ * det som fortsatt eksisterer. `displayStatus` er en UTLEDET status (12.6),
+ * ikke et råt databasefelt — prioritert i rekkefølgen not_selected >
+ * contact_requested > viewed > submitted når flere er sanne samtidig (den
+ * mest informative vinner).
  */
-export async function listMineResponses(respondentUserId: string) {
-  return db
+export async function listMineResponses(respondentUserId: string): Promise<MineResponseItem[]> {
+  const rows = await db
     .select({
       id: responses.id,
       requestId: responses.requestId,
       requestTitle: requests.title,
-      lifecycleStatus: responses.lifecycleStatus,
+      requestStatus: requests.status,
       submittedAt: responses.submittedAt,
       viewedAt: responses.viewedAt,
-      contactSharing: responses.contactSharing,
+      journalistMarking: responses.journalistMarking,
       organizationName: journalistProfiles.organizationName,
     })
     .from(responses)
     .innerJoin(requests, eq(responses.requestId, requests.id))
     .innerJoin(journalistProfiles, eq(requests.journalistId, journalistProfiles.userId))
     .where(eq(responses.respondentId, respondentUserId));
+
+  if (rows.length === 0) return [];
+
+  const contactRequestByResponse = new Set(
+    (
+      await db
+        .select({ responseId: contactRequests.responseId })
+        .from(contactRequests)
+        .innerJoin(responses, eq(contactRequests.responseId, responses.id))
+        .where(eq(responses.respondentId, respondentUserId))
+    )
+      .map((r) => r.responseId)
+      .filter((id): id is string => id !== null)
+  );
+
+  return rows.map((r) => {
+    let displayStatus: MineResponseDisplayStatus = "submitted";
+    if (r.journalistMarking === "not_selected") displayStatus = "not_selected";
+    else if (contactRequestByResponse.has(r.id)) displayStatus = "contact_requested";
+    else if (r.viewedAt) displayStatus = "viewed";
+
+    return {
+      id: r.id,
+      requestId: r.requestId,
+      requestTitle: r.requestTitle ?? "",
+      organizationName: r.organizationName,
+      submittedAt: r.submittedAt,
+      displayStatus,
+      canWithdraw: r.requestStatus === "published",
+    };
+  });
 }

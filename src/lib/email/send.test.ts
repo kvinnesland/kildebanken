@@ -154,18 +154,66 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
     expect(loggedMessage).toContain("Kunne ikke bekrefte tilknytning til oppgitt redaksjon.");
   });
 
-  it("faller tilbake til det generiske formatet for maler uten en bygget mal ennå", async () => {
+  it("logger den faktisk rendrede malen for contact_request_received", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sendTransactionalEmail({
+      template: "contact_request_received",
+      to: { email: "respondent@example.com", locale: "nb-NO" },
+      data: {
+        contactRequestId: "cr-1",
+        requestTitle: "En testforespørsel",
+        journalistName: "Kari Journalist",
+        organizationName: "Testavisen",
+      },
+    });
+
+    const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
+    expect(loggedMessage).toContain("Forespørsel om videre kontakt");
+    expect(loggedMessage).toContain("Kari Journalist");
+  });
+
+  it("logger den faktisk rendrede malen for contact_approved", async () => {
     vi.stubEnv("BREVO_API_KEY", "");
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     await sendTransactionalEmail({
       template: "contact_approved",
+      to: { email: "journalist@example.com", locale: "nb-NO" },
+      data: { contactRequestId: "cr-1" },
+    });
+
+    const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
+    expect(loggedMessage).toContain("Kontakt godkjent");
+  });
+
+  it("logger den faktisk rendrede malen for contact_declined (ingen data trengs)", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sendTransactionalEmail({
+      template: "contact_declined",
+      to: { email: "journalist@example.com", locale: "nb-NO" },
+      data: {},
+    });
+
+    const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
+    expect(loggedMessage).toContain("Kontakt avslått");
+  });
+
+  it("faller tilbake til det generiske formatet for maler uten en bygget mal ennå", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sendTransactionalEmail({
+      template: "request_approved_published",
       to: { email: "test@example.com", locale: "nb-NO" },
       data: { requestId: "some-id" },
     });
 
     expect(warnSpy).toHaveBeenCalledWith(
-      "[email:stub] contact_approved → test@example.com (nb-NO)",
+      "[email:stub] request_approved_published → test@example.com (nb-NO)",
       { requestId: "some-id" }
     );
   });
