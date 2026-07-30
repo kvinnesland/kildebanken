@@ -1917,3 +1917,80 @@ Gjenstår av den systematiske FR-gjennomgangen: FR-013 (aktivere et land
 ende-til-ende mot ekte data — kunne faktisk KJØRES nå som en lokal Postgres
 finnes i sandkassen, i motsetning til resten av natten). Ellers: frontend,
 eller faktisk Brevo-integrasjon når en API-nøkkel finnes.
+
+---
+
+## Fortsettelse av økt 7 — FR-013 verifisert ende-til-ende mot ekte HTTP, ikke bare lib-funksjoner
+
+Samme arbeidsøkt (nok en gang startet med `git log`/`git status` for å
+bekrefte at trigger-promptens "neste steg"-liste var utdatert — alt der er
+gjort for lengst — og fortsatte fra NATTLOGG.md sin faktiske status).
+
+Første gang i natt noe er testet over EKTE HTTP mot en kjørende `next dev`,
+ikke bare kalt direkte som bibliotekfunksjoner i vitest. Alt tidligere i
+natt har enten vært enhetstester, integrasjonstester mot biblioteksfunksjoner
+(uten `"server-only"`-avhengighet), eller bare `tsc`/`eslint`/`next build`
+for koden som IKKE kan testes uten en ekte innlogget økt (hele
+`src/lib/admin/`, `suspendUser()` osv.). Denne runden lukker akkurat det
+hullet for én konkret flyt.
+
+### Fremgangsmåte
+
+1. Startet Postgres på nytt (sandkassen hadde restartet siden forrige økt —
+   som forventet, se merknad fra tidligere i natt), bekreftet migrasjon
+   0006 sto ved lag.
+2. Satte opp en midlertidig `.env.local` (IKKE committet — `.gitignore`
+   dekker den) pekende på `kildebanken_test`.
+3. Opprettet en administratorbruker direkte i databasen (ingen
+   selvregistrering for rollen finnes, som ventet).
+4. Startet `next dev`, hentet et ekte magic link-token fra konsoll-loggen
+   (samme `[email:stub]`-mønster som resten av natten), verifiserte det mot
+   `POST /api/auth/verify` og fikk en ekte økt-cookie.
+5. Kjørte HELE FR-013-flyten som ekte HTTP-kall med den cookien:
+   - `POST /api/admin/countries` — opprettet et helt NYTT land (`XE`),
+     bekreftet `draft` og usynlig i `GET /api/countries` (offentlig), men
+     synlig i `GET /api/admin/countries` (administrator).
+   - `PATCH /api/admin/countries/XE {status: active}` FØR juridiske
+     dokumenter fantes → korrekt avvist (`errors.legal_documents_unavailable`).
+   - `POST /api/admin/legal-documents` × 2 (terms + privacy, `nb-NO`).
+   - Samme aktiveringsforsøk igjen, FØR en moderator var tildelt → korrekt
+     avvist (`errors.no_moderator_assigned`).
+   - `POST /api/admin/countries/XE/moderators` — opprettet en ny
+     moderatorkonto direkte via e-post (bekrefter antagelsen fra forrige
+     del av natten fungerer i praksis).
+   - Samme aktiveringsforsøk en tredje gang → LYKTES.
+   - `GET /api/countries` — `XE` er nå offentlig synlig, uten noen
+     kodeendring eller migrasjon underveis (FR-013, ordrett).
+   - `POST /api/subscribe` mot det NYE landet — en ekte mottakerregistrering
+     lyktes, med riktig `country_code`/`locale` på brukeren og alle FIRE
+     forventede `ConsentRecord`-rader (samme mønster som verifisert i
+     integrasjonstestene fra tidligere i natt, nå bekreftet over hele
+     HTTP-stacken i tillegg til bibliotekslaget).
+6. Stoppet `next dev`, ryddet opp ALLE testrader (bruker, økt, auth-token,
+   samtykker, abonnement, moderatorstilldeling, revisjonslogg, juridiske
+   dokumenter, selve landet `XE`) fra `kildebanken_test`, slettet den
+   midlertidige `.env.local`. Bekreftet `kildebanken_test` er tilbake til
+   nøyaktig samme tilstand som før (kun `XT`/`XU`, som de øvrige
+   integrasjonstestene allerede forutsetter).
+
+### Ingen kodeendring, ingen commit for selve testen
+
+FR-013 var allerede riktig bygget — dette var en verifikasjon, ikke en
+retting. Ingen hull funnet denne gangen; loggført likevel siden det er
+første ekte HTTP-ende-til-ende-test i hele natten og verdt å vite at
+metoden (manuell magic-link-utvinning fra dev-server-konsollen, cookie-jar
+via curl) fungerer, om den skulle trengs igjen.
+
+### Verifisert
+
+Full HTTP-flyt over, PLUSS `npx vitest run -c vitest.integration.config.ts`
+mot ekte lokal Postgres etterpå (32 tester, uendret — bekrefter opprydding
+ikke etterlot noe som forstyrrer de andre testene).
+
+### Neste økt
+
+FR-013 er nå den TREDJE FR-en bekreftet uten hull denne natten (etter
+FR-028 og FR-052). Fortsett gjerne den systematiske gjennomgangen for de
+gjenværende FR-punktene, men metoden har nå funnet åtte reelle hull totalt
+i natt og tre bekreftelser — avtagende treffrate, så det kan snart være
+verdt å bytte fokus til frontend eller faktisk Brevo-integrasjon i stedet.
