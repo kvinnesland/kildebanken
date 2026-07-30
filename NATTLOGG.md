@@ -2389,3 +2389,94 @@ Naturlige neste steg: (1) en Postgres-service-container i CI for
 OKLCH-fargekonvertering (egen forsiktighet, se tidligere i økten); (3)
 resten av komponentbiblioteket (`RadioGroup`/`Select` for
 registreringsskjemaets land/språk-felt).
+
+---
+
+## Fortsettelse av økt 7 — CI-en faktisk KJØRTE, og fant en reell feil ingen lokal kommando kunne funnet
+
+Samme arbeidsøkt. Siden GitHub-verktøyene var tilgjengelige i denne
+runden, sjekket jeg faktisk RESULTATET av forrige commit sin CI-kjøring i
+stedet for å anta at "validert YAML + grønt lokalt" var nok — og fikk rett
+i å sjekke: **kjøringen feilet**, på "Enhetstester"-steget, med en feil
+`tsc --noEmit` og `eslint .` aldri kunne fange, og som ikke reproduserte
+lokalt (denne sandkassen kjører Node 22, ikke Node 20).
+
+### Rotårsak, funnet i selve loggen
+
+`npm ci` ga flere `EBADENGINE`-advarsler (ikke feil — npm installerer
+uansett) for `jsdom@30`, `@testing-library/jest-dom@7`, og deres
+transitive avhengigheter (`undici@8.9.0`, `whatwg-url@17.1.0` m.fl.) — ALLE
+krever reelt Node ≥22, mens `package.json` sin `engines.node` sier `>=20`
+og CI-workflow-en (riktig nok, se forrige del av økten) satte opp Node 20
+nettopp fordi det ER det faktiske gulvet prosjektet lover. Selve
+kjøretidsfeilen: `TypeError: webidl.util.markAsUncloneable is not a
+function` inne i `undici` sin `CacheStorage`-polyfill, lastet transitivt
+av `jsdom` sin `api.js` — en reell, ikke-null-relatert Node-versjons-
+inkompatibilitet, ikke en flakete test.
+
+### Rettet — IKKE ved å heve Node-gulvet
+
+Vurderte å bare sette `engines.node` til `>=22` og CI til Node 22 i
+stedet — men det ville vært en reell innsnevring av hva prosjektet lover å
+kjøre på (relevant for `netlify/functions`-kjøretiden,
+`INFRASTRUCTURE.md` 16), bare for å slippe å nedgradere to
+dev-avhengigheter. Valgte i stedet å beholde det faktiske Node-gulvet
+UENDRET og nedgradere:
+
+- `jsdom` 30.0.1 → **26.1.0** (siste versjon som selv oppgir `node: '>=18'`).
+- `@testing-library/jest-dom` 7.0.0 → **6.9.1** (siste 6.x-versjon som
+  oppgir `node: '>=14'` — `6.10.0` og `7.x` krever begge `>=22`).
+
+Verifisert LOKALT igjen etter nedgraderingen (samme seks kommandoer, alle
+grønne, 89 tester — inkludert de 11 nye OKLCH-testene fra samme økt), MEN
+lokal grønnhet beviser ingenting om selve Node 20-kompatibiliteten siden
+denne sandkassen selv kjører Node 22. Committet og pushet for å la den
+EKTE CI-kjøringen (faktisk Node 20) være den egentlige verifiseringen —
+samme prinsipp som FR-013-E2E-testen tidligere i natt: ikke anta, sjekk
+mot den ekte tingen.
+
+### I samme slengen: OKLCH→sRGB-fargekonvertering (utsatt fra tidligere i økten)
+
+Byttet til dette mens CI-kjøringen pågikk. `src/styles/color/oklch.ts` —
+Björn Ottossons offentlig publiserte OKLab↔lineær-sRGB-matriser (samme som
+CSS Color 4/`culori`/`colorjs.io`), IKKE en tilnærming. Eksporterer
+`oklchToSrgbHex()` (for fremtidig e-postmal-tokeneksport, DESIGN.md 7) og
+`oklchContrastRatio()`/`relativeLuminance()`/`contrastRatio()` (for den
+automatiserte WCAG-kontrasttesten DESIGN.md 2.4 krever, ikke bygget som
+egen sjekk ennå — bare selve matematikk-primitivene).
+
+**Verifiseringsstrategi uten et eksternt fargeverktøy tilgjengelig:**
+brukte AKROMATISKE referanseverdier (kroma = 0), som kan etterregnes for
+hånd fordi lineær R=G=B=L³ eksakt når kroma er null (matrisens radsummer
+er nøyaktig 1,0 for alle tre kanaler — verifisert manuelt). 11 tester,
+inkludert: hvit/svart eksakt, `oklch(50% 0 0)` ≈ byte 99 (0x63) — IKKE
+rgb(128,128,128), et kjent og sjekkbart trekk ved OKLab (50 % persepsjonell
+lystetthet ligger IKKE på sRGB-midtpunktet), hvit-mot-svart-kontrastforhold
+eksakt 21:1 (WCAG-lærebokverdien), OG en REELL sjekk av et faktisk
+DESIGN.md-tokenpar (`--gray-900` mot `--gray-50`, lyst tema) som bekrefter
+4.5:1 AA-kravet for normal tekst — det første beviset i natt på at DE
+FAKTISKE fargeverdiene i `tokens/primitives.css` består WCAG AA, ikke bare
+at selve matematikken er riktig.
+
+**Ikke bygget ennå:** selve "kjør over den definerte listen av par i begge
+temaer"-testen DESIGN.md 2.4 ber om (krever å liste opp ALLE faktisk
+BRUKTE tekst/bakgrunn-par fra `semantic.css`, i begge temaer) — bare
+byggeklossene og én stikkprøve. Egen, avgrenset oppgave for neste økt.
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**89
+tester**, +11 nye OKLCH-tester), `i18n:check`, `design:check-tokens`
+(OK), `next build`, OG `npx vitest run -c vitest.integration.config.ts`
+mot ekte lokal Postgres (39 tester, uendret). PLUSS: pushet og sjekket den
+FAKTISKE CI-kjøringen på GitHub (Node 20) etterpå — se neste del av økten
+for resultatet.
+
+### Neste økt
+
+(1) Bekreft at CI-kjøringen faktisk ble grønn etter nedgraderingen (sjekk
+`gh`/GitHub-verktøyene ved neste oppvåkning dersom ikke gjort før økten
+slutter); (2) selve "alle tokenpar i begge temaer"-WCAG-testen DESIGN.md
+2.4 krever, bygget PÅ de nå ferdige `oklch.ts`-primitivene; (3) en
+Postgres-service-container i CI for `test:integration`; (4) resten av
+komponentbiblioteket.
