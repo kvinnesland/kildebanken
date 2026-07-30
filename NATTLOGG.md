@@ -5290,3 +5290,47 @@ om `contact_approved`/`contact_declined` bør bli egne
 (Dialog, Toast, Card, Alert, Tabs, Table, Pagination); (5) resten av
 16.1-dashbordet; (6) den ubrukte `"approved"`-verdien i
 `request_status`-enumen; (7) OG-delingsbilde.
+
+## Fortsettelse av økt 7 — `moderation/journalists.ts` og `moderation/users.ts` også dekket
+
+Fortsatte rett på punkt (2) fra forrige "Neste økt" mens mønsteret var
+ferskt. Begge filene har nøyaktig samme form som `moderation/requests.ts`
+(session-gated via `requireModeratorForCountry()`), så samme
+`vi.mock("next/headers")`-oppskrift ble gjenbrukt uten videre
+tilpasning:
+
+- `moderation/journalists.integration.test.ts` (5 tester) —
+  `approveJournalist()`/`rejectJournalist()`: happy path + e-postvarsling
+  (godkjenning OG avvisning, sistnevnte med begrunnelsen satt inn
+  uoversatt), landbegrensning, administrator-unntaket (19.4).
+- `moderation/users.integration.test.ts` (8 tester) —
+  `suspendUser()`/`unsuspendUser()`: begrunnelse påkrevd, faktisk
+  statusendring, økter avsluttes, journalistens EGNE ventende
+  kontaktforespørsler kanselleres (8.1) — men IKKE andres, idempotens
+  ved gjentatt suspensjon, landbegrensning, og at
+  `verification_status` IKKE røres ved oppheving av suspensjon (8.1,
+  siste avsnitt — presist det spec-sitatet sier).
+
+Gjenstår nå kun de tre filene i `admin/` (`countries.ts`,
+`legal-documents.ts`, `responses.ts`) — samme bevist fungerende mønster,
+men disse er ikke gjennomgått i detalj ennå denne økten (landkonfigurasjon
+og enkeltsvar-begrunnelseslisten fra 16.1 kan ha egne særtrekk å sjekke
+først).
+
+### Verifisert før commit
+
+`tsc --noEmit`, `eslint .` (0 feil/advarsler), `vitest run` (**329
+tester**, uendret), `i18n:check` (uendret), `design:check-tokens`,
+`rm -rf .next && next build`, `test:integration` mot ekte lokal Postgres
+(**90 tester**, +13 nye — alle grønne, ingen regresjon).
+
+### Neste økt
+
+(1) faktisk Brevo-integrasjon når en API-nøkkel finnes; (2) de tre siste
+utestede filene i `admin/` (`countries.ts`/`legal-documents.ts`/
+`responses.ts`) — samme bevist mønster; (3) vurder om
+`contact_approved`/`contact_declined` bør bli egne `displayStatus`-
+verdier i 12.6; (4) resten av komponentbiblioteket (Dialog, Toast, Card,
+Alert, Tabs, Table, Pagination); (5) resten av 16.1-dashbordet; (6) den
+ubrukte `"approved"`-verdien i `request_status`-enumen; (7)
+OG-delingsbilde.
