@@ -77,21 +77,19 @@ export interface CurrentSession {
  * glidende vindu, i motsetning til moderator/administrator (6.3: fast 12
  * timer, ingen fornyelse nevnt). `renewSessionIfApplicable()` under skyver
  * `sessions.expires_at` frem og setter `last_used_at` for de to første
- * rollene ved HVER gyldig bruk her.
+ * rollene ved HVER gyldig bruk her — dette er DATABASE-sannheten, den
+ * faktiske autoriteten for øktens gyldighet.
  *
- * VIKTIG, ufullstendig del av fikset (se NATTLOGG.md, økt 7): dette
- * fornyer kun DATABASE-raden, IKKE selve `kb_session`-informasjonskapselens
- * egen utløpsdato (satt én gang i `createSession()`). Next.js tillater
- * `cookies().set()` KUN fra en Server Action eller Route Handler — denne
- * funksjonen kalles også fra en rekke vanlige Server Component-sider (f.eks.
- * `me/page.tsx`), der et slikt kall ville KASTET og knekt siden. En fullt
- * korrekt løsning krever enten å skille kalleres kontekst (egen variant for
- * ruter som KAN fornye cookien) eller å flytte fornyelsen til
- * `middleware.ts` (som kjører på hver forespørsel og kan sette
- * responscookies, men for øyeblikket ikke dekker `/api`-ruter eller gjør
- * databasekall). Bevisst IKKE gjort her — en så bred endring på tvers av
- * over 30 kallsteder i sikkerhetskritisk kode fortjener en egen, grundig
- * gjennomgått økt, ikke en hastig utvidelse midt i en bredere revisjon. */
+ * Selve `kb_session`-INFORMASJONSKAPSELENS nettleser-utløpsdato fornyes
+ * IKKE her (Next.js tillater `cookies().set()` kun fra en Server Action
+ * eller Route Handler, og denne funksjonen kalles også fra vanlige Server
+ * Component-sider der det ville kastet) — det gjøres i stedet i
+ * `middleware.ts` (`renewSessionCookie()`, lagt til rett etter dette
+ * fikset, se NATTLOGG.md økt 7), som kjører på HVER forespørsel (side eller
+ * API) og alltid kan sette responscookies. Middleware gjør det BLINDT, uten
+ * databasekall — trygt, siden cookiens levetid uansett bare er en
+ * nettleser-side overlevelseshint, aldri selve autoriteten (den er, og
+ * forblir, sjekken her). */
 export async function getCurrentSession(): Promise<CurrentSession | null> {
   const cookieStore = await cookies();
   const rawToken = cookieStore.get(SESSION_COOKIE)?.value;

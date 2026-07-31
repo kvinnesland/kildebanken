@@ -4,7 +4,7 @@ import Negotiator from "negotiator";
 import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE, SUPPORTED_LOCALES } from "@/i18n/config";
 import { resolveLocalizedRequestPath } from "@/i18n/localized-paths";
 
-// To ansvar, bevisst holdt sammen fordi begge må skje før noe rendres:
+// Tre ansvar, bevisst holdt sammen fordi alle må skje før noe rendres:
 //
 // 1. Locale-ruting (SPEC-V1.md 3.7): rot-URL uten prefiks videresender basert
 //    på Accept-Language, med en språkvelger som overstyrer via cookie.
@@ -16,23 +16,72 @@ import { resolveLocalizedRequestPath } from "@/i18n/localized-paths";
 //    injiserer noen inline script-tagger for hydrering, så en nonce må
 //    genereres per request og sendes både i header og til rendering.
 //
+// 3. Øktcookiens glidende utløp (SPEC-V1.md 6.1: "fornyes ved bruk", lagt
+//    til økt 7 — se NATTLOGG.md). `src/lib/auth/session.ts` sin
+//    `getCurrentSession()` skyver allerede DATABASE-radens `expires_at`/
+//    `last_used_at` frem ved hver bruk, men kan IKKE selv fornye
+//    `kb_session`-INFORMASJONSKAPSELENS egen nettleser-utløpsdato — Next.js
+//    tillater `cookies().set()` kun fra en Server Action/Route Handler, og
+//    den funksjonen kalles også fra vanlige Server Component-sider der et
+//    slikt kall ville kastet. Middleware kan derimot alltid sette
+//    responscookies, uansett hvilken side/rute som til slutt rendres — se
+//    `renewSessionCookie()` under. Fornyer BEVISST BLINDT, uten noe
+//    databasekall her: selve informasjonskapselens levetid er bare en
+//    nettleser-side overlevelseshint, ALDRI den egentlige autoriteten — den
+//    er (og var allerede før dette) `sessions.expires_at`/`revoked_at`,
+//    sjekket server-side i `getCurrentSession()` ved hvert faktisk bruk. Å
+//    forlenge en informasjonskapsel som PEKER på en økt databasen uansett
+//    vil avvise som utløpt/tilbakekalt, gir ingen ekstra tilgang — det gjør
+//    bare at nettleseren beholder den litt lenger uten effekt. (Dette
+//    gjelder likt for moderator/administrator også: deres økt fornyes
+//    ALDRI i databasen — 6.3 — så selv om cookien deres nettleser-side får
+//    samme 30-dagers levetid som mottaker/journalist, vil
+//    `getCurrentSession()` fortsatt korrekt avvise den etter 12 timer.)
+//
 // Kjører i Node.js-runtime, ikke edge — se next.config.mjs. Dette er bevisst:
 // edge-runtime støtter ikke `pg` (node-postgres), og landspesifikk logikk her
 // vil før eller siden trenge databasetilgang.
 export const config = {
-  matcher: ["/((?!_next|api|favicon.ico|.*\\..*).*)"],
+  // `/api` var tidligere ekskludert — inkludert nå (økt 7) utelukkende for
+  // punkt 3 over, slik at en bruker som BARE gjør API-kall (ingen sidevisning
+  // i mellom) også får cookien sin fornyet. `middleware()` selv hopper
+  // eksplisitt over lokalrutings-/CSP-logikken for `/api`-stier under, så
+  // punkt 1 og 2 sin oppførsel er UENDRET for alle andre stier.
+  matcher: ["/((?!_next|favicon.ico|.*\\..*).*)"],
 };
 
 const LOCALE_COOKIE = "kb_locale";
+const SESSION_COOKIE = "kb_session"; // må holdes i sync med src/lib/auth/session.ts
+const SESSION_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 dager, se punkt 3 over
 
 export function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith("/api")) {
+    const response = NextResponse.next();
+    renewSessionCookie(request, response);
+    return response;
+  }
+
   const nonce = generateNonce();
   const response = routeLocale(request) ?? routeLocalizedRequestPath(request) ?? NextResponse.next();
 
+  renewSessionCookie(request, response);
   response.headers.set("x-nonce", nonce);
   response.headers.set("Content-Security-Policy", buildCsp(nonce));
 
   return response;
+}
+
+function renewSessionCookie(request: NextRequest, response: NextResponse): void {
+  const rawToken = request.cookies.get(SESSION_COOKIE)?.value;
+  if (!rawToken) return;
+
+  response.cookies.set(SESSION_COOKIE, rawToken, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
+  });
 }
 
 function routeLocale(request: NextRequest): NextResponse | undefined {

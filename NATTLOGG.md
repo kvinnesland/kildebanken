@@ -6211,3 +6211,90 @@ hvor sikkerhetskritisk og bredt brukt denne koden er; (2) datamodell-diffen
 fant ingen andre hull enn de to over — resten av seksjon 19 stemmer
 allerede fullstendig med schemaet; (3) Brevo-integrasjon, resten av
 komponentbiblioteket, og OG-delingsbilde forblir alle korrekt blokkert.
+
+---
+
+## Fortsettelse av økt 7 — den viktigste gjenstående posten fullført: kb_session-cookien fornyes nå faktisk ved bruk (SPEC-V1.md 6.1)
+
+Viet HELE denne runden utelukkende til punkt (1) fra forrige "Neste økt",
+akkurat som anbefalt der — ingen annet arbeid blandet inn.
+
+**Løsningen som ble valgt, og hvorfor**: vurderte de to skisserte
+alternativene (kontekst-atskilte funksjoner for hvert av de 30+
+kallstedene til `getCurrentSession()`, vs. en databasebevisst utvidelse
+av `middleware.ts`) og landet på en TREDJE, enklere og tryggere modell.
+Innsikten: selve informasjonskapselens nettleser-side utløpsdato er ALDRI
+den egentlige autoriteten for om en økt er gyldig — det er, og har alltid
+vært, `sessions.expires_at`/`revoked_at`, sjekket server-side i
+`getCurrentSession()` (som allerede korrekt fornyer DATABASE-raden ved
+bruk, fra forrige økts fiks). Å forlenge KUN informasjonskapselens egen
+levetid, UTEN noe databaseoppslag i det hele tatt, gir derfor aldri mer
+tilgang enn databasen uansett tillater — det er bare et
+nettleser-side "hold denne litt lenger"-hint. Dette gjorde det trygt å
+gjøre BLINDT i `middleware.ts`, som kjører på HVER forespørsel (etter å
+ha utvidet matcher-en til også å dekke `/api`, som tidligere var
+ekskludert) og alltid kan sette responscookies — uten et eneste
+databasekall, og uten å røre noen av de 30+ eksisterende kallstedene til
+`getCurrentSession()`.
+
+Implementert i `src/middleware.ts`:
+- `renewSessionCookie(request, response)`: leser `kb_session`-cookien fra
+  forespørselen, og hvis den finnes, setter den på nytt på responsen med
+  samme verdi men fornyet `maxAge` (30 dager) og identiske attributter som
+  `createSession()` selv bruker (`httpOnly`, `secure`, `sameSite: "lax"`,
+  `path: "/"`).
+- Kalt fra `middleware()` for BÅDE vanlige sider (etter locale-/CSP-logikken)
+  OG for `/api`-stier (en egen tidlig gren som HOPPER OVER locale-ruting
+  og CSP-header-setting for API-responser — samme oppførsel som før, siden
+  `/api` uansett aldri gikk gjennom denne logikken tidligere).
+- `config.matcher` utvidet fra å ekskludere `/api` til å inkludere det —
+  eneste grunn er punkt 3, ellers uendret oppførsel for API-ruter.
+- Gjelder BEVISST likt for alle roller, inkludert moderator/administrator
+  — deres økt fornyes ALDRI i databasen (6.3), så selv om cookien deres
+  nettleser-side får samme 30-dagers levetid, vil `getCurrentSession()`
+  fortsatt korrekt avvise den etter 12 timer. Ufarlig, dokumentert
+  eksplisitt i kodekommentaren.
+- Oppdaterte `getCurrentSession()`s egen docstring til å beskrive den nye,
+  FULLFØRTE løsningen i stedet for forrige økts "bevisst ufullstendig"-notat.
+
+**Testet på tre nivåer**: (1) 5 nye enhetstester i `middleware.test.ts`
+(cookie fornyes med riktige attributter når den finnes; ingen cookie
+settes når ingen fantes; fornyes også for `/api`-stier UTEN at CSP/nonce
+settes der; en `/api`-forespørsel uten cookie passerer uendret; fornyes
+selv på selve locale-redirect-responsen). (2) Alle eksisterende
+lokalrutings-tester i samme fil fortsatt grønne, uendret oppførsel
+bekreftet. (3) **Manuell ende-til-ende-verifisering i en ekte kjørende
+dev-server** (`next dev` mot ekte lokal Postgres) — bekreftet med `curl`:
+en forespørsel med et vilkårlig (ugyldig) `kb_session`-cookie fikk en
+korrekt fornyet `Set-Cookie`-header (`Max-Age=2592000; Secure; HttpOnly;
+SameSite=lax`) OG ble fortsatt korrekt omdirigert til innlogging (307 →
+`/logg-inn`) siden det ugyldige tokenet uansett avvises server-side —
+nøyaktig den tiltenkte "blind fornyelse, databasen forblir autoriteten"-
+oppførselen. Bekreftet også at rot-URL-en sin locale-omdirigering og
+`/api/countries` (både med og uten cookie) fortsatt fungerer identisk til
+før endringen.
+
+Med dette er "fornyes ved bruk" (6.1) fullt implementert ende til ende —
+BÅDE database-sannheten (forrige økt) OG selve nettleser-cookien (denne
+økten).
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**340
+tester**, +5 — de nye middleware-testene), `i18n:check` (**387 nøkler**,
+uendret), `design:check-tokens` (**40** komponent-CSS-filer, uendret),
+`rm -rf .next && next build` (grønn, Middleware-bunten uendret i
+størrelse), `test:integration` mot ekte lokal Postgres (**219 tester**,
+uendret — ingen nye integrasjonstester denne runden, siden middleware
+testes uten database), PLUSS den manuelle dev-server-verifiseringen
+beskrevet over.
+
+### Neste økt
+
+Øktfornyelsen (6.1) er nå fullstendig implementert og verifisert på alle
+nivåer — ingen kjent gjenstående del av dette hullet. Kandidater videre:
+(1) et nytt, bredt søk etter enda en klasse spec-vs-kode-hull (samme
+metodikk som har funnet noe hver økt så langt — datamodell, ruter,
+e-postmaler og nå øktfornyelse er alle uttømt); (2) Brevo-integrasjon,
+resten av komponentbiblioteket, og OG-delingsbilde forblir alle korrekt
+blokkert (se punktene notert i tidligere økter).
