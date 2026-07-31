@@ -38,9 +38,19 @@ import { resolveLocalizedRequestPath } from "@/i18n/localized-paths";
 //    samme 30-dagers levetid som mottaker/journalist, vil
 //    `getCurrentSession()` fortsatt korrekt avvise den etter 12 timer.)
 //
-// Kjører i Node.js-runtime, ikke edge — se next.config.mjs. Dette er bevisst:
-// edge-runtime støtter ikke `pg` (node-postgres), og landspesifikk logikk her
-// vil før eller siden trenge databasetilgang.
+// Kjører på edge-runtime, Next.js sin standard for middleware — bekreftet
+// mot .next/server/middleware-manifest.json etter en faktisk `next build`
+// (bunter med edge-runtime-webpack.js, tomt `functions`-felt der Node.js-
+// middleware ellers ville vist opp). Rettet under autonomt arbeid (se
+// NATTLOGG.md): en tidligere kommentar her hevdet feilaktig at dette
+// kjørte i Node.js-runtime "se next.config.mjs", men den filen har aldri
+// hatt `experimental.nodeMiddleware` satt, og denne `config`-eksporten har
+// aldri hatt `runtime: "nodejs"` — begge er PÅKREVD sammen for at Next.js
+// faktisk skal bruke Node.js-middleware. Ufarlig i dag: ingen av funksjonene
+// under importerer `pg`/`db` eller andre node-only API-er. Den dagen
+// landspesifikk logikk her faktisk trenger databasetilgang, må BEGGE de to
+// tingene legges til samtidig — edge-runtime støtter ikke `pg`
+// (node-postgres) alene.
 export const config = {
   // `/api` var tidligere ekskludert — inkludert nå (økt 7) utelukkende for
   // punkt 3 over, slik at en bruker som BARE gjør API-kall (ingen sidevisning

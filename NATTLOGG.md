@@ -7119,3 +7119,62 @@ konto (samme forbehold som Brevo). To konkrete kandidater for neste
 runde: (a) undersøke og eventuelt rette `middleware.ts` sitt edge/node-
 runtime-avvik (sidefunn over), (b) resten av komponentbiblioteket
 (fortsatt uten forbruker) eller OG-delingsbilde (fortsatt blokkert).
+
+---
+
+## Fortsettelse av økt 7 — bekreftet og rettet middleware.ts sitt edge/node-runtime-avvik
+
+Fulgte opp (a) fra forrige "Neste økt". Bekreftet, ikke bare mistenkt:
+kjørte en faktisk `next build` og leste `.next/server/
+middleware-manifest.json` etterpå. Beviset er entydig:
+`middleware.files` er `["server/edge-instrumentation.js",
+"server/edge-runtime-webpack.js", "server/src/middleware.js"]` (edge-
+spesifikke buntfiler), og `functions`-feltet (der Node.js-middleware ville
+vist opp) er tomt. `middleware.ts` sin egen `config`-eksport har heller
+aldri hatt `runtime: "nodejs"`, og `next.config.mjs` har aldri hatt
+`experimental.nodeMiddleware` — begge PÅKREVD sammen for at Next.js
+faktisk skal velge Node.js-middleware. Kommentaren som hevdet "Kjører i
+Node.js-runtime, ikke edge — se next.config.mjs" var altså rett og slett
+usann, og har vært det siden den ble skrevet.
+
+Sjekket samtidig om dette er en REELL bug, ikke bare en feil kommentar:
+det eneste stedet i filen som bruker en potensielt Node-only API er
+`generateNonce()` sin `Buffer.from(crypto.randomUUID())`. Bekreftet mot
+Next sin egen edge-sandkasse-kildekode
+(`node_modules/next/dist/server/web/sandbox/context.js`, linje ~179):
+`Buffer`/`SlowBuffer` er eksplisitt blant de Node.js-API-ene Next.js
+polyfyller inn i edge-runtimen. Ufarlig i praksis — koden fungerer
+korrekt slik den kjører i dag, kommentaren var feil, ikke koden.
+
+Rettet kommentaren til å beskrive faktisk, verifisert oppførsel (edge-
+runtime, Next sin standard for middleware) i stedet for en aldri-
+implementert intensjon, med samme "spec/dokumentasjon er sannheten når
+koden er trygg og enklere"-resonnement som tidligere doc-funn denne
+natten (INFRASTRUCTURE.md sin jobbtabell, .env.example). Beholdt den
+opprinnelige, gyldige begrunnelsen (edge støtter ikke `pg`) som en
+eksplisitt FREMTIDIG betingelse: den dagen middleware faktisk trenger
+databasetilgang, må BEGGE flaggene legges til samtidig, ikke bare det
+ene.
+
+Ingen kodeendring utover selve kommentaren.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**360
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next
+&& next build` (grønn — `middleware-manifest.json` lest på nytt etter
+bygget for å bekrefte samme edge-bunting som før rettelsen),
+`test:integration` mot ekte lokal Postgres (**239 tester**, uendret).
+
+### Neste økt
+
+Alle konkrete, navngitte funn fra denne natten er nå rettet. Gjenstående,
+bevisst utsatte poster (uendret over flere økter): resten av
+komponentbiblioteket (fortsatt uten forbruker), OG-delingsbilde (fortsatt
+blokkert på uavklart visuell identitet), og Sentry/Brevo sine faktiske
+API-kontrakter (kodet fra kjent SDK-/API-oppførsel, ikke bekreftet mot
+ekte kontoer). Et helt nytt inventar-søk (en seksjon av SPEC-V1.md/
+DESIGN.md/INFRASTRUCTURE.md som ikke er grundig diffet ennå) er trolig
+den beste bruken av neste times arbeid, gitt hvor produktiv den
+teknikken har vært hele denne natten.
