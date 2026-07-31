@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { auditLogs, contactRequests, journalistProfiles, requests, responses, users } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
@@ -150,10 +150,18 @@ export async function respondToContactRequest(
       .limit(1);
     if (!respondent) return { ok: false, error: "errors.generic" };
 
-    await db
+    // WHERE-betingelsen på status="pending" lukker TOCTOU-vinduet mellom
+    // sjekken over og denne skrivingen: uten den kan et konkurrerende kall
+    // (samme respondent avslår i en annen fane samtidig, eller trekker
+    // svaret — se withdrawResponse i responses.ts) ha rukket å endre status
+    // i mellomtiden, og denne skrivingen ville da blindt overskrevet det med
+    // e-post og revisjonslogg basert på en utdatert lesing.
+    const [updated] = await db
       .update(contactRequests)
       .set({ status: "approved", sharedEmail: respondent.email, respondedAt: now })
-      .where(eq(contactRequests.id, contactRequestId));
+      .where(and(eq(contactRequests.id, contactRequestId), eq(contactRequests.status, "pending")))
+      .returning({ id: contactRequests.id });
+    if (!updated) return { ok: false, error: "errors.contact_request_not_pending" };
 
     // 14.3: "All deling av kontaktopplysninger logges i revisjonsloggen med
     // tidspunkt, hvilken journalist som fikk tilgang og hvilket samtykke
@@ -182,10 +190,13 @@ export async function respondToContactRequest(
       });
     }
   } else {
-    await db
+    // Samme TOCTOU-lukking som i approved-grenen over.
+    const [updated] = await db
       .update(contactRequests)
       .set({ status: "declined", respondedAt: now })
-      .where(eq(contactRequests.id, contactRequestId));
+      .where(and(eq(contactRequests.id, contactRequestId), eq(contactRequests.status, "pending")))
+      .returning({ id: contactRequests.id });
+    if (!updated) return { ok: false, error: "errors.contact_request_not_pending" };
 
     const [journalist] = await db
       .select({ email: users.email, locale: users.locale })

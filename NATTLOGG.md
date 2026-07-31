@@ -7779,3 +7779,112 @@ over: bør `runExpireRequests()` (automatisk utløp) også sende
 `response_request_closed`? Krever en egen, større runde. Ellers: fortsett
 kritisk lesing i `me/`-modulene, eller plukk opp en av de lenge bevisst
 utsatte postene (komponentbibliotek, OG-bilde, Sentry/Brevo).
+
+## Fortsettelse av økt 7 — femte reelle bug: TOCTOU i respondToContactRequest, og en test som viste seg ikke å bevise noe
+
+Fortsatte kritisk gjennomlesing i `me/`-modulene (`change-country.ts`,
+`profile.ts`, `validate.ts`) som forrige økt pekte mot. Alle tre lest linje
+for linje mot SPEC-V1.md 7.3 og 17.3 — ingen funn. `changeCountry()`
+sjekker samtykke FØR noe skrives (FR-010), trekker riktig KUN
+terms/privacy (ikke email_subscription/minimum_age), og
+`getRequiredLegalDocuments()` garanterer at `docs.terms`/`docs.privacy`
+aldri er `undefined` når `docs` selv er ikke-null (den returnerer `null`
+for HELE resultatet hvis ett eneste dokument mangler) — så
+optional-chaining på `docs.terms?.id` er defensivt, men aldri faktisk
+nådd som udefinert. `updateMyProfile()` bevisst IKKE endrer `country_code`
+(det er `changeCountry()` sin jobb), og `displayName` er `text` uten
+lengdebegrensning i skjemaet, så ingen trunkeringsfeil å bekymre seg for.
+
+Fulgte så referansen fra 17.3 ("trekke et innsendt svar") til
+`withdrawResponse()` i `src/lib/responses/responses.ts`, og derfra videre
+til `respondToContactRequest()` i `contact-requests.ts` (allerede lest
+tidligere i natt for FR-041-utløpsfiksen, økt 7). Ved fornyet, mer
+mistenksom lesing denne gangen: funksjonen gjør én innledende `SELECT` som
+sjekker `status === "pending"` og `expiresAt`, men den AVSLUTTENDE
+`UPDATE`-en i begge grener (godkjenn/avslå) var kun beskyttet av
+`eq(contactRequests.id, ...)` — ingen `status`-betingelse i selve
+skrivingen. Et konkurrerende kall som endrer status i vinduet MELLOM
+sjekken og skrivingen (f.eks. samme respondent som trekker svaret sitt via
+`withdrawResponse()` i en annen fane, eller dobbeltklikker
+godkjenn/avslå-knappen) ville blitt blindt overskrevet av den skrivingen
+som kom sist — med tilhørende e-post til journalisten og (for godkjenn)
+revisjonslogg, basert på en utdatert lesing. Konkret verst tenkelige
+utfall: respondenten trekker svaret sitt (som SKAL kansellere en
+`pending`-kontaktforespørsel, 19.8), men hvis en `respondToContactRequest`
+allerede har passert sin sjekk før trekkingen skjer, ville den likevel
+kunne skrive `status = "approved"` med delt e-post etterpå — stikk i strid
+med at svaret nettopp ble utilgjengeliggjort (FR-042).
+
+**Fiksen**: lagt til `and(eq(contactRequests.id, contactRequestId),
+eq(contactRequests.status, "pending"))` i WHERE-betingelsen på begge de
+avsluttende UPDATE-ene, med `.returning({id: contactRequests.id})` for å
+kunne oppdage 0-rads-treff. Returnerer `errors.contact_request_not_pending`
+før revisjonslogg/e-post dersom skrivingen ikke traff noen rad — samme
+feilkode som den eksisterende, tidligere sjekken allerede bruker for
+tilsvarende tilfeller, så ingen ny kontrakt for kallerne.
+
+**Testforsøket som IKKE beviste noe, og hvorfor det ble fjernet igjen**:
+Skrev først en test som kalte `respondToContactRequest` to ganger SAMTIDIG
+(`Promise.all`, én "approved" og én "declined" på samme kontaktforespørsel)
+og forventet at nøyaktig én av dem skulle lykkes. Kjørte den mot den
+URETTEDE koden (via `git stash push -- contact-requests.ts`) for å bekrefte
+at den faktisk fanget feilen først — presist samme disiplin som brukt for
+de fire foregående bugfixene i natt. Den besto derimot IKKE bare én gang,
+men konsekvent 6 av 6 ganger MOT den kjente feilaktige koden. Konklusjon
+etter å ha tenkt gjennom hvorfor: mot en lokal Postgres med sub-millisekund
+rundturstid, og en tilkoblingspool på maks 3, rekker det ene kallet
+(uansett hvilket som får en ledig tilkobling først) å fullføre HELE sin
+kjede av spørringer — inkludert sin egen innledende sjekk, som da allerede
+ser den OPPDATERTE statusen fra det første kallet — før det andre kallet i
+det hele tatt rekker å starte sin første spørring. Testens `Promise.all`
+garanterer at begge FUNKSJONSKROPPENE starter i samme mikrotask, men ikke
+at spørringene deres faktisk overlapper i tid — med et raskt, lokalt miljø
+uten nettverkslatens blir de facto serialisert via
+tilkoblingspool-tildelingen, og da fanges konflikten allerede av den
+EKSISTERENDE, riktige innledende sjekken (som alltid har fungert korrekt
+for det sekvensielle tilfellet — se testen "avviser å svare på en
+kontaktforespørsel som ikke lenger er pending" et stykke over, som allerede
+dekket nettopp dette). Testen beviste med andre ord ingenting om selve
+fiksen — den ville bestått identisk med eller uten `status`-betingelsen i
+UPDATE-en, fordi den aldri klarte å tvinge frem vinduet fiksen faktisk
+lukker.
+
+Vurderte å tvinge frem vinduet deterministisk ved å avskjære det
+underliggende pg-klientobjektet (`db.$client.query`, bekreftet tilgjengelig
+via en rask `tsx`-sjekk) og injisere et konkurrerende `UPDATE` midt i
+kjeden, matchet på rå SQL-tekst. Vurderte dette som uforholdsmessig
+skjørt/invasivt for denne kodebasens etablerte teststil (ingen tidligere
+test i natt har grepet inn i drizzle/pg sine interne detaljer) satt opp mot
+hvor smalt selve vinduet faktisk er i praksis (samme bruker må utløse to
+motstridende handlinger på under et millisekunds mellomrom — i produksjon,
+med ekte nettverkslatens til databasen, er vinduet riktignok bredere, men
+fortsatt en svært uvanlig brukerhandling). Fjernet derfor testen igjen
+fremfor å beholde en som ikke beviser noe (samme prinsipp som har styrt
+all kritisk lesing i natt: en test som består uansett er verre enn ingen
+test, fordi den gir falsk trygghet). Selve kodefiksen beholdes uansett —
+den er billig, trygg, og et rent forbedring uansett om racen lar seg bevise
+automatisert eller ikke. Samme kategori avveining som
+påminnelsesjobb-racen (se over, tidligere i natt), men her var selve FIKSEN
+billig nok til å gjennomføres uansett, i motsetning til påminnelsesjobbene
+hvor selve fiksen ble vurdert for kostbar/risikabel.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**364
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next
+&& next build` (grønn), `test:integration` mot ekte lokal Postgres (**245
+tester**, uendret fra forrige commit — testforsøket over ble lagt til og
+fjernet igjen i samme runde).
+
+### Neste økt
+
+TOCTOU-fiksen i `respondToContactRequest` er en ren forbedring uten
+automatisert regresjonstest for selve race-tilfellet (begrunnet over) —
+noter dette dersom noen senere vurderer å style om testfilen og lurer på
+hvorfor et opplagt racetilfelle mangler dekning. Fortsett kritisk lesing:
+neste kandidat er `src/lib/subscriptions/` (e-postavmelding,
+webhook-håndtering for bounce/klink) eller `src/lib/countries/` — begge
+ikke gjennomgått med denne teknikken ennå denne natten. Nomrmalt neste steg
+ellers: uendret fra forrige note (åpent `runExpireRequests()`-spørsmål,
+komponentbibliotek, OG-bilde, Sentry/Brevo).
