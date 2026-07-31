@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 import { middleware } from "./middleware";
 
-function makeRequest(pathname: string, headers: Record<string, string> = {}) {
-  return new NextRequest(new URL(pathname, "https://kildebanken.example"), { headers });
+function makeRequest(
+  pathname: string,
+  headers: Record<string, string> = {},
+  init: { method?: string } = {}
+) {
+  return new NextRequest(new URL(pathname, "https://kildebanken.example"), { headers, ...init });
 }
 
 describe("middleware — locale-oversatte forespørsel-stier (SPEC-V1.md 3.7)", () => {
@@ -77,5 +81,46 @@ describe("middleware — fornyer kb_session-cookiens levetid ved bruk (SPEC-V1.m
 
     expect(response.status).not.toBe(200);
     expect(response.cookies.get("kb_session")?.value).toBe("test-raw-session-token");
+  });
+});
+
+describe("middleware — CSRF-beskyttelse via Origin-verifisering (SPEC-V1.md 18)", () => {
+  it("avviser en POST til /api med en fremmed Origin-header (403)", () => {
+    const response = middleware(
+      makeRequest("/api/subscribe", { origin: "https://ondsinnet.example" }, { method: "POST" })
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  it("slipper gjennom en POST til /api med Origin lik forespørselens eget opphav", () => {
+    const response = middleware(
+      makeRequest("/api/subscribe", { origin: "https://kildebanken.example" }, { method: "POST" })
+    );
+
+    expect(response.status).not.toBe(403);
+  });
+
+  it("slipper gjennom en POST til /api helt UTEN Origin-header (webhook/e-postklient)", () => {
+    const response = middleware(makeRequest("/api/webhooks/email-events", {}, { method: "POST" }));
+
+    expect(response.status).not.toBe(403);
+  });
+
+  it("sjekker IKKE Origin på GET (trygg metode), selv med fremmed Origin", () => {
+    const response = middleware(
+      makeRequest("/api/countries", { origin: "https://ondsinnet.example" }, { method: "GET" })
+    );
+
+    expect(response.status).not.toBe(403);
+  });
+
+  it("avviser også PUT/PATCH/DELETE med fremmed Origin, ikke bare POST", () => {
+    for (const method of ["PUT", "PATCH", "DELETE"]) {
+      const response = middleware(
+        makeRequest("/api/me", { origin: "https://ondsinnet.example" }, { method })
+      );
+      expect(response.status).toBe(403);
+    }
   });
 });

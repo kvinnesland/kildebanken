@@ -12,7 +12,8 @@ export async function POST() {
 
   const result = await createDraft(session.userId);
   if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 422 });
+    const status = result.error === "errors.rate_limited" ? 429 : 422;
+    return NextResponse.json({ error: result.error }, { status });
   }
 
   return NextResponse.json({ id: result.id }, { status: 201 });

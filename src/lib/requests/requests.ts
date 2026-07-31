@@ -12,10 +12,15 @@ import {
 } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { zonedWallTimeToUtc } from "@/lib/datetime/timezone";
+import { checkRateLimit } from "@/lib/security/rate-limit";
 import { slugify, withDisambiguator } from "./slug";
 import { validateForSubmit, validatePatchedFields, type SubmitValidationError } from "./validate";
 
 const MAX_CONCURRENT_PUBLISHED = 5; // FR-029, SPEC-V1.md 9.2
+
+// SPEC-V1.md 18: "20 forespørselsopprettelser per journalist per døgn."
+const CREATE_DRAFT_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const CREATE_DRAFT_RATE_LIMIT_MAX = 20;
 
 export interface RequestPatchInput {
   title?: string;
@@ -69,6 +74,14 @@ export async function createDraft(journalistUserId: string): Promise<RequestActi
   if (!journalist || journalist.role !== "journalist") {
     return { ok: false, error: "errors.not_authorized" };
   }
+
+  const allowed = await checkRateLimit(
+    db,
+    `request:${journalistUserId}`,
+    CREATE_DRAFT_RATE_LIMIT_WINDOW_MS,
+    CREATE_DRAFT_RATE_LIMIT_MAX
+  );
+  if (!allowed) return { ok: false, error: "errors.rate_limited" };
 
   const [country] = await db
     .select({ defaultLocale: countries.defaultLocale })

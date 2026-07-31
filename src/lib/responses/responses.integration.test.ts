@@ -110,6 +110,61 @@ describe("submitResponse / withdrawResponse mot ekte Postgres", () => {
   });
 });
 
+describe("submitResponse — hastighetsgrense (SPEC-V1.md 18: 10 svar per konto per time)", () => {
+  it("avviser det 11. svaret innen samme time, med errors.rate_limited", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+    const respondent = await createActiveRecipient();
+
+    const requestIds: string[] = [];
+    for (let i = 0; i < 11; i++) {
+      const [request] = await db
+        .insert(requests)
+        .values({
+          journalistId: journalist.id,
+          countryCode: TEST_COUNTRY_CODE,
+          contentLanguage: "nb-NO",
+          title: `Testforespørsel ${i}`,
+          summary: "En testforespørsel for hastighetsgrense-test.",
+          description: "Full beskrivelse.",
+          targetPersonDescription: "Hvem som helst til testen.",
+          responseDeadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          status: "published",
+          allowsAnonymousParticipation: true,
+          mayBeRecorded: false,
+          mayInvolvePhotoVideo: false,
+          publishedAt: new Date(),
+        })
+        .returning({ id: requests.id });
+      if (!request) throw new Error("Klarte ikke opprette testforespørsel");
+      requestIds.push(request.id);
+    }
+
+    try {
+      for (let i = 0; i < 10; i++) {
+        const result = await submitResponse(requestIds[i]!, respondent.id, {
+          relevanceStatement: `Svar ${i}.`,
+          answerText: "Svaret mitt.",
+          contactSharing: "none",
+        });
+        expect(result.ok).toBe(true);
+      }
+
+      const eleventh = await submitResponse(requestIds[10]!, respondent.id, {
+        relevanceStatement: "Det 11. svaret.",
+        answerText: "Skal avvises.",
+        contactSharing: "none",
+      });
+
+      expect(eleventh.ok).toBe(false);
+      if (!eleventh.ok) expect(eleventh.error).toBe("errors.rate_limited");
+    } finally {
+      await db.delete(responses).where(inArray(responses.requestId, requestIds));
+      await db.delete(requests).where(inArray(requests.id, requestIds));
+    }
+  });
+});
+
 describe("listMineResponses mot ekte Postgres — utledet displayStatus (SPEC-V1.md 12.6)", () => {
   let journalistId: string;
   let requestId: string;

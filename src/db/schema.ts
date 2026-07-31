@@ -505,3 +505,25 @@ export const sessions = pgTable("sessions", {
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ---------------------------------------------------------------------------
+// 19.16 RateLimitHit — SPEC-V1.md 18 (rate limiting: 5 innloggingsforespørsler
+// per adresse per 15 min, 10 svarinnsendinger per konto per time, 20
+// forespørselsopprettelser per journalist per døgn). Ett generisk
+// tellevindu for alle grensene, se src/lib/security/rate-limit.ts.
+// ---------------------------------------------------------------------------
+
+export const rateLimitHits = pgTable(
+  "rate_limit_hits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    bucket: text("bucket").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    bucketCreatedAtIdx: index("rate_limit_hits_bucket_created_at_idx").on(
+      table.bucket,
+      table.createdAt
+    ),
+  })
+);

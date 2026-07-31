@@ -436,6 +436,7 @@
   "errors.response_not_visible": "Dette svaret er ikke synlig lenger.",
   "errors.validation_failed": "Ett eller flere felt mangler eller er ugyldige.",
   "errors.too_many_published_requests": "Du har allerede for mange åpne forespørsler. Lukk én før du sender en ny.",
+  "errors.rate_limited": "Du har gjort dette for mange ganger på kort tid. Prøv igjen senere.",
   "errors.already_responded": "Du har allerede sendt et svar på denne forespørselen.",
   "errors.contact_already_shared": "Respondenten har allerede delt e-postadressen sin.",
   "errors.contact_request_already_sent": "Du har allerede sendt en kontaktforespørsel for dette svaret.",

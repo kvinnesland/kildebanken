@@ -32,7 +32,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         ? 404
         : result.error === "errors.already_responded"
           ? 409
-          : 422;
+          : result.error === "errors.rate_limited"
+            ? 429
+            : 422;
     return NextResponse.json({ error: result.error }, { status });
   }
 

@@ -1018,11 +1018,11 @@ Ingen andre. Ingen teamdeling i v1.
 
 ## 19. Datamodell
 
-Seksten tabeller (`Digest` og `DigestDelivery` telles hver for seg;
+Sytten tabeller (`Digest` og `DigestDelivery` telles hver for seg;
 `AuthToken` og `Session` lagt til i 19.14–19.15 under autonomt arbeid, se
-`NATTLOGG.md`). `RecipientProfile`, `Organization`, `Category`,
-`UserInterest`, `RequestCategory`, `RequestQuestion`, `ResponseAnswer` og
-`Attachment` finnes ikke i v1.
+`NATTLOGG.md`; `RateLimitHit` lagt til i 19.16, samme grunn). `RecipientProfile`,
+`Organization`, `Category`, `UserInterest`, `RequestCategory`,
+`RequestQuestion`, `ResponseAnswer` og `Attachment` finnes ikke i v1.
 
 ### 19.1 Country
 
@@ -1396,6 +1396,34 @@ created_at
 Unik indeks på `token_hash`. En utløpt eller tilbakekalt økt skal behandles
 likt av applikasjonslaget – begge betyr "ikke innlogget", ikke to ulike
 feilveier.
+
+### 19.16 RateLimitHit
+
+**Lagt til under autonomt arbeid** (se `NATTLOGG.md`): seksjon 18 spesifiserer
+tre konkrete rate-grenser ("5 innloggingsforespørsler per adresse per 15
+min, 10 svarinnsendinger per konto per time, 20 forespørselsopprettelser
+per journalist per døgn"), men datamodellen definerte aldri hvor selve
+telleren lagres. Uten denne tabellen er 18 uimplementerbar akkurat som
+`AuthToken`/`Session` var det for 6.1/6.3. Ett generisk tellevindu for alle
+tre grensene (og fremtidige), ikke tre egne tabeller — samme prinsipp som
+`AuditLog` (19.12) sin ene tabell for flere handlingstyper.
+
+```
+id
+bucket                      f.eks. "login:<e-post>", "response:<user_id>",
+                             "request:<journalist_id>" — identifiserer HVA
+                             som telles og for HVEM, ikke bare hvilken
+                             grense
+created_at
+```
+
+Indeks på `bucket, created_at` (tellingen er alltid "rader for denne
+bucketen nyere enn et tidspunkt"). Ingen `expires_at`/opprydningsjobb
+nødvendig — hvert kall til telleren sletter selv rader eldre enn EGET
+tidsvindu for samme bucket først, se `src/lib/security/rate-limit.ts`.
+Bevisst ikke koblet til `User` med en fremmednøkkel: `login`-bucketen er
+en RÅ e-postadresse, ikke en bruker-ID, siden grensen gjelder selv når
+kontoen ikke finnes (18: samme "avslør ingenting"-prinsipp som 6.1).
 
 ---
 

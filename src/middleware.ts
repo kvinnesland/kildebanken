@@ -54,8 +54,40 @@ const LOCALE_COOKIE = "kb_locale";
 const SESSION_COOKIE = "kb_session"; // må holdes i sync med src/lib/auth/session.ts
 const SESSION_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 dager, se punkt 3 over
 
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+// SPEC-V1.md 18: "CSRF-beskyttelse på alle tilstandsendrende endepunkter."
+// `session.ts` setter allerede SameSite=Lax, som i seg selv blokkerer de
+// fleste cross-site cookie-bærende forespørsler i moderne nettlesere — men
+// spec-en ber om en egen, eksplisitt beskyttelse, ikke bare cookie-
+// innstillingen alene. Dette er Origin-verifisering (OWASP sin anbefalte
+// "Verifying Origin with Standard Headers"), ikke synkroniserings-tokens:
+// krever ingen server-tilstand og dekker samme trussel — en tredjeparts side
+// som får OFFERETS nettleser til å sende en autentisert forespørsel hit.
+// Mangler Origin-headeren helt (ikke-nettleser-klienter: webhooken fra
+// Brevo, e-postklienters "one-click"-utmelding via List-Unsubscribe-Post),
+// slippes forespørselen gjennom uendret — disse bærer uansett ikke
+// øktinformasjonskapselen automatisk, så CSRF-trusselen gjelder ikke dem;
+// de er allerede beskyttet av egne mekanismer (delt hemmelighet, engangs-
+// token i URL-en).
+function rejectCrossOriginMutation(request: NextRequest): NextResponse | undefined {
+  if (!UNSAFE_METHODS.has(request.method)) return undefined;
+
+  const origin = request.headers.get("origin");
+  if (!origin) return undefined;
+
+  if (origin !== request.nextUrl.origin) {
+    return NextResponse.json({ error: "errors.not_authorized" }, { status: 403 });
+  }
+
+  return undefined;
+}
+
 export function middleware(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith("/api")) {
+    const csrfRejection = rejectCrossOriginMutation(request);
+    if (csrfRejection) return csrfRejection;
+
     const response = NextResponse.next();
     renewSessionCookie(request, response);
     return response;

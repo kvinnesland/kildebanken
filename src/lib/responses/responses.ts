@@ -3,11 +3,16 @@ import { db } from "@/db/client";
 import { contactRequests, journalistProfiles, requests, responses, users } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { isUniqueViolation } from "@/db/errors";
+import { checkRateLimit } from "@/lib/security/rate-limit";
 import { validateResponseSubmission, type ResponseSubmissionInput } from "./validate";
 
 export type ResponseActionResult =
   | { ok: true; id: string }
   | { ok: false; error: string };
+
+// SPEC-V1.md 18: "10 svarinnsendinger per konto per time."
+const RESPONSE_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+const RESPONSE_RATE_LIMIT_MAX = 10;
 
 /**
  * FR-030/FR-041, SPEC-V1.md 12. Krever en verifisert mottakerkonto og at
@@ -30,6 +35,14 @@ export async function submitResponse(
   if (!respondent || respondent.role !== "recipient" || respondent.status !== "active") {
     return { ok: false, error: "errors.not_authorized" };
   }
+
+  const allowed = await checkRateLimit(
+    db,
+    `response:${respondentUserId}`,
+    RESPONSE_RATE_LIMIT_WINDOW_MS,
+    RESPONSE_RATE_LIMIT_MAX
+  );
+  if (!allowed) return { ok: false, error: "errors.rate_limited" };
 
   const [request] = await db
     .select({

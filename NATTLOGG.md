@@ -6764,3 +6764,96 @@ forbruker, ingen grunn til å bygge ennå) og OG-delingsbilde (blokkert på
 uavklart visuell identitet). Neste gode bruk av tiden er trolig et nytt
 inventar-søk i en seksjon av SPEC-V1.md/DESIGN.md/INFRASTRUCTURE.md som
 ikke er dekket ennå.
+
+---
+
+## Fortsettelse av økt 7 — nytt inventar: SPEC-V1.md 18 (Sikkerhet) mot faktisk kode, to reelle hull funnet og rettet
+
+Nytt inventar-søk, siden 18 ("Sikkerhet") aldri var diffet mot koden
+denne økten (i motsetning til 19/20/22/23/26 som alle er gjennomgått
+tidligere). Seksjonen er en konkret, sjekkbar punktliste — grepet hvert
+punkt mot koden:
+
+- HTTPS/HSTS: satt i `next.config.mjs`. CSP med nonce: satt i
+  `middleware.ts`. Parametriserte spørringer: Drizzle ORM håndterer dette
+  automatisk. Tokens hashet: bekreftet tidligere økter (`auth/tokens.ts`).
+  Revisjonslogg: `audit_logs`-tabellen finnes og brukes. Alt dette var
+  allerede på plass — ingen handling.
+- **To reelle, totalt fraværende hull:** "CSRF-beskyttelse på alle
+  tilstandsendrende endepunkter" og de tre navngitte rate-grensene ("5
+  innloggingsforespørsler per adresse per 15 min, 10 svarinnsendinger per
+  konto per time, 20 forespørselsopprettelser per journalist per døgn") —
+  null treff på `csrf`/`CSRF` i hele kildekoden, og null treff på
+  rate-limiting-mønstre UTENFOR login-fasen.
+
+**Viktig selvkorreksjon underveis:** mitt første grep etter rate limiting
+(`rateLimit`/`rate.limit`/`RateLimit`) ga null treff og fikk meg til å tro
+alle tre grensene manglet. Ved nærmere lesing av `src/lib/auth/
+magic-link.ts` viste det seg at login-grensen (5 per 15 min) FAKTISK var
+implementert og TESTET allerede (`MAX_REQUESTS_PER_WINDOW`/
+`RATE_LIMIT_WINDOW_MS`, egne navn, derfor usynlig for det første søket) —
+allerede dekket av en test i `magic-link.integration.test.ts` fra en
+tidligere økt. Kun de to ANDRE grensene (svar/forespørselopprettelse) var
+reelt fraværende. Notert her fordi det er en påminnelse om at et
+enkelt nøkkelordsøk kan gi falske positiver — alltid les den faktiske
+implementasjonen før man konkluderer at noe mangler.
+
+**CSRF (Origin-verifisering, ikke synkroniserings-tokens):** ny
+`rejectCrossOriginMutation()` i `middleware.ts`, kjørt for alle
+`/api`-forespørsler med en "utrygg" metode (POST/PUT/PATCH/DELETE). Avviser
+med 403 (`errors.not_authorized`) hvis `Origin`-headeren finnes OG ikke
+matcher forespørselens eget opphav. Mangler `Origin` helt (webhooken fra
+Brevo, e-postklienters "one-click"-utmelding), slippes forespørselen
+gjennom uendret — disse bærer ikke øktinformasjonskapselen automatisk, så
+CSRF-trusselen gjelder ikke dem, og de er allerede beskyttet av egne
+mekanismer (delt hemmelighet, engangstoken). Valgt fremfor synkroniserings-
+tokens fordi det krever null ny tilstand og dekker samme trussel — OWASP sin
+egen anbefalte metode for akkurat dette. 5 nye tester i `middleware.test.ts`.
+
+**Rate limiting for de to gjenstående grensene:** ny, generisk
+`checkRateLimit()` i `src/lib/security/rate-limit.ts`, DB-basert
+sliding-window-teller mot en ny tabell. Lagt til datamodellen FØRST
+(SPEC-V1.md 19.16 `RateLimitHit`, "sytten tabeller" oppdatert fra
+"seksten"), deretter schema.ts, deretter selve funksjonen — spec er
+sannheten, rettet i riktig rekkefølge. Selvrenskende: hvert kall sletter
+rader eldre enn EGET tidsvindu for samme bucket først, ingen egen
+opprydningsjobb trengs. Koblet inn i `submitResponse()` (bucket
+`response:<bruker-id>`, 10/time) og `createDraft()` (bucket
+`request:<journalist-id>`, 20/døgn) — samme sted som login-grensen
+allerede lå (i lib-funksjonen, ikke route-handleren), for konsistens.
+Ny feilnøkkel `errors.rate_limited` lagt til i begge språkfiler, rutene
+mapper den til HTTP 429. Ny migrasjon `0008_skinny_black_queen.sql`
+generert og kjørt mot testdatabasen.
+
+**Testdekning:** ny `rate-limit.integration.test.ts` (4 tester: tillater
+opp til grensen, avviser deretter uten å legge til flere rader, teller
+bucketer uavhengig, sletter rader eldre enn vinduet før telling). Ny test
+i `responses.integration.test.ts` (det 11. svaret på under en time
+avvises) og `requests.integration.test.ts` (den 21. opprettelsen på under
+et døgn avvises).
+
+**Sidefunn under verifisering:** den lokale Postgres-klyngen hadde stoppet
+på nytt siden forrige deløkt (samme som forrige gang — ikke en varig
+løsning, bare `pg_ctlcluster 16 main start` på nytt). Startet den igjen
+før integrasjonssuiten kjørte.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**356
+tester**, +5), `i18n:check` (**387 nøkler**, uendret — `errors.rate_limited`
+er en dynamisk oppslått feilnøkkel, samme kategori som andre API-feilkoder
+check-keys ikke fanger statisk), `design:check-tokens` (**40**
+komponent-CSS-filer, uendret), `rm -rf .next && next build` (grønn, kjørt
+i bakgrunnen pga. tidsbruk), `test:integration` mot ekte lokal Postgres
+(**239 tester**, +6, alle grønne).
+
+### Neste økt
+
+Begge de fraværende sikkerhetskravene fra SPEC-V1.md 18 er nå dekket.
+Gjenstående, ikke-kodesjekkbare punkter i samme seksjon (databasekryptering
+i hvile, sikkerhetskopi/RPO/RTO, secret manager) er infrastruktur/drift,
+ikke noe kode kan verifisere eller bygge. Ellers uendret: resten av
+komponentbiblioteket (fortsatt uten forbruker) og OG-delingsbilde
+(blokkert på uavklart visuell identitet). Et godt neste steg er trolig
+seksjon 5 (Brukerreiser) eller 21 (Ikke-funksjonelle krav) i SPEC-V1.md —
+begge er ennå ikke spesifikt diffet mot koden denne økten.

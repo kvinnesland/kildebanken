@@ -203,3 +203,28 @@ describe("updateDraft mot ekte Postgres — responseDeadlineLocal tolkes i LANDE
     expect(row?.responseDeadline?.toISOString()).toBe("2026-08-15T12:00:00.000Z");
   });
 });
+
+describe("createDraft — hastighetsgrense (SPEC-V1.md 18: 20 opprettelser per journalist per døgn)", () => {
+  it("avviser den 21. opprettelsen innen samme døgn, med errors.rate_limited", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+    const createdIds: string[] = [];
+
+    try {
+      for (let i = 0; i < 20; i++) {
+        const result = await createDraft(journalist.id);
+        expect(result.ok).toBe(true);
+        if (result.ok) createdIds.push(result.id);
+      }
+
+      const twentyFirst = await createDraft(journalist.id);
+
+      expect(twentyFirst.ok).toBe(false);
+      if (!twentyFirst.ok) expect(twentyFirst.error).toBe("errors.rate_limited");
+    } finally {
+      for (const id of createdIds) {
+        await db.delete(requests).where(eq(requests.id, id));
+      }
+    }
+  });
+});
