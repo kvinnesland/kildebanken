@@ -7519,3 +7519,66 @@ sin dokumenterte oppførsel — kan ikke verifiseres uten en faktisk
 Netlify-utrulling, så dette er en KJENT, ikke en lukket, usikkerhet), eller
 digest-tick sin per-land-isolasjon (FR-036) sett med samme "kunne dette
 race under ekte samtidig kjøring"-blikk som rate-limit nettopp fikk.
+
+---
+
+## Fortsettelse av økt 7 — digest-tick/jobb-jobbene sett med samme "kan dette race"-blikk: ett akseptert kompromiss dokumentert, ellers alt trygt
+
+Fulgte opp forslaget om å se på `tick.ts` sine jobber med samme kritiske
+blikk som fant rate-limit-racen. Gikk gjennom alle seks jobbfunksjonene:
+
+- `runDigestTick()`: allerede korrekt og allerede dokumentert — den unike
+  indeksen `digests_country_scheduled_for_idx` (schema.ts) gjør selve
+  digest-OPPRETTELSEN atomisk trygg mot to overlappende tikk
+  (`onConflictDoNothing()` + sjekk på returnert rad). Ingen handling.
+- `runExpireRequests()`, `runExpireContactRequests()`, `runPurgeUnverified()`:
+  hver av disse er ETT atomisk `UPDATE/DELETE ... WHERE ... RETURNING`,
+  uten noe eksternt sideeffekt-kall innimellom. Et overlappende tikk ville
+  bare matche null rader den andre allerede har tatt — strukturelt
+  race-fritt, ingen handling.
+- **`runDeadlineReminders()` og `runStaleRequestReminders()`: samme
+  TOCTOU-form som rate-limit-bugen** (les rader der flagget er null →
+  send e-post → merk flagget ETTERPÅ, som tre separate steg). Vurderte
+  grundig om dette skulle rettes på samme måte (atomisk claim), men
+  konkluderte at det IKKE bør gjøres, av to konkrete grunner:
+  1. En atomisk claim MÅ enten merke raden FØR sendingen er bekreftet
+     vellykket (ville tapt en påminnelse for godt ved en forbigående
+     Brevo-feil — verre enn en sjelden dobbel e-post), eller holde en
+     radlås åpen over selve det eksterne nettverkskallet til Brevo (ville
+     bundet opp den bevisst vesle tilkoblingspoolen — `DB_POOL_MAX`,
+     standard 3, `src/db/client.ts` — under et kall som kan ta sekunder).
+  2. Et EKTE overlappende tikk (ikke bare to sekvensielle, som flagget
+     allerede beskytter korrekt mot) krever at forrige kjøring fortsatt
+     pågår 15 minutter senere — usannsynlig ved dagens Stadium 0-volum.
+
+  Dette er altså en bevisst, informert risikoaksept (en sjelden dobbel
+  påminnelse er et akseptabelt utfall), ikke et oversett hull som
+  rate-limit-racen var (der racen undergravde HELE poenget med en
+  sikkerhetskontroll). Rettet likevel den eksisterende kommentaren, som
+  overpåsto garantien ("gjør dette trygt... uten å sende samme påminnelse
+  flere ganger" — presist bare sant for SEKVENSIELLE tikk, ikke et ekte
+  overlappende), til å presist beskrive både hva som faktisk er
+  garantert og hvorfor den gjenværende, sjeldne racen er bevisst akseptert
+  fremfor lukket. Ingen kodeendring — kun to kommentarer i `tick.ts`.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**364
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf
+.next && next build` (grønn), `test:integration` mot ekte lokal Postgres
+(**243 tester**, uendret — ingen kode- eller databaseendring).
+
+### Neste økt
+
+Konkurranse-/race-gjennomgangen av `tick.ts` er nå ferdig — ett bevisst
+akseptert kompromiss dokumentert presist, resten strukturelt trygt.
+Gjenstående fra samme kritiske-lesing-liste: CSRF-Origin-sjekken i
+`middleware.ts` (fortsatt en KJENT, ubekreftet usikkerhet mot en ekte
+Netlify-utrulling — kan ikke lukkes uten en faktisk deploy, så neppe mer å
+gjøre der akkurat nå). Ellers er de fleste konkrete, kodesjekkbare
+inventar- og kvalitetsvinklene denne natten nå uttømt; neste økt bør
+trolig enten fortsette kritisk lesing i et HELT nytt lib-område som
+ennå ikke er sett med dette blikket (f.eks. `digests.ts`/`journalist-
+inbox.ts`), eller plukke opp en av de lenge bevisst utsatte postene
+(komponentbibliotek, OG-bilde, Sentry/Brevo-kontrakter).

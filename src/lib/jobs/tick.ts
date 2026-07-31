@@ -395,8 +395,23 @@ export async function runDeadlineReminders(dbase: Database): Promise<TickResult>
   let processed = 0;
 
   // deadlineReminderSentAt (SPEC-V1.md 19.6) gjør dette trygt å kjøre hvert
-  // 15. minutt uten å sende samme påminnelse flere ganger — erstatter det
-  // tidligere tidsvindu-hacket.
+  // 15. minutt på tvers av SEKVENSIELLE tikk, uten å sende samme påminnelse
+  // flere ganger — erstatter det tidligere tidsvindu-hacket.
+  //
+  // Presisert under autonomt arbeid (kritisk gjennomlesing etter
+  // rate-limit-racen, se NATTLOGG.md): dette er select→send→merk, samme
+  // TOCTOU-form som var en reell bug i checkRateLimit(). Her er den BEVISST
+  // IKKE lukket med en atomisk claim (f.eks. UPDATE...RETURNING eller
+  // SELECT...FOR UPDATE) — en slik claim måtte enten (a) merke raden FØR
+  // sendingen er bekreftet, som ville tapt påminnelsen for godt ved en
+  // forbigående Brevo-feil (verre enn en sjelden dobbel e-post), eller
+  // (b) holde en radlås åpen over selve e-postkallet, som ville bundet opp
+  // den bevisst vesle tilkoblingspoolen (DB_POOL_MAX, standard 3,
+  // src/db/client.ts) under et eksternt nettverkskall. Gitt at et ekte,
+  // OVERLAPPENDE tikk (ikke bare to sekvensielle) krever at forrige kjøring
+  // fortsatt pågår 15 minutter senere — usannsynlig ved dagens Stadium
+  // 0-volum — er "sjelden dobbel påminnelse" et bevisst akseptert,
+  // ikke et oversett, kompromiss.
   const soon = await dbase
     .select({ id: requests.id, journalistId: requests.journalistId, title: requests.title })
     .from(requests)
@@ -444,9 +459,9 @@ export async function runStaleRequestReminders(dbase: Database): Promise<TickRes
   const errors: string[] = [];
   let processed = 0;
 
-  // staleReminderSentAt (SPEC-V1.md 19.6) — samme mønster som
-  // deadlineReminderSentAt over. Sendes én gang per forespørsel, ikke
-  // gjentatt frem til den lukkes.
+  // staleReminderSentAt (SPEC-V1.md 19.6) — samme mønster, og samme bevisst
+  // aksepterte TOCTOU-avveining, som deadlineReminderSentAt over. Sendes én
+  // gang per forespørsel, ikke gjentatt frem til den lukkes.
   const stale = await dbase
     .select({ id: requests.id, journalistId: requests.journalistId, title: requests.title })
     .from(requests)
