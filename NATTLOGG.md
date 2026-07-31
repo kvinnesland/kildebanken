@@ -7931,3 +7931,83 @@ denne commiten inneholder bare denne NATTLOGG-oppdateringen.
 `src/lib/countries/` gjenstår som ikke gjennomgått med denne teknikken.
 Ellers uendret: åpent `runExpireRequests()`-spørsmål, komponentbibliotek,
 OG-bilde, Sentry/Brevo.
+
+## Fortsettelse av økt 7 — countries/ (ren) og en ny, IKKE løst spec-motsigelse om hvem som kan lese et svar
+
+`src/lib/countries/countries.ts` gjennomgått — dette var selve FR-009-fiksen
+fra en tidligere runde denne natten, allerede grundig testet (partial
+dokumenter, alle påkrevd, ingen, draft-eksklusjon) og korrekt koblet inn fra
+alle tre skjemaene som trenger den (`SubscribeForm`, `JournalistApplyForm`,
+`ChangeCountryForm`, verifisert med grep). Ingen funn.
+
+Fulgte deretter referansen fra 18.1 ("Hvem kan lese et svar") videre til
+`moderation/responses.ts` og `admin/responses.ts`, og fant noe som IKKE er
+en kodefeil, men en reell MOTSIGELSE inne i spec-en selv, som jeg lar stå
+åpen fremfor å avgjøre ensidig — fordi begge lesninger har reelle
+personvernkonsekvenser (for bredt ELLER for smalt tilgang til respondenters
+svartekst er begge feil retning å bomme i):
+
+**18.1, ordrett**: "Kun respondenten selv, journalisten som eier
+forespørselen, og en moderator eller administrator med registrert
+begrunnelse og tildeling til svarets land." — altså: BÅDE moderator og
+administrator skal kunne lese et svar, gitt begrunnelse og landtildeling.
+
+**16.2 + FR-051, ordrett**: "Åpning av et enkeltsvar fra
+administrasjonsgrensesnittet krever at ADMINISTRATOREN velger en
+begrunnelse" / "Systemet skal kreve en registrert begrunnelse før en
+ADMINISTRATOR kan åpne et enkeltsvar." — kun administrator nevnt, ikke
+moderator, i to uavhengige, spesifikke, testede krav.
+
+**Koden** (`admin/responses.ts`, `getResponseForAdmin()`) følger 16.2/FR-051
+bokstavelig: `requireAdmin()`, ikke `requireModeratorForCountry()`. Det
+finnes INGEN tilsvarende funksjon for moderator noe sted —
+`moderation/responses.ts` sin eneste eksporterte funksjon (`hideResponse()`)
+tar kun en `responseId` og skjuler svaret, uten noensinne å returnere selve
+svarteksten. Det betyr at en moderator som mottar en `content_reported`-
+e-post om et RAPPORTERT SVAR (12.5, `submitReport()`) i praksis ikke har
+noen måte å faktisk LESE det rapporterte svaret på før de bestemmer seg for
+å skjule det — de ser bare rapportørens egen begrunnelse/kommentar, ikke
+selve den omstridte teksten.
+
+Vurderte begge retninger:
+- **Smal spec, kode er komplett**: 16.2/FR-051 er de mer spesifikke, testede
+  kravene, og er skrevet med tydelig hensikt (nevner "administratoren"
+  presist, to steder uavhengig av hverandre) — 18.1 sin nevnelse av
+  "moderator" er da upresis og burde rettes til kun "administrator".
+- **Bred spec, kode mangler en funksjon**: 18.1 sin frase "... OG TILDELING
+  TIL SVARETS LAND" er et landbegrep som naturlig beskriver MODERATOR (som
+  er landtildelt), ikke administrator (som har global tilgang til
+  landkonfigurasjon, 16.2: "Land (kun administrator)" — administratorer er
+  ikke "tildelt" et land i det hele tatt, de har alt). Dette taler for at
+  18.1 opprinnelig ble skrevet MED moderator for øye, og at det er KODEN
+  (og 16.2/FR-051, som muligens bare beskriver ADMINISTRASJONSGRENSESNITTETS
+  spesifikke enkeltvisning, ikke moderators separate rapport-håndtering) som
+  mangler en tilsvarende `getResponseForModerator()`-funksjon.
+
+Landet bevisst IKKE på noen av delene ensidig: å SNEVRE INN spec-en fjerner
+permanent en uttalt rettighet uten å vite om det var meningen; å BYGGE en ny
+tilgangsvei til respondenters svartekst er en personvernrelevant utvidelse
+(flere personer får lese sensitiv, ofte identifiserende svartekst) som ikke
+bør gjøres på en gjetning om hensikt. Samme forsiktighetsprinsipp som
+`runExpireRequests()`-spørsmålet (se over) — men her enda skjørere, siden
+feil retning direkte påvirker hvem som kan lese ekte personopplysninger.
+Ingen kode- eller spec-endring denne runden. Flagget tydelig for
+morgengjennomgang.
+
+### Verifisert før commit (denne runden)
+
+Ingen kodeendringer — kun gjennomlesing og dokumentasjon av et åpent
+spørsmål, ingen ny funksjonalitet å kjøre verifiseringskjeden mot utover det
+som allerede var grønt tidligere i økten.
+
+### Neste økt
+
+Åpent spørsmål lagt til denne runden: bør moderator (landtildelt) kunne lese
+et enkeltsvar med registrert begrunnelse, slik 18.1 ordrett sier, eller er
+18.1 sin nevnelse av moderator en unøyaktighet som bør rettes til å matche
+16.2/FR-051 sin administrator-only-ordlyd? Avgjøres IKKE autonomt — reell
+personvernavveining. Ellers uendret fra tidligere: `runExpireRequests()`,
+komponentbibliotek, OG-bilde, Sentry/Brevo. Neste kandidat for kritisk
+lesing: `src/lib/journalists/journalist-profile.ts` eller
+`src/lib/legal/documents.ts` — ingen av dem gjennomgått med denne teknikken
+ennå.
