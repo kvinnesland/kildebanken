@@ -8214,3 +8214,93 @@ bekreftet grønne mot den rettede koden).
 sjekk-så-skriv-mønsteret. Ellers uendret: to åpne spørsmål
 (`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek, OG-bilde,
 Sentry/Brevo.
+
+## Fortsettelse av økt 7 — tiende bug: engangs-token kunne i prinsippet brukes to ganger, PLUSS en tikkende bombe funnet i en test
+
+Gikk til `auth/account-deletion.ts` som varslet. Fant PRESIS samme
+TOCTOU-klasse som resten av natten, men i en mer alvorlig kontekst:
+`confirmAccountDeletion()` sjekker `row.usedAt` fra en innledende lesning,
+men skriver `usedAt: now` uten å gjenta `usedAt IS NULL` i selve
+UPDATE-ens WHERE-betingelse. Fulgte referansen i funksjonens egen kommentar
+("samme mønster som `verifyMagicLink`") til `auth/magic-link.ts`, og fant
+IDENTISK mangel der også.
+
+Dette er alvorligere enn de foregående modereringsracene: et engangstoken
+som i prinsippet kan brukes to ganger samtidig er en reell
+autentiseringssvakhet, ikke bare en administrativ e-post-/loggforvirring.
+Klassisk, velkjent årsak til nettopp dette i den virkelige verden:
+e-postsikkerhetsskannere hos enkelte bedrifter "forhåndsbesøker" lenker i
+innkommende e-post automatisk for å sjekke dem — noe som nettopp kan
+utløse to nesten samtidige forsøk på å bruke SAMME engangslenke. For
+`verifyMagicLink()` kunne dette i verste fall gitt to ulike kallere en
+gyldig innlogging fra ett og samme, egentlig engangs-token. For
+`confirmAccountDeletion()` kunne det trigget `performAccountDeletion()` —
+en irreversibel handling (24.3) — to ganger.
+
+**Fiksen** (identisk mønster i begge filer): la til `isNull(usedAt)` i
+UPDATE-ens WHERE-betingelse ved siden av `eq(id, tokenId)`, med
+`.returning()` for å oppdage om en annen, samtidig prosess allerede har
+krevd tokenet. Traff skrivingen ingen rad, returneres samme
+avvisningsresultat som når `usedAt` allerede var satt ved sjekken
+(`null` / `errors.not_found`) — ingen ny kontrakt for kallerne.
+
+**Forsøkte FAKTISK å bevise racet denne gangen**, siden konsekvensen er
+alvorligere enn tidligere: skrev en `Promise.all`-basert test som kalte
+`verifyMagicLink()` med SAMME token to ganger samtidig — denne gangen med
+to STRUKTURELT IDENTISKE kall (ikke to ulike grener med ulik lengde, slik
+kontaktforespørsel-testen hadde), i håp om at symmetrisk timing ville gjøre
+racet mer pålitelig å fange. Kjørte den 5 ganger mot den urettede koden:
+BESTO 5 av 5 ganger — nøyaktig samme konklusjon som kontaktforespørsel-
+forsøket tidligere i natt. Dette bekrefter nå (andre uavhengige forsøk,
+denne gangen med symmetrisk kode) at ekte samtidighet via `Promise.all`
+mot denne lokale Postgres-instansen konsekvent IKKE klarer å tvinge frem
+det aktuelle TOCTOU-vinduet, uansett kodesymmetri — en miljøegenskap, ikke
+en egenskap ved selve testens utforming. Fjernet testen igjen (samme
+begrunnelse: en test som består uansett gir falsk trygghet), og lot de
+eksisterende 24 testene (15 + 9) i de to filene bekrefte ingen regresjon.
+
+**Sidefunn under dette arbeidet, urelatert til selve fiksen**: den fulle
+`test:integration`-kjøringen feilet uventet i
+`src/lib/legal/documents.integration.test.ts` ("ignorerer versjoner
+publisert i FREMTIDEN") — helt urelatert til token-fiksen. Gravde i det og
+fant en ekte, interessant tikkende bombe: `fixtures.ts` sin dokumenterte,
+aksepterte konvensjon ("ingen opprydding, greit for en engangs, disponibel
+sandkasse-database") holder for de FLESTE tester, siden de bruker unike,
+tilfeldige verdier og alltid spør etter SIN EGEN rad. Denne ene testen
+derimot spør etter "nyeste rad som IKKE er fremtidsdatert" — en spørring
+som kan bli forstyrret av ETHVER akkumulert rad fra TIDLIGERE kjøringer,
+ikke bare sine egne. Siden denne autonome økten nå har kjørt sammenhengende
+i over 24 timer (motsatt av forutsetningen "engangs, disponibel database"),
+hadde en fremtidsdatert testrad fra en TIDLIGERE time i natt rukket å
+"utløpe" inn i fortiden og dukket opp som en falsk "nyeste gjeldende
+versjon" for en helt annen, senere test-kjøring. Fant og bekreftet dette
+ved å kjøre spørringen direkte mot databasen og telle: 134 akkumulerte
+rader for (XT, en-GB, privacy). Ryddet bort de gamle radene manuelt, og la
+til eksplisitt opprydding (i en `finally`) KUN i denne ene testen — et
+bevisst unntak fra fixtures.ts sin ellers gjeldende "ingen opprydding"-
+konvensjon, fordi denne spesifikke testen har en tidsavhengig egenskap
+("fremtidig" i 24 timer, så "fortid" for alltid) som de andre testene
+ikke har. Kjørte testfilen to ganger på rad for å bekrefte at opprydningen
+faktisk hindrer reakkumulering.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**364
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next
+&& next build` (grønn), `test:integration` mot ekte lokal Postgres (**246
+tester**, uendret — 24 eksisterende tester i auth/-filene og 5 i
+documents.integration.test.ts kjørt og bekreftet grønne, sistnevnte kjørt
+to ganger for å bekrefte opprydningen virker).
+
+### Neste økt
+
+Alle kjente forekomster av sjekk-så-skriv-uten-WHERE-gjentakelse-mønsteret
+er nå gjennomgått og fikset der funnet (kontaktforespørsler, hele
+modereringslaget, digest-retry, engangstokens). Verdt å vurdere: er det
+FLERE steder i test-suiten med samme "tidsavhengig fremtidsdatert
+fixture"-sårbarhet som ble funnet i `documents.integration.test.ts`? Et
+raskt søk etter `Date.now() +` i `*.integration.test.ts`-filer kan avdekke
+flere kandidater neste økt. Ellers uendret: to åpne spørsmål
+(`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek, OG-bilde,
+Sentry/Brevo.

@@ -1,6 +1,6 @@
 import { db } from "@/db/client";
 import { users, authTokens } from "@/db/schema";
-import { eq, and, gt, count } from "drizzle-orm";
+import { eq, and, gt, count, isNull } from "drizzle-orm";
 import { generateToken, hashToken } from "./tokens";
 import { sendTransactionalEmail } from "@/lib/email/send";
 
@@ -99,7 +99,19 @@ export async function verifyMagicLink(rawToken: string): Promise<VerifiedUser | 
   if (row.expiresAt < now) return null;
   if (row.status === "suspended" || row.status === "deleted") return null;
 
-  await db.update(authTokens).set({ usedAt: now }).where(eq(authTokens.id, row.tokenId));
+  // isNull(usedAt) i selve UPDATE-en (ikke bare sjekken over) gjør
+  // "engangsbruk" atomisk — uten den kunne to samtidige forsøk på å
+  // verifisere SAMME token (f.eks. en e-postsikkerhetsskanner som
+  // forhåndsbesøker lenker, et velkjent, reelt fenomen for
+  // engangsinnloggingslenker) begge passere sjekken før noen rakk å skrive,
+  // og begge få en gyldig innlogging fra et token som skal kunne brukes
+  // NØYAKTIG én gang.
+  const [claimed] = await db
+    .update(authTokens)
+    .set({ usedAt: now })
+    .where(and(eq(authTokens.id, row.tokenId), isNull(authTokens.usedAt)))
+    .returning({ id: authTokens.id });
+  if (!claimed) return null;
 
   if (!row.emailVerifiedAt || row.status === "pending_email_verification") {
     await db

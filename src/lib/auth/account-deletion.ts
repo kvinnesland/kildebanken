@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   auditLogs,
@@ -78,7 +78,17 @@ export async function confirmAccountDeletion(rawToken: string): Promise<AccountD
   if (row.expiresAt < now) return { ok: false, error: "errors.not_found" };
   if (row.status === "deleted") return { ok: false, error: "errors.not_found" };
 
-  await db.update(authTokens).set({ usedAt: now }).where(eq(authTokens.id, row.tokenId));
+  // Samme atomiske engangsbruk-lukking som verifyMagicLink()
+  // (src/lib/auth/magic-link.ts) — uten isNull(usedAt) i selve UPDATE-en
+  // kunne to samtidige forsøk på å bekrefte SAMME slettelenke begge passere
+  // sjekken over og begge trigge performAccountDeletion(), en irreversibel
+  // handling (24.3: "særlig sensitive handlinger").
+  const [claimed] = await db
+    .update(authTokens)
+    .set({ usedAt: now })
+    .where(and(eq(authTokens.id, row.tokenId), isNull(authTokens.usedAt)))
+    .returning({ id: authTokens.id });
+  if (!claimed) return { ok: false, error: "errors.not_found" };
 
   await performAccountDeletion(row.userId, row.role);
 
