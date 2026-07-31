@@ -61,4 +61,17 @@ describe("checkRateLimit mot ekte Postgres (SPEC-V1.md 18 / 19.16)", () => {
     expect(allowed).toBe(true);
     expect(await countHits(bucket)).toBe(1); // den gamle raden er slettet, kun den nye er igjen
   });
+
+  it("nøyaktig N av mange SAMTIDIGE kall for samme bucket slipper gjennom, aldri flere (advisory-lås lukker TOCTOU-racen)", async () => {
+    const bucket = `test:${randomUUID()}`;
+
+    // 20 helt samtidige kall mot en grense på 5 — uten låsen kunne flere enn
+    // 5 lese "under grensen" før noen av dem rakk å sette inn sin egen rad.
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => checkRateLimit(db, bucket, 60_000, 5))
+    );
+
+    expect(results.filter(Boolean)).toHaveLength(5);
+    expect(await countHits(bucket)).toBe(5);
+  });
 });

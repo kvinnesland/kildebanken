@@ -7456,3 +7456,66 @@ teknikk i andre høy-risiko-områder som ikke er lest like nøye: auth/
 session.ts (økt-tilbakekalling, glidende utløp), moderation/-modulene
 (landtildeling-håndheving), eller CSRF/rate-limiting fra tidligere denne
 natten (bygget raskt, kanskje ikke lest like kritisk igjen etterpå).
+
+---
+
+## Fortsettelse av økt 7 — fortsatt testkvalitet-gjennomgang: reell race condition funnet og lukket i rate-limit
+
+Fortsatte kritisk gjennomlesing i sikkerhetskritisk kode. `session.ts` og
+`authorize.ts` (økt-tilbakekalling, glidende utløp, moderator-landtildeling)
+holdt begge mål ved nøye lesing — presise grensetester med ekte
+tidsverdier og toleranser, alle negative veier (utløpt/tilbakekalt/
+suspendert/feil land) faktisk testet. `moderation/responses.ts` likeens
+(henter land via JOIN mot `requests.countryCode`, ikke et ikke-eksisterende
+felt — korrekt, og "nekter en moderator tildelt et ANNET land" er
+faktisk testet).
+
+**Reelt hull funnet i `checkRateLimit()`** (`src/lib/security/rate-limit.ts`,
+bygget tidligere denne natten): funksjonen gjorde slett-gamle/tell/sett-inn
+som TRE separate spørringer uten noen låsing. To samtidige kall for SAMME
+bucket kunne begge lese antallet FØR noen av dem rakk å sette inn sin egen
+rad (TOCTOU) — en klassisk race condition i en sikkerhetskontroll.
+
+**Bekreftet alvorlighetsgraden empirisk, ikke antatt:** skrev en ny test
+som sender 20 helt samtidige kall mot en grense på 5, kjørte den FØRST mot
+den gamle koden (via `git stash` av kun `rate-limit.ts`, konkret bevis for
+regresjon) — resultatet var at 19 av 20 kall slapp gjennom, ikke bare noen
+få ekstra. Dette var altså IKKE en teoretisk, lav-alvorlighets-detalj som
+antatt ved første øyekast, men en race som i praksis lar nesten ALT
+gjennom under reell samtidighet — akkurat den typen funn en grundig,
+empirisk testkvalitet-gjennomgang er ment å avdekke fremfor å anta.
+
+**Rettet:** hele sjekken kjører nå i én `db.transaction()`, låst med en
+per-bucket Postgres advisory-lås (`pg_advisory_xact_lock(hashtext(bucket))`,
+frigitt automatisk ved commit/rollback) — standard, veldokumentert
+Postgres-mønster for nøyaktig dette formålet (nøkkelserialisert per
+streng-bucket, ikke en global lås som ville seriealisert ALLE bucketer mot
+hverandre unødvendig). Første bruk av `db.transaction()` i kodebasen.
+Bekreftet mønsteret fungerer med en direkte `tsx`-spørring mot testdata-
+basen først (samme "verifiser empirisk, ikke anta"-metode som Sentry- og
+`/health`-arbeidet tidligere denne natten), deretter satt inn i faktisk
+kode. Kjørte den nye samtidighetstesten på nytt etter rettelsen: nøyaktig
+5 av 20 slipper gjennom, som forventet.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**364
+tester**, uendret — den nye testen er kun integrasjon), `i18n:check`
+(**387 nøkler**, uendret), `design:check-tokens` (**40** komponent-CSS-
+filer, uendret), `rm -rf .next && next build` (grønn, kjørt i bakgrunnen),
+`test:integration` mot ekte lokal Postgres (**243 tester**, +1 — inkludert
+den nye samtidighetstesten, bekreftet BEGGE veier: feiler mot gammel kode,
+består mot rettet kode).
+
+### Neste økt
+
+To reelle bugs funnet på to påfølgende testkvalitet-runder (delt e-post
+ved kontosletting, race condition i rate-limit) — teknikken fortsetter å
+være produktiv. Andre kandidater for samme kritiske gjennomlesing: CSRF-
+Origin-sjekken i `middleware.ts` (bygget samme natt som rate-limit —
+`request.nextUrl.origin` sin faktiske verdi bak Netlifys reverse-proxy er
+IKKE bekreftet mot et ekte utrullet miljø, bare antatt korrekt fra Next.js
+sin dokumenterte oppførsel — kan ikke verifiseres uten en faktisk
+Netlify-utrulling, så dette er en KJENT, ikke en lukket, usikkerhet), eller
+digest-tick sin per-land-isolasjon (FR-036) sett med samme "kunne dette
+race under ekte samtidig kjøring"-blikk som rate-limit nettopp fikk.
