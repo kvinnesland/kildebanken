@@ -6379,3 +6379,92 @@ funksjonelle krav (seksjon 22). Neste gode kandidat: seksjon 23
 ("Akseptansekriterier for lansering") — samme teknikk, et femte inventar.
 Ellers: Brevo-integrasjon, resten av komponentbiblioteket, og
 OG-delingsbilde forblir alle korrekt blokkert.
+
+---
+
+## Fortsettelse av økt 7 — seksjon 23 (akseptansekriterier) sjekket: fant og rettet en KRITISK, tidligere ALDRI kjørt bug i selve digest-jobben
+
+Startet punkt (1) fra forrige "Neste økt" — seksjon 23s 20-punkts kjede
+("V1 er klar når hele denne kjeden kan gjennomføres"). Denne seksjonen er
+strukturelt annerledes enn de fire forrige inventarene (ingen liste av
+entiteter/ruter/maler/krav å krysse felt for felt) — den beskriver en
+sammenhengende BRUKERREISE. Sjekket derfor i stedet: har hvert steg i
+kjeden noen gang blitt verifisert, alene ELLER sammen med de andre?
+
+**Punkt 15** ("Ingen svar, mottakerprofiler eller journalistsider er
+tilgjengelige uten innlogging eller indekserbare av søkemotorer") ble
+grundig sjekket først: bekreftet at `layout.tsx` har `robots: {index:
+false}` som global standard, med NØYAKTIG én eksplisitt override (den
+offentlige forespørselssiden) — og at samtlige 8 private `page.tsx`-filer
+(admin/*, journalist/*, contact-requests/[id], me/*) faktisk kaller
+`getCurrentSession()` og omdirigerer til innlogging uten den. Ingen hull.
+
+**Punkt 4** ("Digest-jobben kjører ... og leverer forespørselen til alle
+aktive abonnenter") ledet til det virkelig store funnet: `runDigestTick()`
+i `tick.ts` var den ENESTE av jobbfilens seks jobber som ALDRI var
+eksportert eller direkte testet — testfilens egen kommentar hadde
+(feilaktig) antatt den var like upraktisk å teste som `runTick()` selv
+(pga. `shouldRunDailyJobNow()`s vegg-klokke-avhengighet), men
+`runDigestTick` har sin EGEN, uavhengige, lett testbare klokkeslett-vakt
+per land og er IKKE gatet av `shouldRunDailyJobNow()` i det hele tatt
+(kun `purge-unverified`/`retention` er). Eksporterte den og skrev 7 nye
+tester (isolert testland, samme mønster som forrige økters
+`dashboard.ts`/`countries.ts`-tester) — og den environment aller FØRSTE
+kjøringen med en faktisk NY publisert forespørsel å inkludere, FEILET:
+
+```
+malformed array literal: "352589d0-286b-486e-8e1e-aa77215116ec"
+```
+
+**Rotårsaken**: linjen som setter `included_in_digest_at` på de inkluderte
+forespørslene brukte en rå SQL-mal (`sql\`${requests.id} = ANY(${requestIds})\``)
+i stedet for Drizzles egen `inArray()`-hjelpefunksjon (brukt konsekvent
+OVERALT ELLERS i kodebasen for nøyaktig dette mønsteret) — driveren
+serialiserte ikke JS-arrayen riktig som en Postgres-array-literal for
+`ANY()`. Siden `runDigestTick` ALDRI hadde blitt kjørt med ekte data
+(ingen test, og tilsynelatende heller ingen fullstendig manuell
+dev-server-verifisering som noensinne fikk en NY forespørsel helt frem til
+denne spesifikke linjen), hadde denne bug-en aldri blitt utløst — verken i
+utvikling eller (potensielt) i produksjon.
+
+**Konsekvensen dette ville hatt i produksjon**: `runDigestTick`s egen
+try/catch PER LAND (FR-036) ville fanget feilen og lagt den i
+`errors[]` — jobben ville altså ikke krasjet HELT, men INGEN digest ville
+noensinne blitt opprettet for et land DEN DAGEN det fantes en ny publisert
+forespørsel å inkludere. Mottakere ville rett og slett ALDRI mottatt en
+digest, stille, med ingen synlig feil utover en ubeaktet streng i et
+jobbresultat ingen overvåker leser (ingen alarmering er bygget ennå). Med
+andre ord: selve KJERNEFUNKSJONEN i hele produktet ("daglig utsendelse")
+ville aldri fungert forbi den aller første forespørselen, i noe miljø,
+til noen hadde funnet og rettet nøyaktig denne linjen manuelt.
+
+**Rettet**: byttet til `inArray(requests.id, requestIds)` (samme
+importlinje hadde allerede `inArray` fra tidligere bruk i filen — bare
+`sql` selv ble nå ubrukt og fjernet fra importen).
+
+De 7 nye testene i `tick.integration.test.ts` (egen `describe`-blokk,
+isolert testland) dekker: vellykket opprettelse+utsendelse+token-rotasjon
+(og bekrefter nå at feilen er borte), FR-034 (idempotent — andre tikk
+samme dag oppretter ikke en ny digest), FR-031 (ingen levering til et
+annet lands mottaker), FR-035 (utelater avmeldt/sprettet abonnement),
+FR-032/033 (riktig locale per levering, to ulike locales), ingen tom
+digest når landet ikke har nye forespørsler, og 8.1 (utelater en
+suspendert journalists forespørsel).
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**340
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next
+&& next build` (grønn), `test:integration` mot ekte lokal Postgres (**231
+tester**, +7 — kjørt 3 ganger på rad, alle grønne, gitt hvor kritisk
+denne jobben er).
+
+### Neste økt
+
+Fortsett resten av seksjon 23s 20 punkter — spesielt punkt 17–20
+(fler-lands-/fler-språk-kjeden, som spec-en selv fremhever som de eneste
+"som beviser at internasjonaliseringen faktisk virker"). Punkt 16 (SPF/
+DKIM/DMARC + ekte innboks-levering) er infrastruktur/drift, ikke noe kode
+kan verifisere. Ellers: Brevo-integrasjon, resten av komponentbiblioteket,
+og OG-delingsbilde forblir alle korrekt blokkert.

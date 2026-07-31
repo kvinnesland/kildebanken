@@ -8,7 +8,7 @@
 // ligger i databasen (unike indekser, statussjekk før overgang), ikke i at
 // denne funksjonen "husker" noe fra forrige kall.
 
-import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import { db, type Database } from "@/db/client";
 import {
   contactRequests,
@@ -98,7 +98,18 @@ function shouldRunDailyJobNow(): boolean {
 // digest-tick — se INFRASTRUCTURE.md 5.2
 // ---------------------------------------------------------------------------
 
-async function runDigestTick(dbase: Database): Promise<TickResult> {
+/**
+ * Eksportert (økt 7, se NATTLOGG.md) — var tidligere den ENESTE av de seks
+ * jobbene i denne filen som ikke var direkte testbar, til tross for at den
+ * dekker FR-030 til FR-038 (selve "daglig utsendelse"-funksjonen, trolig
+ * plattformens mest sentrale funksjon). Ingen sesjon/cookie-avhengighet —
+ * gate-en er ren `localTimeHHMM < country.digestSendTime`-sammenligning per
+ * land, ikke `runTick()`s egen vegg-klokke-avhengige
+ * `shouldRunDailyJobNow()` (som KUN gjelder purge-unverified/retention).
+ * Fullt testbar ved å sette et testlands `digest_send_time` til et
+ * tidspunkt som garantert allerede er passert.
+ */
+export async function runDigestTick(dbase: Database): Promise<TickResult> {
   const errors: string[] = [];
   let processed = 0;
 
@@ -164,7 +175,7 @@ async function runDigestTick(dbase: Database): Promise<TickResult> {
       await dbase
         .update(requests)
         .set({ includedInDigestAt: new Date() })
-        .where(sql`${requests.id} = ANY(${requestIds})`);
+        .where(inArray(requests.id, requestIds));
 
       const sendErrors = await sendDigestToRecipients(dbase, {
         digestId: createdDigest.id,

@@ -1,7 +1,18 @@
+import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { contactRequests, requests, responses, users } from "@/db/schema";
+import {
+  contactRequests,
+  countries,
+  digestDeliveries,
+  digests,
+  emailSubscriptions,
+  journalistProfiles,
+  requests,
+  responses,
+  users,
+} from "@/db/schema";
 import {
   createActiveJournalist,
   createActiveRecipient,
@@ -11,6 +22,7 @@ import {
 } from "@/db/integration/fixtures";
 import {
   runDeadlineReminders,
+  runDigestTick,
   runExpireContactRequests,
   runExpireRequests,
   runPurgeUnverified,
@@ -24,6 +36,14 @@ import {
 // upraktisk å teste direkte pga. `shouldRunDailyJobNow()`s vegg-klokke-
 // avhengighet) — laveste-risiko-skiven av den lenge utsatte
 // testbarhets-refaktoreringen, se NATTLOGG.md.
+//
+// `runDigestTick` var det ENESTE unntaket — se dens egen docstring i
+// tick.ts (økt 7): ikke gatet av `shouldRunDailyJobNow()` i det hele tatt,
+// bare aldri eksportert. Dekket nå av egen describe-blokk under, med et
+// HELT ISOLERT testland (ikke `TEST_COUNTRY_CODE`) — jobben plukker opp
+// ALLE publiserte, ikke-digest-inkluderte forespørsler i et land, så delt
+// tilstand med andre parallelle testfiler ville vært skjørt her mer enn
+// noe annet sted i denne filen.
 
 async function insertRequest(
   journalistId: string,
@@ -382,5 +402,319 @@ describe("runPurgeUnverified mot ekte Postgres (FR-004)", () => {
     expect(after).toBeDefined();
 
     await db.delete(users).where(eq(users.id, user.id));
+  });
+});
+
+async function createIsolatedActiveCountry(digestSendTime = "00:00"): Promise<string> {
+  const code = `Z${randomUUID().slice(0, 6).toUpperCase()}`;
+  await db.insert(countries).values({
+    code,
+    nameKey: "country.test.name",
+    defaultLocale: "nb-NO",
+    availableLocales: ["nb-NO", "en-GB"],
+    timezone: "Europe/Oslo",
+    minimumAge: 18,
+    // "00:00" er GARANTERT allerede passert lokal tid, uansett når testen
+    // faktisk kjører — nødvendig for at digest-tickens egen
+    // klokkeslett-vakt (`localTimeHHMM < country.digestSendTime`) slipper
+    // gjennom uten å måtte fryse/mocke systemklokken.
+    digestSendTime,
+    senderNameKey: "email.sender_name.test",
+    supportEmail: "test@example.invalid",
+    status: "active",
+  });
+  return code;
+}
+
+async function createIsolatedJournalist(countryCode: string): Promise<{ id: string }> {
+  const [user] = await db
+    .insert(users)
+    .values({
+      email: uniqueTestEmail("digest-journalist"),
+      role: "journalist",
+      status: "active",
+      countryCode,
+      locale: "nb-NO",
+      emailVerifiedAt: new Date(),
+    })
+    .returning({ id: users.id });
+  if (!user) throw new Error("Klarte ikke opprette test-journalist");
+  await db.insert(journalistProfiles).values({
+    userId: user.id,
+    fullName: "Test Journalist",
+    jobTitle: "Journalist",
+    organizationName: "Testavisen",
+    organizationUrl: "https://example.invalid",
+    verificationStatus: "approved",
+  });
+  return user;
+}
+
+async function createIsolatedRecipient(
+  countryCode: string,
+  locale = "nb-NO",
+  subscriptionStatus: "active" | "unsubscribed" | "bounced" = "active"
+): Promise<{ id: string; email: string }> {
+  const email = uniqueTestEmail("digest-recipient");
+  const [user] = await db
+    .insert(users)
+    .values({
+      email,
+      role: "recipient",
+      status: "active",
+      countryCode,
+      locale,
+      emailVerifiedAt: new Date(),
+    })
+    .returning({ id: users.id });
+  if (!user) throw new Error("Klarte ikke opprette test-mottaker");
+  await db.insert(emailSubscriptions).values({
+    userId: user.id,
+    status: subscriptionStatus,
+    unsubscribeTokenHash: randomUUID(),
+  });
+  return { id: user.id, email };
+}
+
+async function createPublishedRequestForDigest(
+  journalistId: string,
+  countryCode: string,
+  contentLanguage = "nb-NO"
+) {
+  const [request] = await db
+    .insert(requests)
+    .values({
+      journalistId,
+      countryCode,
+      contentLanguage,
+      title: "Testforespørsel for digest",
+      summary: "Sammendrag.",
+      description: "Beskrivelse.",
+      targetPersonDescription: "Hvem som helst.",
+      slug: `test-digest-${randomUUID()}`,
+      status: "published",
+      allowsAnonymousParticipation: true,
+      mayBeRecorded: false,
+      mayInvolvePhotoVideo: false,
+      responseDeadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      publishedAt: new Date(),
+    })
+    .returning();
+  if (!request) throw new Error("Klarte ikke opprette testforespørsel");
+  return request;
+}
+
+async function cleanupCountry(code: string): Promise<void> {
+  const digestIdsForCountry = db.select({ id: digests.id }).from(digests).where(eq(digests.countryCode, code));
+  const userIdsForCountry = db.select({ id: users.id }).from(users).where(eq(users.countryCode, code));
+
+  await db.delete(digestDeliveries).where(inArray(digestDeliveries.digestId, digestIdsForCountry));
+  await db.delete(digests).where(eq(digests.countryCode, code));
+  await db.delete(requests).where(eq(requests.countryCode, code));
+  await db.delete(journalistProfiles).where(inArray(journalistProfiles.userId, userIdsForCountry));
+  await db.delete(emailSubscriptions).where(inArray(emailSubscriptions.userId, userIdsForCountry));
+  await db.delete(users).where(eq(users.countryCode, code));
+  await db.delete(countries).where(eq(countries.code, code));
+}
+
+describe("runDigestTick mot ekte Postgres (FR-030 til FR-038, SPEC-V1.md 10, 23 punkt 4)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("oppretter en digest og sender til en aktiv mottaker, ruller avmeldingstoken, og setter included_in_digest_at", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const code = await createIsolatedActiveCountry();
+    try {
+      const journalist = await createIsolatedJournalist(code);
+      const request = await createPublishedRequestForDigest(journalist.id, code);
+      const recipient = await createIsolatedRecipient(code);
+      const [subscriptionBefore] = await db
+        .select()
+        .from(emailSubscriptions)
+        .where(eq(emailSubscriptions.userId, recipient.id));
+
+      const result = await runDigestTick(db);
+
+      expect(result.job).toBe("digest-tick");
+      expect(result.errors).toEqual([]);
+
+      const [digestRow] = await db.select().from(digests).where(eq(digests.countryCode, code));
+      expect(digestRow?.status).toBe("sent");
+      expect(digestRow?.recipientCount).toBe(1);
+      expect(digestRow?.requestIds).toEqual([request.id]);
+
+      const [deliveryRow] = await db
+        .select()
+        .from(digestDeliveries)
+        .where(eq(digestDeliveries.userId, recipient.id));
+      expect(deliveryRow?.status).toBe("sent");
+      expect(deliveryRow?.locale).toBe("nb-NO");
+
+      const [requestAfter] = await db.select().from(requests).where(eq(requests.id, request.id));
+      expect(requestAfter?.includedInDigestAt).not.toBeNull();
+
+      const [subscriptionAfter] = await db
+        .select()
+        .from(emailSubscriptions)
+        .where(eq(emailSubscriptions.userId, recipient.id));
+      expect(subscriptionAfter?.unsubscribeTokenHash).not.toBe(subscriptionBefore?.unsubscribeTokenHash);
+      expect(subscriptionAfter?.lastDigestAt).not.toBeNull();
+
+      expect(warnSpy.mock.calls.some((call) => String(call[0]).includes("[email:stub:bulk]"))).toBe(
+        true
+      );
+    } finally {
+      await cleanupCountry(code);
+    }
+  });
+
+  it("FR-034: er idempotent — et andre tikk samme dag oppretter IKKE en ny digest", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const code = await createIsolatedActiveCountry();
+    try {
+      const journalist = await createIsolatedJournalist(code);
+      await createPublishedRequestForDigest(journalist.id, code);
+      await createIsolatedRecipient(code);
+
+      await runDigestTick(db);
+      const secondResult = await runDigestTick(db);
+
+      expect(secondResult.processed).toBe(0);
+      const allDigests = await db.select().from(digests).where(eq(digests.countryCode, code));
+      expect(allDigests).toHaveLength(1);
+    } finally {
+      await cleanupCountry(code);
+    }
+  });
+
+  it("FR-031: sender IKKE til en mottaker i et ANNET land", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const code = await createIsolatedActiveCountry();
+    const otherCode = await createIsolatedActiveCountry();
+    try {
+      const journalist = await createIsolatedJournalist(code);
+      await createPublishedRequestForDigest(journalist.id, code);
+      await createIsolatedRecipient(code);
+      const otherCountryRecipient = await createIsolatedRecipient(otherCode);
+
+      await runDigestTick(db);
+
+      const [digestRow] = await db.select().from(digests).where(eq(digests.countryCode, code));
+      const otherDelivery = await db
+        .select()
+        .from(digestDeliveries)
+        .where(eq(digestDeliveries.userId, otherCountryRecipient.id));
+      expect(otherDelivery).toHaveLength(0);
+      expect(digestRow?.recipientCount).toBe(1);
+    } finally {
+      await cleanupCountry(code);
+      await cleanupCountry(otherCode);
+    }
+  });
+
+  it("FR-035: utelater en mottaker med avmeldt eller sprettet abonnement", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const code = await createIsolatedActiveCountry();
+    try {
+      const journalist = await createIsolatedJournalist(code);
+      await createPublishedRequestForDigest(journalist.id, code);
+      const activeRecipient = await createIsolatedRecipient(code, "nb-NO", "active");
+      const unsubscribedRecipient = await createIsolatedRecipient(code, "nb-NO", "unsubscribed");
+      const bouncedRecipient = await createIsolatedRecipient(code, "nb-NO", "bounced");
+
+      const result = await runDigestTick(db);
+
+      expect(result.errors).toEqual([]);
+      const [digestRow] = await db.select().from(digests).where(eq(digests.countryCode, code));
+      expect(digestRow?.recipientCount).toBe(1);
+      const activeDelivery = await db
+        .select()
+        .from(digestDeliveries)
+        .where(eq(digestDeliveries.userId, activeRecipient.id));
+      expect(activeDelivery).toHaveLength(1);
+      const unsubscribedDelivery = await db
+        .select()
+        .from(digestDeliveries)
+        .where(eq(digestDeliveries.userId, unsubscribedRecipient.id));
+      expect(unsubscribedDelivery).toHaveLength(0);
+      const bouncedDelivery = await db
+        .select()
+        .from(digestDeliveries)
+        .where(eq(digestDeliveries.userId, bouncedRecipient.id));
+      expect(bouncedDelivery).toHaveLength(0);
+    } finally {
+      await cleanupCountry(code);
+    }
+  });
+
+  it("FR-032/FR-033: rendrer én variant per locale FAKTISK i bruk, og logger riktig locale per levering", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const code = await createIsolatedActiveCountry();
+    try {
+      const journalist = await createIsolatedJournalist(code);
+      await createPublishedRequestForDigest(journalist.id, code);
+      const norwegianRecipient = await createIsolatedRecipient(code, "nb-NO");
+      const englishRecipient = await createIsolatedRecipient(code, "en-GB");
+
+      await runDigestTick(db);
+
+      const [nbDelivery] = await db
+        .select()
+        .from(digestDeliveries)
+        .where(eq(digestDeliveries.userId, norwegianRecipient.id));
+      const [enDelivery] = await db
+        .select()
+        .from(digestDeliveries)
+        .where(eq(digestDeliveries.userId, englishRecipient.id));
+      expect(nbDelivery?.locale).toBe("nb-NO");
+      expect(enDelivery?.locale).toBe("en-GB");
+    } finally {
+      await cleanupCountry(code);
+    }
+  });
+
+  it("sender IKKE en tom digest når landet ikke har noen nye publiserte forespørsler", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const code = await createIsolatedActiveCountry();
+    try {
+      await createIsolatedRecipient(code);
+      // Ingen forespørsel opprettet i det hele tatt.
+
+      const result = await runDigestTick(db);
+
+      expect(result.processed).toBe(0);
+      const allDigests = await db.select().from(digests).where(eq(digests.countryCode, code));
+      expect(allDigests).toHaveLength(0);
+    } finally {
+      await cleanupCountry(code);
+    }
+  });
+
+  it("8.1: utelater en forespørsel fra en SUSPENDERT journalist fra en ny digest", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const code = await createIsolatedActiveCountry();
+    try {
+      const journalist = await createIsolatedJournalist(code);
+      await createPublishedRequestForDigest(journalist.id, code);
+      await createIsolatedRecipient(code);
+      await db.update(users).set({ status: "suspended" }).where(eq(users.id, journalist.id));
+
+      const result = await runDigestTick(db);
+
+      expect(result.processed).toBe(0);
+      const allDigests = await db.select().from(digests).where(eq(digests.countryCode, code));
+      expect(allDigests).toHaveLength(0);
+    } finally {
+      await cleanupCountry(code);
+    }
   });
 });
