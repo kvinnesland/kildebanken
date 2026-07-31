@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { sendTransactionalEmail } from "./send";
+import { sendTransactionalEmail, sendBulkEmail } from "./send";
 
 describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
   afterEach(() => {
@@ -244,5 +244,166 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
     expect(loggedMessage).toContain("Forespørselen din er lukket");
+  });
+});
+
+describe("sendTransactionalEmail (ekte Brevo-kall, mocket fetch)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("poster til v3/smtp/email med korrekt avsender, mottaker og rendret innhold", async () => {
+    vi.stubEnv("BREVO_API_KEY", "test-key-123");
+    vi.stubEnv("BREVO_SENDER_TRANSACTIONAL", "varsler@tjenesten.no");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      text: () => Promise.resolve(""),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendTransactionalEmail({
+      template: "magic_link",
+      to: { email: "test@example.com", locale: "nb-NO" },
+      data: { token: "abc123" },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.brevo.com/v3/smtp/email");
+    expect(options.method).toBe("POST");
+    expect(options.headers).toMatchObject({ "api-key": "test-key-123" });
+    const body = JSON.parse(options.body as string);
+    expect(body.sender).toEqual({ email: "varsler@tjenesten.no" });
+    expect(body.to).toEqual([{ email: "test@example.com" }]);
+    expect(body.subject).toContain("innloggingslenke");
+    expect(body.htmlContent).toContain("abc123");
+    expect(body.textContent).toContain("abc123");
+  });
+
+  it("kaster når Brevo svarer med en feilstatus", async () => {
+    vi.stubEnv("BREVO_API_KEY", "test-key-123");
+    vi.stubEnv("BREVO_SENDER_TRANSACTIONAL", "varsler@tjenesten.no");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        text: () => Promise.resolve('{"message":"invalid sender"}'),
+      })
+    );
+
+    await expect(
+      sendTransactionalEmail({
+        template: "magic_link",
+        to: { email: "test@example.com", locale: "nb-NO" },
+        data: { token: "abc123" },
+      })
+    ).rejects.toThrow(/Brevo-sending feilet \(400\)/);
+  });
+
+  it("kaster når BREVO_SENDER_TRANSACTIONAL mangler, uten å kalle Brevo", async () => {
+    vi.stubEnv("BREVO_API_KEY", "test-key-123");
+    vi.stubEnv("BREVO_SENDER_TRANSACTIONAL", "");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      sendTransactionalEmail({
+        template: "magic_link",
+        to: { email: "test@example.com", locale: "nb-NO" },
+        data: { token: "abc123" },
+      })
+    ).rejects.toThrow(/BREVO_SENDER_TRANSACTIONAL/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("kaster når malen ikke kan rendres (ukjent mal eller manglende data), uten å kalle Brevo", async () => {
+    vi.stubEnv("BREVO_API_KEY", "test-key-123");
+    vi.stubEnv("BREVO_SENDER_TRANSACTIONAL", "varsler@tjenesten.no");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      sendTransactionalEmail({
+        template: "response_submitted_receipt",
+        to: { email: "test@example.com", locale: "nb-NO" },
+        data: { requestId: "req-1" }, // mangler requestTitle/requestSlug
+      })
+    ).rejects.toThrow(/ingen mal bygget/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("sendBulkEmail", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("logger stubben når BREVO_API_KEY mangler", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sendBulkEmail({
+      to: { email: "recipient@example.com", locale: "nb-NO" },
+      subject: "Dagens digest",
+      html: "<p>hei</p>",
+      text: "hei",
+      listUnsubscribeUrl: "https://tjenesten.no/api/unsubscribe/tok-1",
+    });
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
+    expect(loggedMessage).toContain("Dagens digest");
+    expect(loggedMessage).toContain("tok-1");
+  });
+
+  it("poster til v3/smtp/email med bulk-avsender og List-Unsubscribe-headere (FR-038)", async () => {
+    vi.stubEnv("BREVO_API_KEY", "test-key-123");
+    vi.stubEnv("BREVO_SENDER_BULK", "utsendelse@epost.tjenesten.no");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      text: () => Promise.resolve(""),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendBulkEmail({
+      to: { email: "recipient@example.com", locale: "nb-NO" },
+      subject: "Dagens digest",
+      html: "<p>hei</p>",
+      text: "hei",
+      listUnsubscribeUrl: "https://tjenesten.no/api/unsubscribe/tok-1",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(options.body as string);
+    expect(body.sender).toEqual({ email: "utsendelse@epost.tjenesten.no" });
+    expect(body.to).toEqual([{ email: "recipient@example.com" }]);
+    expect(body.headers).toEqual({
+      "List-Unsubscribe": "<https://tjenesten.no/api/unsubscribe/tok-1>",
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
+  });
+
+  it("kaster når BREVO_SENDER_BULK mangler, uten å kalle Brevo", async () => {
+    vi.stubEnv("BREVO_API_KEY", "test-key-123");
+    vi.stubEnv("BREVO_SENDER_BULK", "");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      sendBulkEmail({
+        to: { email: "recipient@example.com", locale: "nb-NO" },
+        subject: "Dagens digest",
+        html: "<p>hei</p>",
+        text: "hei",
+        listUnsubscribeUrl: "https://tjenesten.no/api/unsubscribe/tok-1",
+      })
+    ).rejects.toThrow(/BREVO_SENDER_BULK/);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

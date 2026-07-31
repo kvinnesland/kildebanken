@@ -29,10 +29,42 @@ import type { RenderedEmail } from "./templates/simple-cta-email";
 // e-postleverandør (skulle det noen gang bli aktuelt) er isolert til denne
 // filen. Se INFRASTRUCTURE.md 16.8 for samme prinsipp anvendt på hosting.
 //
-// TODO (neste iterasjon): faktisk Brevo-integrasjon (transaksjonelt API for
-// disse malene, bulk-API for digest via src/lib/email/digest.ts). Malnavnene
-// under er de eksakte navnene fra SPEC-V1.md 15 og må ikke endres uten å
-// oppdatere spec-en samtidig.
+// Brevo-kallet bruker rå `fetch` mot v3/smtp/email (dokumentert, stabilt
+// API), IKKE Brevo sitt Node-SDK — unngår en avhengighet for tre HTTP-kall.
+// Selve endepunktet, feltnavnene og responsformen er IKKE verifisert mot en
+// ekte konto i denne økten (ingen nettverkstilgang til Brevo/API-nøkkel
+// tilgjengelig) — samme forbehold som webhook-normaliseringen i
+// src/app/api/webhooks/email-events/route.ts. Bekreft mot en ekte
+// testsending før dette kobles til produksjon. Malnavnene under er de
+// eksakte navnene fra SPEC-V1.md 15 og må ikke endres uten å oppdatere
+// spec-en samtidig.
+const BREVO_SEND_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
+
+interface BrevoEmailPayload {
+  sender: { email: string };
+  to: [{ email: string }];
+  subject: string;
+  htmlContent: string;
+  textContent: string;
+  headers?: Record<string, string>;
+}
+
+async function sendViaBrevo(apiKey: string, payload: BrevoEmailPayload): Promise<void> {
+  const response = await fetch(BREVO_SEND_ENDPOINT, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "api-key": apiKey,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Brevo-sending feilet (${response.status}): ${body}`);
+  }
+}
 
 export type TransactionalTemplate =
   | "confirm_email"
@@ -218,8 +250,10 @@ function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedE
 export async function sendTransactionalEmail(
   input: SendTransactionalEmailInput
 ): Promise<void> {
-  if (!process.env.BREVO_API_KEY) {
-    const rendered = renderTransactionalEmail(input);
+  const apiKey = process.env.BREVO_API_KEY;
+  const rendered = renderTransactionalEmail(input);
+
+  if (!apiKey) {
     if (rendered) {
       console.warn(
         `[email:stub] ${input.template} → ${input.to.email} (${input.to.locale}) — "${rendered.subject}"\n${rendered.text}`
@@ -233,10 +267,24 @@ export async function sendTransactionalEmail(
     return;
   }
 
-  throw new Error(
-    `sendTransactionalEmail: Brevo-integrasjon ikke implementert ennå (mal: ${input.template}). ` +
-      "Se TODO i src/lib/email/send.ts."
-  );
+  if (!rendered) {
+    throw new Error(
+      `sendTransactionalEmail: ingen mal bygget for "${input.template}", eller data mangler et felt malen krever.`
+    );
+  }
+
+  const senderEmail = process.env.BREVO_SENDER_TRANSACTIONAL;
+  if (!senderEmail) {
+    throw new Error("sendTransactionalEmail: BREVO_SENDER_TRANSACTIONAL er ikke satt i miljøet.");
+  }
+
+  await sendViaBrevo(apiKey, {
+    sender: { email: senderEmail },
+    to: [{ email: input.to.email }],
+    subject: rendered.subject,
+    htmlContent: rendered.html,
+    textContent: rendered.text,
+  });
 }
 
 export interface SendBulkEmailInput {
@@ -258,16 +306,19 @@ export interface SendBulkEmailInput {
  * Egen funksjon for den daglige digesten — atskilt fra
  * `sendTransactionalEmail` med hensikt (`INFRASTRUCTURE.md` 6.1: "atskilte
  * strømmer for transaksjonell e-post og bulk, slik at en klage på digesten
- * ikke ødelegger leveringen av innloggingslenker"). Når Brevo faktisk kobles
- * til, skal denne bruke bulk-/kampanje-API-et, ikke det transaksjonelle, OG
- * sende med `List-Unsubscribe: <listUnsubscribeUrl>` og
- * `List-Unsubscribe-Post: List-Unsubscribe=One-Click` som ekte e-post-
- * headere (FR-038) — ikke implementert ennå siden selve Brevo-kallet ikke
- * er bygget, men feltet finnes allerede i grensesnittet slik at det ikke
- * glemmes når det bygges.
+ * ikke ødelegger leveringen av innloggingslenker"). Bruker det SAMME
+ * `v3/smtp/email`-endepunktet som `sendTransactionalEmail` — ikke Brevo sitt
+ * separate kampanje-/liste-API, som er bygget for maler mot kontaktlister,
+ * ikke for individuelt rendret innhold per mottaker (hver digest er allerede
+ * unik per mottaker, se src/lib/email/digest.ts). Atskillelsen ligger i
+ * `BREVO_SENDER_BULK` (eget avsenderdomene, INFRASTRUCTURE.md 6.3) og i
+ * `List-Unsubscribe`/`List-Unsubscribe-Post`-headerne (FR-038), ikke i et
+ * annet API-produkt.
  */
 export async function sendBulkEmail(input: SendBulkEmailInput): Promise<void> {
-  if (!process.env.BREVO_API_KEY) {
+  const apiKey = process.env.BREVO_API_KEY;
+
+  if (!apiKey) {
     console.warn(
       `[email:stub:bulk] "${input.subject}" → ${input.to.email} (${input.to.locale}) ` +
         `[List-Unsubscribe: ${input.listUnsubscribeUrl}]`
@@ -275,7 +326,20 @@ export async function sendBulkEmail(input: SendBulkEmailInput): Promise<void> {
     return;
   }
 
-  throw new Error(
-    "sendBulkEmail: Brevo bulk-integrasjon ikke implementert ennå. Se TODO i src/lib/email/send.ts."
-  );
+  const senderEmail = process.env.BREVO_SENDER_BULK;
+  if (!senderEmail) {
+    throw new Error("sendBulkEmail: BREVO_SENDER_BULK er ikke satt i miljøet.");
+  }
+
+  await sendViaBrevo(apiKey, {
+    sender: { email: senderEmail },
+    to: [{ email: input.to.email }],
+    subject: input.subject,
+    htmlContent: input.html,
+    textContent: input.text,
+    headers: {
+      "List-Unsubscribe": `<${input.listUnsubscribeUrl}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    },
+  });
 }

@@ -6683,3 +6683,84 @@ inventar-søk (gjennomgå seksjoner av SPEC-V1.md/DESIGN.md/
 INFRASTRUCTURE.md som ikke er sjekket ennå), eller plukke opp et av de tre
 lenge utestående, bevisst blokkerte postene (Brevo-integrasjon, resten av
 komponentbiblioteket — fortsatt uten forbruker, OG-delingsbilde).
+
+---
+
+## Fortsettelse av økt 7 — faktisk Brevo-integrasjon (transaksjonelt + bulk)
+
+Plukket opp den første av de tre lenge utestående, bevisst blokkerte
+postene: Brevo-integrasjonen i `src/lib/email/send.ts`. Denne var reelt
+utsatt fordi vi ikke har en ekte API-nøkkel/nettverkstilgang til Brevo i
+denne økten — MEN selve API-kallet kan skrives og testes fullstendig med
+en mocket `fetch`, uten en ekte nøkkel. Det var derfor ikke reelt blokkert,
+bare ikke gjort ennå.
+
+**Implementert:** en delt `sendViaBrevo()`-hjelper som POSTer mot Brevo sitt
+`v3/smtp/email`-endepunkt (rå `fetch`, ikke Brevo sitt Node-SDK — samme
+"tynn adapter"-prinsipp som resten av filen). Både `sendTransactionalEmail`
+og `sendBulkEmail` bruker NÅ dette samme endepunktet — IKKE et separat
+kampanje-/liste-API for bulk, som den gamle doc-kommentaren antydet.
+Begrunnelse notert i kildekoden: Brevo sitt kampanje-API er bygget for
+maler mot kontaktlister, ikke individuelt rendret innhold per mottaker
+(hver digest er allerede unik per mottaker). Atskillelsen mellom
+strømmene (`INFRASTRUCTURE.md` 6.1) ligger i stedet i `BREVO_SENDER_
+TRANSACTIONAL` vs. `BREVO_SENDER_BULK` (eget avsenderdomene per strøm,
+6.3) og i `List-Unsubscribe`/`List-Unsubscribe-Post`-headerne (FR-038) på
+bulk-kallet.
+
+Feilhåndtering: mangler `BREVO_API_KEY`, brukes fortsatt den gamle,
+uendrede konsoll-stub-veien (ingen regresjon i eksisterende oppførsel —
+ALLE 60+ eksisterende tester stubber allerede `BREVO_API_KEY` til tom
+streng, og disse forble grønne uendret). Er `BREVO_API_KEY` satt, men
+`BREVO_SENDER_TRANSACTIONAL`/`BREVO_SENDER_BULK` mangler, eller malen ikke
+kan rendres (ukjent kombinasjon av mal/data), kastes en tydelig feil FØR
+noe HTTP-kall gjøres — ingen taus feil. Svarer Brevo med en feilstatus,
+kastes en feil med status og responskropp, slik at `tick.ts` sin
+eksisterende per-mottaker/per-land try/catch (FR-036) fanger den akkurat
+som en hvilken som helst annen sendefeil.
+
+**Ny test-suite** i `send.test.ts` (7 nye tester, mocket `fetch`): riktig
+URL/metode/headere/kropp for transaksjonell sending, kaster ved Brevo-
+feilstatus, kaster (uten å kalle Brevo) når avsenderadresse mangler, kaster
+(uten å kalle Brevo) når malen ikke kan rendres, stub-loggen for bulk
+uendret uten nøkkel, riktig avsender/mottaker/`List-Unsubscribe`-headere
+for bulk, og kaster (uten å kalle Brevo) når bulk-avsenderen mangler.
+
+**Ærlig forbehold, notert i kildekoden akkurat som i webhook-ruten fra
+tidligere:** selve endepunktet, feltnavnene og responsformen er IKKE
+verifisert mot en ekte Brevo-konto denne økten (ingen nettverkstilgang) —
+bygget fra kjent, stabil, offentlig dokumentert Brevo v3-API-oppførsel.
+Må bekreftes mot en ekte testsending før dette kobles til produksjon.
+
+**Sidefunn under verifisering:** den lokale Postgres-klyngen (`pg_ctlcluster
+16 main`) hadde stoppet siden forrige økt (ikke Docker — en ren
+systemd-uavhengig cluster, `service`/`systemctl` fungerer ikke i dette
+miljøet). Startet den på nytt med `pg_ctlcluster 16 main start`. Første
+kjøring av hele integrasjonssuiten etterpå ga to ISOLERTE, ikke-
+reproduserbare feil (én forsvant ved å kjøre samme testfil alene, én
+forsvant ved neste fulle kjøring) — vurdert som forbigående tilstand fra
+den avbrutte forrige kjøringen (ECONNREFUSED-feilene) eller en race i
+parallelle testarbeidere mot den delte databasen, IKKE en reell regresjon
+fra denne øktens kodeendring (som ikke rører forespørsels-/kontonøkler i
+det hele tatt). Bekreftet ved 2 påfølgende fulle kjøringer med 233/233
+grønt.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**351
+tester**, +7), `i18n:check` (**387 nøkler**, uendret), `design:check-
+tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next && next
+build` (grønn), `test:integration` mot ekte lokal Postgres (**233
+tester**, uendret i antall — kjørt 3 ganger etter at Postgres ble startet
+på nytt, grønt de to siste gangene).
+
+### Neste økt
+
+Brevo-integrasjonen er nå kodemessig ferdig, men UBEKREFTET mot en ekte
+konto — dette bør testes med en ekte nøkkel før produksjonsbruk, noe
+denne økten ikke har tilgang til å gjøre. Gjenstående av de tre lenge
+utestående postene: resten av komponentbiblioteket (fortsatt uten
+forbruker, ingen grunn til å bygge ennå) og OG-delingsbilde (blokkert på
+uavklart visuell identitet). Neste gode bruk av tiden er trolig et nytt
+inventar-søk i en seksjon av SPEC-V1.md/DESIGN.md/INFRASTRUCTURE.md som
+ikke er dekket ennå.
