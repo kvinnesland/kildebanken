@@ -6486,3 +6486,71 @@ feilveier"), så den mer spesifikke meldingen ble aldri koblet til. Ufarlig
 dødt innhold, ikke en funksjonell feil — IKKE ryddet bort denne runden
 (lav verdi sammenlignet med resten av funnet i denne økten, og fjerning
 uten videre grunn er unødvendig churn).
+
+---
+
+## Fortsettelse av økt 7 — punkt 19 og 20 (de to spec selv fremhever som "beviser at internasjonaliseringen faktisk virker") nå eksplisitt verifisert ende til ende
+
+Fortsatte rett fra forrige "Neste økt": punkt 19 og 20 i seksjon 23.
+Begge var strukturelt SANNSYNLIGGJORT av forrige rundes nye
+`runDigestTick`-tester (som allerede brukte to ulike locales / to isolerte
+land), men ingen test hadde eksplisitt PÅSTÅTT den spesifikke, navngitte
+oppførselen disse to punktene beskriver. Rettet det:
+
+**Punkt 19** ("en bruker med locale en-GB og land NO mottar den norske
+digesten med engelsk ramme og norsk forespørselstekst, korrekt merket"):
+la til `vi.spyOn(emailSend, "sendBulkEmail")` (kalte gjennom til den ekte
+implementasjonen, bare for å FANGE argumentene) på den eksisterende
+FR-032/033-testen sin natur, i en ny, dedikert test. Fanget den faktiske
+`html`-en sendt til hver mottaker og bekreftet: den norske mottakeren ser
+INGEN fremmedspråk-varsel (samsvarende språk), den engelske mottakeren ser
+varselet PÅ ENGELSK ("This request is written in a different language
+than yours" — ikke den norske teksten), og emnefeltet er forskjellig
+mellom de to. Første forsøk feilet fordi TESTEN selv (ikke koden) påsto
+feil språk for varselet — rettet til å forvente den faktiske engelske
+oversettelsen, som beviste at "rammen" (inkludert selve varselet) korrekt
+følger MOTTAKERENS locale, ikke landets standardspråk.
+
+**Punkt 20** ("to land med ulik tidssone får hver sin digest ... og en
+simulert feil i det ene påvirker ikke det andre", samme prinsipp som
+FR-036): ny test med to isolerte land, der `sendBulkEmail` mockes til å
+KASTE kun for én spesifikk mottakers e-postadresse (landet A), mens den
+kaller gjennom til den EKTE implementasjonen for landet B. Bekreftet:
+`result.processed` var 2 (begge land ble behandlet i samme tikk), land A
+sin digest fikk status `failed` og sin levering markert `failed` med
+feilmeldingen synlig, mens land B sin digest og levering var helt
+uberørt (`sent`). Første forsøk her passerte umiddelbart — ingen bug å
+rette, ren bekreftelse av at den allerede etablerte per-land/per-mottaker
+try/catch-strukturen fungerer nøyaktig som FR-036 krever.
+
+Punkt 17 ("et andre land ... uten kodeendring eller migrasjon") anses
+implisitt godt bevist av at BÅDE denne og forrige rundes tester rutinemessig
+oppretter helt ferske testland (`Z${randomUUID()...}`) via ren datainnsetting
+— ingen migrasjon, ingen kodeendring — og disse fungerer korrekt gjennom
+hele digest-pipelinen. En fullstendig, sammenhengende ETT-test-kjede
+gjennom alle 14 stegene for ett slikt land ble IKKE bygget denne runden
+(hvert steg er allerede godt dekket separat på tvers av mange filer) —
+vurdert som lav marginalverdi sammenlignet med de mer presise, målrettede
+testene denne og forrige runde faktisk la til.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**340
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next
+&& next build` (grønn), `test:integration` mot ekte lokal Postgres (**233
+tester**, +2 — kjørt 3 ganger på rad, alle grønne).
+
+### Neste økt
+
+Seksjon 23s akseptansekriterier er nå tilstrekkelig dekket for kodens
+del — punkt 16 (SPF/DKIM/DMARC + ekte innboks-levering) forblir
+infrastruktur/drift, ikke kode. Fem inventarer er nå grundig
+gjennomgått denne og forrige økt: datamodell (19), API-ruter (20),
+e-postmaler (15), funksjonelle krav (22), og akseptansekriterier (23).
+Neste gode bruk av tiden er trolig enten (a) et helt NYTT søk etter en
+ANNEN klasse hull enn de som er uttømt (f.eks. INFRASTRUCTURE.md sin egen
+jobbtabell mot de faktiske jobbene, eller DESIGN.md sine komponentkrav mot
+faktisk bygde komponenter), eller (b) plukke opp et av de lenge utestående,
+bevisst blokkerte postene (Brevo-integrasjon, resten av
+komponentbiblioteket, OG-delingsbilde).

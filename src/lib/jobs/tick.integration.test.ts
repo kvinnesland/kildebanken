@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { eq, inArray } from "drizzle-orm";
+import * as emailSend from "@/lib/email/send";
 import { db } from "@/db/client";
 import {
   contactRequests,
@@ -677,6 +678,87 @@ describe("runDigestTick mot ekte Postgres (FR-030 til FR-038, SPEC-V1.md 10, 23 
       expect(enDelivery?.locale).toBe("en-GB");
     } finally {
       await cleanupCountry(code);
+    }
+  });
+
+  it("SPEC-V1.md 23 punkt 19: en-GB-mottaker i et nb-NO-land får ENGELSK ramme med et fremmedspråk-varsel, siden forespørselsteksten er norsk", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const sendBulkEmailSpy = vi.spyOn(emailSend, "sendBulkEmail");
+    const code = await createIsolatedActiveCountry();
+    try {
+      const journalist = await createIsolatedJournalist(code);
+      // contentLanguage "nb-NO" (landets standard) — se createPublishedRequestForDigest.
+      await createPublishedRequestForDigest(journalist.id, code);
+      const norwegianRecipient = await createIsolatedRecipient(code, "nb-NO");
+      const englishRecipient = await createIsolatedRecipient(code, "en-GB");
+
+      await runDigestTick(db);
+
+      const nbCall = sendBulkEmailSpy.mock.calls.find((call) => call[0].to.email === norwegianRecipient.email);
+      const enCall = sendBulkEmailSpy.mock.calls.find((call) => call[0].to.email === englishRecipient.email);
+      // Ramme OG varsel er begge på MOTTAKERENS locale, ikke landets — den
+      // norske mottakeren ser ingen varsel (samsvarende språk), den engelske
+      // ser varselet på ENGELSK (ikke norsk), fordi selve rammen er engelsk.
+      expect(nbCall?.[0].html).not.toContain("is written in a different language");
+      expect(enCall?.[0].html).toContain("This request is written in a different language than yours.");
+      // "engelsk ramme" (23, punkt 19) — selve emnefeltet er på mottakerens locale.
+      expect(enCall?.[0].subject).not.toBe(nbCall?.[0].subject);
+    } finally {
+      await cleanupCountry(code);
+    }
+  });
+
+  it("FR-036/SPEC-V1.md 23 punkt 20: en simulert leverandørfeil i ett land påvirker IKKE et annet land i samme tikk", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const realSendBulkEmail = emailSend.sendBulkEmail;
+    const codeA = await createIsolatedActiveCountry();
+    const codeB = await createIsolatedActiveCountry();
+    try {
+      const journalistA = await createIsolatedJournalist(codeA);
+      await createPublishedRequestForDigest(journalistA.id, codeA);
+      const recipientA = await createIsolatedRecipient(codeA);
+
+      const journalistB = await createIsolatedJournalist(codeB);
+      await createPublishedRequestForDigest(journalistB.id, codeB);
+      const recipientB = await createIsolatedRecipient(codeB);
+
+      // Simulerer at KUN land A sin mottaker feiler mot "leverandøren" —
+      // land B sin ekte (stub-)utsendelse kjører helt uendret.
+      vi.spyOn(emailSend, "sendBulkEmail").mockImplementation(async (input) => {
+        if (input.to.email === recipientA.email) {
+          throw new Error("Simulert leverandørfeil for land A.");
+        }
+        return realSendBulkEmail(input);
+      });
+
+      const result = await runDigestTick(db);
+
+      // Landet som feilet stopper IKKE det andre landets behandling i
+      // SAMME tikk (FR-036) — begge er "processed" (digest opprettet), selv
+      // om land A sin ble merket "failed" internt.
+      expect(result.processed).toBe(2);
+
+      const [digestA] = await db.select().from(digests).where(eq(digests.countryCode, codeA));
+      const [digestB] = await db.select().from(digests).where(eq(digests.countryCode, codeB));
+      expect(digestA?.status).toBe("failed");
+      expect(digestB?.status).toBe("sent");
+
+      const [deliveryA] = await db
+        .select()
+        .from(digestDeliveries)
+        .where(eq(digestDeliveries.userId, recipientA.id));
+      const [deliveryB] = await db
+        .select()
+        .from(digestDeliveries)
+        .where(eq(digestDeliveries.userId, recipientB.id));
+      expect(deliveryA?.status).toBe("failed");
+      expect(deliveryA?.errorMessage).toContain("Simulert leverandørfeil");
+      expect(deliveryB?.status).toBe("sent");
+    } finally {
+      await cleanupCountry(codeA);
+      await cleanupCountry(codeB);
     }
   });
 
