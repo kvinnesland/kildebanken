@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@formatjs/intl-localematcher": "^0.5.10",
+    "@sentry/nextjs": "^10.69.0",
     "drizzle-orm": "^0.38.3",
     "intl-messageformat": "^10.7.11",
     "negotiator": "^1.0.0",

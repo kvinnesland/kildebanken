@@ -1,3 +1,5 @@
+import { withSentryConfig } from "@sentry/nextjs";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -22,4 +24,14 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+// Sentry (INFRASTRUCTURE.md 3/16.8, se src/instrumentation.ts). Kildekart-
+// opplasting krever SENTRY_ORG/SENTRY_PROJECT/SENTRY_AUTH_TOKEN mot en
+// ekte Sentry-konto — ingen av dem er satt ennå (Stadium 0, null brukere),
+// så opplastingen er eksplisitt slått av her i stedet for å la plugin-en
+// prøve og feile stille mot et manglende prosjekt. next build skal aldri
+// avhenge av at en ekstern tjeneste svarer.
+export default withSentryConfig(nextConfig, {
+  silent: true,
+  telemetry: false,
+  sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
+});

@@ -7012,3 +7012,110 @@ og potensielt `next.config.mjs`-endringer — bør gjøres i en egen, dedikert
 runde, ikke hastes inn på slutten av en annen), (b) resten av
 komponentbiblioteket (fortsatt uten forbruker), (c) OG-delingsbilde
 (fortsatt blokkert på uavklart visuell identitet).
+
+---
+
+## Fortsettelse av økt 7 — faktisk Sentry-integrasjon bygget (feilrapportering)
+
+Plukket opp (a) fra forrige "Neste økt": en faktisk, minimal Sentry-
+integrasjon. `INFRASTRUCTURE.md` 3/16 navngir Sentry (EU-region) som
+vedtatt leverandør for feilrapportering, men koden hadde INGEN kobling i
+det hele tatt — bare en tom `SENTRY_DSN` i `.env.example` (og selv den var
+uklar på om den var koblet til noe, rettet forrige deløkt).
+
+**Installerte `@sentry/nextjs@10.69.0`.** Sjekket `npm audit` etterpå: 30
+sårbarheter (7 moderate, 22 høye, 1 kritisk) — men ALLE i eksisterende,
+uendrede avhengigheter (`next`, `drizzle-orm`, `drizzle-kit`/`esbuild`/
+`vite`, `eslint-config-next`/`brace-expansion`), ingen av dem introdusert
+av selve Sentry-pakken (bekreftet ved `git diff package.json`: kun
+`@sentry/nextjs` lagt til). Ingen av dem rørt — å oppgradere dem ville
+vært en egen, mye større og mer risikofylt endring (flere av dem krever
+"breaking changes" ifølge `npm audit fix --force`), helt utenfor denne
+oppgavens omfang.
+
+**Ingen wizard brukt** (`npx @sentry/wizard` krever interaktiv innlogging
+mot en ekte Sentry-konto, ikke tilgjengelig her) — satt opp manuelt ved å
+lese pakkens egne bygde typedefinisjoner (`node_modules/@sentry/nextjs/
+build/types/`) i stedet for å stole blindt på treningsdata som kan være
+utdatert for SDK-versjon 10.x:
+
+- `src/instrumentation.ts` — Next.js sitt offisielle `register()`-hook
+  (App Router), kaller `Sentry.init({ dsn: process.env.SENTRY_DSN,
+  tracesSampleRate: 0 })` og eksporterer `onRequestError:
+  Sentry.captureRequestError`. samme funksjon dekker BÅDE node- og
+  edge-kjøretid — `@sentry/nextjs` sin `package.json`-`exports` løser
+  riktig implementasjon per bunt automatisk, ingen egen
+  `sentry.server.config.ts`/`sentry.edge.config.ts`-oppdeling trengs for
+  en så enkel oppsett.
+- `src/instrumentation-client.ts` — Next 15.3+ sitt klient-hook (bekreftet
+  faktisk installert Next-versjon er 15.5.22, støtter dette), samme
+  `Sentry.init()`-mønster med `NEXT_PUBLIC_SENTRY_DSN` (må ha
+  `NEXT_PUBLIC_`-prefiks for å bakes inn i nettleserbunten — en vanlig
+  `SENTRY_DSN` ville vært `undefined` i klientkode). Eksporterer også
+  `onRouterTransitionStart: Sentry.captureRouterTransitionStart` — SDK-en
+  advarer i hvert bygg uten denne, selv om vi ikke sporer ytelse.
+- `next.config.mjs` — pakket inn med `withSentryConfig(nextConfig, {
+  silent: true, telemetry: false, sourcemaps: { disable:
+  !process.env.SENTRY_AUTH_TOKEN } })`. Ingen ekte org/prosjekt/token
+  finnes ennå, så kildekart-opplasting er eksplisitt slått av — `next
+  build` skal ALDRI stille og til en ekstern tjeneste som ikke er
+  konfigurert. Bekreftet ved faktisk å kjøre `next build` tre ganger
+  underveis: grønt uten en eneste nettverksfeil, ingen avhengighet av en
+  ekte Sentry-konto.
+- `src/app/global-error.tsx` — Next sin egen reserveside for feil i selve
+  root-laget (over `[locale]`-segmentet). Fantes IKKE fra før — ingen
+  `error.tsx`/`global-error.tsx` noe sted i appen, en reell, tidligere
+  udokumentert mangel som Sentry-oppsettet selv avdekket (SDK-en advarte
+  om den i byggloggen). Bruker Next sin egen innebygde `<Error>`-komponent
+  (`next/error`), IKKE i18n-systemet — bevisst unntak fra "ingen
+  brukervendt streng i kildekoden", notert i en kommentar i filen: det
+  finnes intet locale å slå opp tekst i når roten selv har krasjet.
+
+**Ingen `.env.example`-verdier ble antatt** — `SENTRY_DSN`/
+`NEXT_PUBLIC_SENTRY_DSN`/`SENTRY_ORG`/`SENTRY_PROJECT`/`SENTRY_AUTH_TOKEN`
+er alle tomme, akkurat som Brevo var før den ble koblet til. Uten en reell
+DSN sender SDK-en aldri noe (samme "trygt uten nøkkel"-prinsipp som
+`src/lib/email/send.ts`), bekreftet ved at både enhetstester og
+`next build` er fullstendig grønne uten noen av disse satt.
+
+Ny test: `global-error.test.tsx` (mocker `@sentry/nextjs`, bekrefter at
+`captureException` faktisk kalles med feilen).
+
+**Sidefunn, IKKE rettet denne runden** (notert for neste økt): `src/
+middleware.ts` sin egen kommentar hevder "Kjører i Node.js-runtime, ikke
+edge — se next.config.mjs", men `next.config.mjs` har INGEN
+`experimental.nodeMiddleware`-flagg, og `middleware.ts` sin egen
+`config`-eksport har ingen `runtime: "nodejs"`-felt heller — begge er
+PÅKREVD sammen for Next.js sin faktiske "Node.js Middleware"-funksjon.
+Middleware kjører etter alt å dømme fortsatt på edge-runtime som normalt,
+i strid med kommentarens påstand. Ufarlig i praksis I DAG (filen importerer
+verken `pg`/`db` eller andre node-only API-er ennå), men kommentaren
+beskriver en intensjon som aldri ble koblet til noe reelt — samme type
+doc-vs-kode-avvik som flere andre funn denne natten. Ikke undersøkt videre
+eller rettet nå — oppdaget midt i en annen oppgave, og fortjener en egen,
+fokusert runde for å bekrefte faktisk kjøretid (f.eks. ved å midlertidig
+importere noe node-only og se om bygget/kjøretiden faktisk feiler) før
+noe rettes.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**360
+tester**, +1), `i18n:check` (**387 nøkler**, uendret), `design:check-
+tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next && next
+build` (grønn — kjørt tre ganger underveis for å bekrefte ingen
+nettverksavhengighet), `test:integration` mot ekte lokal Postgres (**239
+tester**, uendret — ingen databaseendring).
+
+**Merk om bunt-størrelse:** Sentry-SDK-en er ikke liten — "First Load JS"
+gikk fra ~102 kB til ~186 kB, og middleware fra 43,6 kB til 106 kB. Ingen
+handling denne runden (Stadium 0 har ingen hard bunt-budsjett-grense i
+`INFRASTRUCTURE.md`), men notert i tilfelle en senere økt vurderer ytelse
+mer nøye.
+
+### Neste økt
+
+Sentry-integrasjonen er kodemessig ferdig, men UBEKREFTET mot en ekte
+konto (samme forbehold som Brevo). To konkrete kandidater for neste
+runde: (a) undersøke og eventuelt rette `middleware.ts` sitt edge/node-
+runtime-avvik (sidefunn over), (b) resten av komponentbiblioteket
+(fortsatt uten forbruker) eller OG-delingsbilde (fortsatt blokkert).
