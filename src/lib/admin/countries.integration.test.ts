@@ -253,6 +253,46 @@ describe("admin/countries.ts mot ekte Postgres", () => {
     await deleteTestCountry(input.code);
   });
 
+  it("setCountryStatus(): nekter aktivering når et dokument finnes, men er FREMTIDSDATERT (ikke gjeldende ennå)", async () => {
+    // publishLegalDocument() setter i dag alltid publishedAt til "nå", så
+    // dette scenarioet kan ikke oppstå via applikasjonen selv — men
+    // getCurrentLegalDocument() (src/lib/legal/documents.ts) definerer
+    // "gjeldende" strengt som publishedAt <= now(), og setCountryStatus()
+    // sin egen aktiveringssjekk skal bety det samme, ikke bare "en rad
+    // finnes". Setter inn raden direkte for å teste selve sjekken isolert.
+    await ensureTestCountry();
+    const admin = await createAdmin(TEST_COUNTRY_CODE);
+    await loginAs(admin.id);
+    const input = testCountryInput();
+    await createCountry(input);
+    await db.insert(legalDocuments).values({
+      countryCode: input.code,
+      locale: "nb-NO",
+      documentType: "terms",
+      version: "1.0.0",
+      body: "Testtekst.",
+      publishedAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+    await db.insert(legalDocuments).values({
+      countryCode: input.code,
+      locale: "nb-NO",
+      documentType: "privacy",
+      version: "1.0.0",
+      body: "Testtekst.",
+      publishedAt: new Date(),
+    });
+    const moderator = await createActiveUser("moderator", TEST_COUNTRY_CODE);
+    await db.insert(moderatorCountries).values({ moderatorUserId: moderator.id, countryCode: input.code });
+
+    const result = await setCountryStatus(input.code, "active");
+
+    expect(result).toEqual({ ok: false, error: "errors.legal_documents_unavailable" });
+    const [after] = await db.select().from(countries).where(eq(countries.code, input.code));
+    expect(after?.status).toBe("draft");
+
+    await deleteTestCountry(input.code);
+  });
+
   it("assignModeratorToCountry(): oppretter en NY moderatorkonto når e-posten ikke finnes fra før", async () => {
     await ensureTestCountry();
     const admin = await createAdmin(TEST_COUNTRY_CODE);

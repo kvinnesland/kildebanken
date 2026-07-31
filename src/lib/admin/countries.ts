@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, lte } from "drizzle-orm";
 import { db } from "@/db/client";
 import { auditLogs, countries, legalDocuments, moderatorCountries, users } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth/authorize";
@@ -136,6 +136,13 @@ export async function setCountryStatus(
   if (status === "active") {
     for (const locale of existing.availableLocales) {
       for (const documentType of ["terms", "privacy"] as const) {
+        // publishedAt <= now() — samme "gjeldende"-definisjon som
+        // getCurrentLegalDocument() (src/lib/legal/documents.ts) bruker.
+        // publishLegalDocument() setter i dag alltid publishedAt til "nå",
+        // så et fremtidsdatert dokument kan ikke oppstå via applikasjonen
+        // selv ennå — men denne sjekken skal bety det samme som "gjeldende
+        // dokument finnes" uansett, slik at den ikke blir en felle den dagen
+        // fremtidsplanlagt publisering eventuelt bygges.
         const [doc] = await db
           .select({ id: legalDocuments.id })
           .from(legalDocuments)
@@ -143,7 +150,8 @@ export async function setCountryStatus(
             and(
               eq(legalDocuments.countryCode, code),
               eq(legalDocuments.locale, locale),
-              eq(legalDocuments.documentType, documentType)
+              eq(legalDocuments.documentType, documentType),
+              lte(legalDocuments.publishedAt, new Date())
             )
           )
           .limit(1);

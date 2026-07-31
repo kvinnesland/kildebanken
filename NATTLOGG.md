@@ -8011,3 +8011,67 @@ komponentbibliotek, OG-bilde, Sentry/Brevo. Neste kandidat for kritisk
 lesing: `src/lib/journalists/journalist-profile.ts` eller
 `src/lib/legal/documents.ts` — ingen av dem gjennomgått med denne teknikken
 ennå.
+
+## Fortsettelse av økt 7 — sjette reelle bug: setCountryStatus() sin aktiveringssjekk brukte ikke "gjeldende"-definisjonen
+
+`journalist-profile.ts` og `registration/journalist.ts` gjennomgått —
+begge rene (ingen TOCTOU, ingen asymmetri mot mottakerregistrering:
+samme sperreliste-sjekk-før-allerede-registrert-rekkefølge, samme
+unique-violation-fangst-mønster).
+
+Gikk videre til `admin/countries.ts` (`setCountryStatus()`). Denne
+funksjonens aktiverings-sjekk for et land krever at et
+`legalDocuments`-dokument finnes for HVER (locale, terms/privacy)-
+kombinasjon, men spørringen sjekket KUN at en rad eksisterte — den brukte
+IKKE samme `publishedAt <= now()`-filter som
+`getCurrentLegalDocument()` (`src/lib/legal/documents.ts`) bruker for å
+definere "gjeldende" ("Gjeldende = høyeste published_at som ikke ligger i
+fremtiden", ordrett kommentar der). Et fremtidsdatert dokument ville altså
+bestått aktiveringssjekken her, mens den samme spørringen andre steder i
+kodebasen (f.eks. under selve registreringen, `getRequiredLegalDocuments()`)
+korrekt ville avvist det som "ikke gjeldende ennå".
+
+I PRAKSIS er dette i dag ikke utnyttbart: `publishLegalDocument()`
+(`admin/legal-documents.ts`) setter alltid `publishedAt: new Date()` — det
+finnes ingen vei i applikasjonen til å faktisk sette inn et fremtidsdatert
+dokument. Men `getCurrentLegalDocument()` sin eksplisitte, bevisste
+`lte()`-sjekk viser at forfatteren av DEN funksjonen så for seg at
+"gjeldende" alltid skal bety "ikke i fremtiden" som en generell invariant,
+uavhengig av om UI-en i dag støtter fremtidsplanlegging — og
+`setCountryStatus()` sin parallelle sjekk misset å bruke samme definisjon.
+En ren, billig konsistensfiks (samme predikat om samme begrep, brukt
+konsekvent) som fjerner en LATENT felle: den dagen noen legger til
+fremtidsplanlagt publisering i `publishLegalDocument()` uten å huske denne
+sjekken, ville et land kunnet aktiveres "for tidlig" — administrator ville
+trodd alt var klart, mens faktiske registreringer i det landet/språket
+uansett ville feilet med `errors.legal_documents_unavailable` fra den
+STRENGERE sjekken i registreringsflyten.
+
+**Fiksen**: la til `lte(legalDocuments.publishedAt, new Date())` i
+aktiveringssjekkens WHERE-betingelse, samme import allerede brukt andre
+steder i kodebasen.
+
+**Testen**: satt inn et fremtidsdatert `terms`-dokument direkte (siden
+scenarioet ikke er nåbart via `publishLegalDocument()` selv), bekreftet med
+`git stash` at den feiler mot gammel kode (`expected { ok: true } to deeply
+equal { ok: false, ... }` — landet ble faktisk aktivert på tross av det
+fremtidsdaterte dokumentet) og består mot fiksen.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**364
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next
+&& next build` (grønn), `test:integration` mot ekte lokal Postgres (**246
+tester**, +1 — bekreftet feiler mot gammel kode, består mot rettet kode).
+
+### Neste økt
+
+`src/lib/legal/documents.ts` selv er allerede gjennomgått tidligere denne
+natten (i `me/`-modul-runden) og funnet ren. Neste kandidat for kritisk
+lesing: `src/lib/moderation/journalists.ts`, `src/lib/moderation/users.ts`
+eller `src/lib/auth/authorize.ts` — ingen av dem gjennomgått med denne
+spesifikke teknikken ennå denne natten (kun via generell
+integrasjonstest-dekning fra tidligere økter). Ellers uendret: to åpne
+spørsmål (`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek,
+OG-bilde, Sentry/Brevo.
