@@ -59,7 +59,7 @@ export function SubscribeForm({ locale }: { locale: SupportedLocale }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/countries")
+    fetch("/api/countries?requireDocumentTypes=terms,privacy")
       .then((res) => res.json())
       .then((data: { countries: CountryOption[] }) => {
         if (cancelled) return;

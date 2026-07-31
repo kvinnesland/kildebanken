@@ -6298,3 +6298,84 @@ metodikk som har funnet noe hver økt så langt — datamodell, ruter,
 e-postmaler og nå øktfornyelse er alle uttømt); (2) Brevo-integrasjon,
 resten av komponentbiblioteket, og OG-delingsbilde forblir alle korrekt
 blokkert (se punktene notert i tidligere økter).
+
+---
+
+## Fortsettelse av økt 7 — alle 40 FR-xxx (seksjon 22) systematisk sjekket mot kode: ett reelt hull funnet og rettet (FR-009)
+
+Gjorde punkt (1) fra forrige "Neste økt", på et nytt inventar: seksjon 22
+("Funksjonelle krav") lister 40 nummererte krav (FR-001 til FR-054) med et
+eksplisitt "verifiseres ved"-kriterium hver — en ferdig sjekkliste,
+akkurat som rutelisten (seksjon 20) og datamodellen (seksjon 19) var.
+Gikk gjennom alle seks kategoriene (registrering/konto, språk/land,
+forespørsler, utsendelse, svar/kontakt, administrasjon) og krysset hver
+mot faktisk kode.
+
+**Fant ett reelt hull, FR-009**: "Systemet skal ikke tilby en locale i et
+land der vilkår eller personvernerklæring mangler i den locale-en" —
+verifiseres ved at "locale fjernes fra available_locales i
+API-responsen når et dokument mangler." `GET /countries` returnerte
+derimot `available_locales` HELT RÅTT, rett fra `countries`-tabellen,
+uten noen sjekk mot om `legal_documents` faktisk fantes for den locale-en.
+Både `SubscribeForm.tsx` (mottakerregistrering, 7.1) og
+`JournalistApplyForm.tsx` (journalistsøknad, 7.2) bygger sine
+språknedtrekk direkte fra dette feltet — en bruker kunne dermed velge en
+locale i skjemaet som deretter (korrekt, men for sent) ble avvist med
+`errors.legal_documents_unavailable` ved selve innsendingen, i stedet for
+å aldri vises som et alternativ i utgangspunktet.
+
+**Bevisst IKKE en global filtrering på selve ruten** — `RequestEditForm.tsx`
+(journalistens språkvalg for FORESPØRSELSINNHOLDET) henter riktignok ikke
+engang fra denne ruten, men ANDRE fremtidige forbrukere av `/countries`
+kunne trenge ufiltrerte locales av gode grunner som ikke har noe med
+registrering å gjøre. Løsningen ble derfor en VALGFRI spørreparameter:
+
+- `src/lib/countries/countries.ts` (ny fil) — `listActiveCountries(requiredDocumentTypes?)`.
+  Uten parameteren: nøyaktig samme oppførsel som før (ufiltrert). Med
+  parameteren: filtrerer hvert lands `available_locales` ned til KUN de
+  locale-ene der `getRequiredLegalDocuments()` (allerede eksisterende
+  funksjon) bekrefter at ALLE de forespurte dokumenttypene er publisert.
+- `GET /api/countries?requireDocumentTypes=terms,privacy` (ruten selv,
+  nå tynn og delegerende, samme mønster som resten av kodebasen).
+- `SubscribeForm.tsx` og `ChangeCountryForm.tsx` (som begge krever
+  terms+privacy, jf. `registerRecipient()`/`changeCountry()`) ber nå om
+  `?requireDocumentTypes=terms,privacy`. `JournalistApplyForm.tsx` (som
+  krever `journalist_terms` spesifikt, jf. `applyAsJournalist()`) ber om
+  `?requireDocumentTypes=journalist_terms`.
+- `countries.integration.test.ts` (ny fil, 5 tester): ufiltrert som før
+  uten parameteren; fjerner en locale der ETT av flere påkrevde dokumenter
+  mangler; beholder en locale kun når ALLE finnes; fjerner ALLE locales
+  når landet mangler alt; ekskluderer ikke-`active`-land uendret.
+
+**Resten av de 40 kravene** ble spot-sjekket mot faktisk kode
+(job-kommentarer med riktig FR-nummer, cron-tidsplan i `netlify.toml`
+mot FR-026s "innen 15 minutter", `MAX_CONCURRENT_PUBLISHED`-konstanten mot
+FR-029, `submitResponse()`s statussjekk mot FR-002, m.fl.) — ingen andre
+reelle hull funnet. Noen krav (FR-013, FR-015, FR-052) er eksplisitt
+"kodegjennomgang"-verifiserbare i spec-en selv, ikke automatiserte tester,
+og ble derfor kun visuelt inspisert, ikke testkjørt.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**340
+tester**, uendret — ingen nye enhetstester, kun integrasjonstester denne
+runden), `i18n:check` (**387 nøkler**, uendret), `design:check-tokens`
+(**40** komponent-CSS-filer, uendret), `rm -rf .next && next build`
+(grønn), `test:integration` mot ekte lokal Postgres (**224 tester**, +5).
+PLUSS manuell verifisering i en kjørende dev-server mot ekte lokal
+Postgres: bekreftet med `curl` at `/api/countries` uten parameter
+fortsatt returnerer begge locale-ene til testlandet "XT" uendret, mens
+`?requireDocumentTypes=terms,privacy` korrekt fjerner `en-GB` (som
+mangler personvernerklæring i utviklingsdatabasen) og beholder kun
+`nb-NO`; bekreftet at `/subscribe`, `/journalists/apply` og
+`/me/bytt-land` alle fortsatt laster/omdirigerer korrekt.
+
+### Neste økt
+
+Ingen kjente gjenstående hull i de 40 FR-kravene. Fire inventarer er nå
+uttømmende diffet mot kode over denne og forrige økt: datamodellen
+(seksjon 19), API-ruter (seksjon 20), e-postmaler (seksjon 15), og
+funksjonelle krav (seksjon 22). Neste gode kandidat: seksjon 23
+("Akseptansekriterier for lansering") — samme teknikk, et femte inventar.
+Ellers: Brevo-integrasjon, resten av komponentbiblioteket, og
+OG-delingsbilde forblir alle korrekt blokkert.

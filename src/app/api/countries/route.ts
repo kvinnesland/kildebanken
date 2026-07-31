@@ -1,22 +1,23 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
-import { db } from "@/db/client";
-import { countries } from "@/db/schema";
+import { legalDocumentType } from "@/db/schema";
+import { listActiveCountries } from "@/lib/countries/countries";
 
-// GET /countries (SPEC-V1.md 20). Kun `active` land — et land i `draft` er
-// usynlig for alle utenom administrator (3.3), og skal derfor aldri kunne
-// velges i registreringsskjemaet.
-export async function GET() {
-  const activeCountries = await db
-    .select({
-      code: countries.code,
-      nameKey: countries.nameKey,
-      defaultLocale: countries.defaultLocale,
-      availableLocales: countries.availableLocales,
-      minimumAge: countries.minimumAge,
-    })
-    .from(countries)
-    .where(eq(countries.status, "active"));
+type LegalDocumentType = (typeof legalDocumentType.enumValues)[number];
+
+function isLegalDocumentType(value: string): value is LegalDocumentType {
+  return (legalDocumentType.enumValues as readonly string[]).includes(value);
+}
+
+// GET /countries?requireDocumentTypes=terms,privacy (SPEC-V1.md 20, FR-009).
+// Parameteren er valgfri — se listActiveCountries() for hvorfor filtrering
+// ikke skal gjelde alle forbrukere av denne ruten.
+export async function GET(request: Request) {
+  const rawParam = new URL(request.url).searchParams.get("requireDocumentTypes");
+  const requiredDocumentTypes = rawParam
+    ? rawParam.split(",").filter(isLegalDocumentType)
+    : [];
+
+  const activeCountries = await listActiveCountries(requiredDocumentTypes);
 
   return NextResponse.json({ countries: activeCountries });
 }

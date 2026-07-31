@@ -54,7 +54,7 @@ export function JournalistApplyForm({ locale }: { locale: SupportedLocale }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/countries")
+    fetch("/api/countries?requireDocumentTypes=journalist_terms")
       .then((res) => res.json())
       .then((data: { countries: CountryOption[] }) => {
         if (cancelled) return;
