@@ -8158,3 +8158,59 @@ mønsteret: `auth/account-deletion.ts`, `digests/digests.ts`,
 svar, legg til notat). Ellers uendret: to åpne spørsmål
 (`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek, OG-bilde,
 Sentry/Brevo.
+
+## Fortsettelse av økt 7 — niende bug: dobbel levering mulig ved gjentatt "kjør på nytt" for digester
+
+Sjekket `journalist-inbox.ts` sine to skrivende funksjoner
+(`getResponseDetailForJournalist()` sin "marker som sett"-sideeffekt,
+`updateResponseMarking()`) for samme mønster — begge vurdert IKKE å trenge
+fiks: "marker som sett" er en engangs, idempotent tidsstempling (et
+konkurrerende dobbeltkall skriver bare samme (nesten) tidspunkt to ganger,
+harmløst), og `updateResponseMarking()` setter journalistens EGET,
+eksplisitt valgte merke — ikke en beregning avledet fra forrige tilstand,
+så "siste skriving vinner" er nøyaktig riktig oppførsel der, ikke en bug.
+
+Fant derimot noe reelt i `digests/digests.ts`,
+`retryFailedDigestDeliveries()` (16.2: "kjør på nytt ved feil"): funksjonen
+henter alle leveranser med `status = "failed"` for en digest, og
+sender/oppdaterer hver av dem UTEN å gjenta `status = "failed"`-
+betingelsen i selve UPDATE-en som flytter dem til `queued`. Funksjonens
+EGEN kommentar sier eksplisitt at poenget er "å unngå dobbel levering ved
+en delvis mislykket utsendelse" — men dette gjaldt bare det opprinnelige
+scenarioet (ikke sende på nytt til already-succeeded-leveranser). Et
+administrator-dobbeltklikk på selve "kjør på nytt"-knappen (en helt
+naturlig, plausibel UI-handling, ikke en kunstig konstruert en) ville latt
+to samtidige kall hente NØYAKTIG samme liste med mislykkede leveranser og
+begge sende e-post til samme mottakere — reell dobbel levering, stikk i
+strid med funksjonens egen uttalte hensikt.
+
+**Fiksen**: samme "krev atomisk"-mønster som resten av natten sine
+TOCTOU-fikser, men litt annerledes anvendt her siden dette er en LØKKE over
+flere rader, ikke én enkelt beslutning: den første UPDATE-en (som flytter
+en leveranse fra `failed` til `queued`) fikk `status = "failed"` lagt til i
+WHERE-betingelsen, med `.returning()`. Traff den ingen rad (en annen
+samtidig kjøring har allerede "krevd" akkurat DEN leveransen), hopper
+løkken bare videre til neste (`continue`) — resten av leveransene i samme
+kall behandles uendret. `retriedCount` telles fortsatt korrekt siden
+`continue` skjer FØR eventuell e-post sendes eller telleren økes.
+
+Ingen ny race-bevisende test (samme begrunnelse som de to foregående
+TOCTOU-fiksene — upålitelig mot lokal, rask Postgres). Kjørte i stedet de
+7 eksisterende testene i `digests.integration.test.ts` uendret og bekreftet
+grønne mot den rettede koden.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**364
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next
+&& next build` (grønn), `test:integration` mot ekte lokal Postgres (**246
+tester**, uendret — de 7 eksisterende testene i `digests/` kjørt og
+bekreftet grønne mot den rettede koden).
+
+### Neste økt
+
+`auth/account-deletion.ts` gjenstår som ikke sjekket for dette spesifikke
+sjekk-så-skriv-mønsteret. Ellers uendret: to åpne spørsmål
+(`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek, OG-bilde,
+Sentry/Brevo.

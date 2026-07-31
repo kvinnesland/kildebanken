@@ -116,10 +116,18 @@ export async function retryFailedDigestDeliveries(digestId: string): Promise<Ret
     const unsubscribeToken = generateToken();
 
     try {
-      await db
+      // status="failed" i WHERE-betingelsen (ikke bare i spørringen over som
+      // hentet listen) lar denne leveransen "kreves" atomisk — uten den
+      // kunne to samtidige kall (f.eks. en administrator som dobbeltklikker
+      // "kjør på nytt") begge ha hentet SAMME liste med mislykkede
+      // leveranser og begge sendt til samme mottaker, stikk i strid med
+      // funksjonens egen uttalte hensikt om å unngå dobbel levering.
+      const [claimed] = await db
         .update(digestDeliveries)
         .set({ status: "queued", accessTokenHash: hashToken(accessToken), errorMessage: null })
-        .where(eq(digestDeliveries.id, delivery.deliveryId));
+        .where(and(eq(digestDeliveries.id, delivery.deliveryId), eq(digestDeliveries.status, "failed")))
+        .returning({ id: digestDeliveries.id });
+      if (!claimed) continue;
 
       // Samme rotasjon som ved førstegangsutsendelse — den forrige
       // (mislykkede) e-postens avmeldingslenke, om den noen gang ble
