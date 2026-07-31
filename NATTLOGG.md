@@ -7888,3 +7888,46 @@ webhook-håndtering for bounce/klink) eller `src/lib/countries/` — begge
 ikke gjennomgått med denne teknikken ennå denne natten. Nomrmalt neste steg
 ellers: uendret fra forrige note (åpent `runExpireRequests()`-spørsmål,
 komponentbibliotek, OG-bilde, Sentry/Brevo).
+
+## Fortsettelse av økt 7 — me/-modulene (rene) og et dokumentert, IKKE fikset race i bounce-telleren
+
+`src/lib/me/change-country.ts`, `profile.ts` og `validate.ts` gjennomgått
+kritisk (se over) — ingen funn, alt stemmer med 7.3/17.3/FR-010.
+
+Fortsatte deretter til `src/lib/subscriptions/` som notert. `unsubscribe.ts`
+er ren og idempotent (samme skriving uansett hvor mange ganger samme token
+brukes — ikke sårbar for TOCTOU siden det ikke er noen les-så-skriv-basert
+BESLUTNING, bare en betinget-men-idempotent tilstandsovergang).
+
+`email-events.ts` (`processEmailEvent`, 10.3/FR-037) har derimot samme
+KATEGORI svakhet som påminnelsesjobbene (økt 7, tidligere i natt): for
+`soft_bounce` leses `consecutiveSoftBounces` og skrives så
+`gammel_verdi + 1` tilbake — et rent les-øk-skriv-mønster uten låsing. To
+ekte samtidige webhook-leveringer for SAMME adresse (Brevo kan i prinsippet
+levere duplikater ved timeout/retry på sin side, og Netlify-funksjoner er
+separate, samtidige prosessinstanser som ikke deler tilstand) kan begge lese
+samme telleverdi og begge skrive `+1`, slik at én bounce "mistes" fra
+telleren. Vurderte om dette er verdt å fikse nå, og landet på nei, av tre
+grunner: (1) retningen av feilen er ufarlig — telleren UNDERTELLER, som
+bare FORSINKER eskalering til hard bounce, aldri feilaktig BOUNCER en frisk
+adresse; (2) vinduet krever at leverandøren faktisk dobbeltleverer akkurat
+samme webhook-hendelse samtidig, noe som er sjeldent og uansett utenfor
+denne kodens kontroll (en fullverdig løsning hører hjemme i
+dedupliseringslogikk basert på leverandørens hendelses-ID i RUTEN, ikke i
+denne kjernefunksjonen — et arkitekturspørsmål, ikke en TOCTOU-fiks som
+`respondToContactRequest` sin); (3) i praksis kan `soft_bounce`/`delivered`
+for en adresse som ALLEREDE er `bounced`/`unsubscribed` uansett bare oppstå
+fra en forsinket/duplisert hendelse for en e-post sendt FØR statusendringen
+(digest-jobben ekskluderer allerede ikke-aktive abonnement fra fremtidige
+utsendelser), så en forsinket hendelse som skriver til en allerede-utgått
+rad gjør ingen reell skade. Ikke kodet om — dokumentert her i tråd med
+samme avveiningsprinsipp som påminnelsesjobb-racet (økt 7).
+
+Ingen kodeendringer denne runden — kun gjennomlesing og dokumentasjon, så
+denne commiten inneholder bare denne NATTLOGG-oppdateringen.
+
+### Neste økt
+
+`src/lib/countries/` gjenstår som ikke gjennomgått med denne teknikken.
+Ellers uendret: åpent `runExpireRequests()`-spørsmål, komponentbibliotek,
+OG-bilde, Sentry/Brevo.
