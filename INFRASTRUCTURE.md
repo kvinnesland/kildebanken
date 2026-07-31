@@ -282,8 +282,14 @@ alt.
 
 ### 8.1 Helsesjekk
 
-`/health` svarer på databasetilkobling, køtilkobling og migrasjonsversjon.
-Brukes av deploy-laget og oppetidsovervåkingen.
+`/health` svarer på databasetilkobling og migrasjonsversjon. Brukes av
+deploy-laget og oppetidsovervåkingen.
+
+**Rettet under autonomt arbeid** (se `NATTLOGG.md`): denne linjen nevnte
+opprinnelig også "køtilkobling", men Stadium 0 (16) har ingen faktisk
+jobbkø å sjekke — `tick.ts` kalles direkte av Netlify-adapteren, ingen
+`pg-boss`-lytteprosess kjører (16.3). Lagt til når/hvis Stadium 1 faktisk
+kobler til `pg-boss`.
 
 ---
 

@@ -7315,3 +7315,78 @@ eller (b) revurdere om noen av de utsatte postene faktisk kan gjøres
 klar for produksjon uten en ekte konto (f.eks. skrive en tydelig
 "hvordan sette opp en ekte Brevo-/Sentry-konto"-sjekkliste i
 INFRASTRUCTURE.md, som en konkret leveranse selv uten selve kontoen).
+
+---
+
+## Fortsettelse av økt 7 — nytt inventar (SPEC-V1.md 25 scope-creep-sjekk, ingen funn) + ett reelt hull: manglende /health-endepunkt
+
+**SPEC-V1.md 25 ("Kuttet fra v1") mot koden**, en ny type sjekk — ikke
+"mangler koden noe spec-en krever", men "har koden ved et uhell begynt på
+noe spec-en EKSPLISITT sier skal vente" (scope creep). Grepet etter tegn
+på alle 13 kuttede funksjonene (telefonnummer/SMS, vedlegg/profilbilder,
+organisasjonskontoer, eksport av svar, filtrering/søk i svarinnboksen,
+frekvensvalg, osv.) — ingen funnet. Eneste nær-treff var `topic`-feltet på
+`Request`, men det er allerede eksplisitt et ANNET, BEHOLDT v1-felt
+(SPEC-V1.md linje 38: et valgfritt, fast-liste `topic`-felt KUN for
+visning — ikke den kuttede kategoriseringen/matchingen), og koden
+respekterer skillet korrekt (ingen filtrering på temaet noe sted, bekreftet
+av en eksisterende kode-kommentar i selve svarinnboks-siden). Ingen
+scope creep funnet noe sted.
+
+**Reelt, tidligere ukjent hull, funnet ved samme gjennomlesing:**
+`INFRASTRUCTURE.md` 8.1 krever eksplisitt: "`/health` svarer på
+databasetilkobling, køtilkobling og migrasjonsversjon. Brukes av
+deploy-laget og oppetidsovervåkingen." Ingen slikt endepunkt fantes NOE
+sted i kodebasen — verken `/health` eller `/api/health`. Uten det er
+BÅDE utrullingens rullende omstart (8: "gammel instans avvikles først når
+den nye svarer på helsesjekk") og oppetidsovervåkingens første
+varslingsregel (10: "applikasjonen svarer ikke, 2 påfølgende feil")
+bokstavelig talt umulige å implementere — dette er ikke en liten
+detalj, men en forutsetning flere andre, allerede beskrevne
+driftsmekanismer bygger direkte på.
+
+**Bygget `GET /api/health`**, etter samme "tynn rute, testbar
+lib-funksjon"-mønster som RESTEN av API-et (`src/lib/health/health.ts`
+sin `checkHealth()`, kalt fra `src/app/api/health/route.ts`). Sjekker
+faktisk databasetilkobling ved å spørre `drizzle.__drizzle_migrations`
+(Drizzle sin egen, INTERNE migrasjons-sporingstabell — bekreftet dens
+faktiske skjema empirisk med en direkte `psql`-spørring mot testdatabasen
+først, i stedet for å gjette, samme metode som Sentry-oppsettet forrige
+runde) og rapporterer siste migrasjons-`id` som "migrasjonsversjon".
+Svarer 200 med `{status: "ok", database: "connected", migrationVersion:
+N}` når databasen svarer, 503 med `database: "unreachable"` ellers.
+
+**Rettet `INFRASTRUCTURE.md` 8.1 samtidig** (spec er sannheten, men
+koden reflekterer en bevisst, allerede etablert forenkling denne gangen):
+fjernet "køtilkobling" fra kravet, siden Stadium 0 ikke har noen faktisk
+jobbkø å sjekke (`tick.ts` kalles direkte, ingen `pg-boss`-lytter kjører
+— samme forenkling som ble dokumentert i INFRASTRUCTURE.md 5 tidligere
+denne natten). Notert som en fremtidig utvidelse, ikke en påstått nåtid.
+
+Ny testfil: `health.integration.test.ts` (2 tester — ekte tilkoblet
+tilstand med en reell migrasjonsversjon, og en simulert nedbrutt
+tilkobling via et minimalt mock-objekt som ikke krever ekte Postgres for
+selve feilveis-assertionen).
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**364
+tester**, uendret — den nye testen er kun integrasjon), `i18n:check`
+(**387 nøkler**, uendret), `design:check-tokens` (**40** komponent-CSS-
+filer, uendret), `rm -rf .next && next build` (grønn, `/api/health`
+bekreftet i rutelisten), `test:integration` mot ekte lokal Postgres
+(**241 tester**, +2).
+
+### Neste økt
+
+Alle tre spesifikasjonsdokumentene, testdekningen, README/.env.example,
+OG nå scope-creep-sjekken mot kuttede funksjoner er alle gjennomgått.
+`/health`-hullet var det siste konkrete, kodesjekkbare funnet denne
+inventar-runden fant. Gjenstående er de lenge bevisst utsatte postene
+(komponentbibliotek uten forbruker, OG-delingsbilde blokkert på visuell
+identitet, Sentry/Brevo sine ubekreftede kontrakter). Neste økt bør
+trolig revurdere om en av disse faktisk kan gjøres ferdig UTEN en ekte
+konto (en provisjonerings-sjekkliste, som forrige økt foreslo), eller
+lete etter en helt ny type inventar (f.eks. en grundig manuell
+gjennomgang av selve testkvaliteten — ikke bare DEKNING, men om
+eksisterende tester faktisk tester det de PÅSTÅR å teste).
