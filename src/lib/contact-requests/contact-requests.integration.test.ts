@@ -268,6 +268,35 @@ describe("respondToContactRequest mot ekte Postgres (FR-041, SPEC-V1.md 14.2/14.
     expect(second.ok).toBe(false);
     if (!second.ok) expect(second.error).toBe("errors.contact_request_not_pending");
   });
+
+  it("avviser en forespørsel forbi expiresAt selv om status fortsatt er pending (runExpireContactRequests har ikke rukket å kjøre ennå)", async () => {
+    await ensureTestCountry();
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { journalistId, requestId } = await createPublishedRequestWithJournalist();
+    const { responseId, respondentId } = await createSubmittedResponse(requestId);
+    const created = await createContactRequest(responseId, journalistId, {
+      message: "Kan jeg få vite mer?",
+      requestedContactMethod: "e-post",
+    });
+    if (!created.ok) throw new Error("fail create");
+
+    // Simulerer at 14-dagersfristen faktisk er passert, men den periodiske
+    // runExpireContactRequests()-jobben ikke har rukket å flippe status ennå.
+    await db
+      .update(contactRequests)
+      .set({ expiresAt: new Date(Date.now() - 60 * 1000) })
+      .where(eq(contactRequests.id, created.id));
+
+    const result = await respondToContactRequest(created.id, respondentId, "approved");
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("errors.contact_request_not_pending");
+
+    const [afterAttempt] = await db.select().from(contactRequests).where(eq(contactRequests.id, created.id));
+    expect(afterAttempt?.status).toBe("pending"); // uendret — verken godkjent eller flippet av selve kallet
+    expect(afterAttempt?.sharedEmail).toBeNull();
+  });
 });
 
 describe("getContactRequestDetail mot ekte Postgres", () => {

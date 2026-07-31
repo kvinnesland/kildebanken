@@ -7644,3 +7644,61 @@ område (kandidater: `contact-requests.ts`, `requests.ts` sin
 plukk opp en av de lenge bevisst utsatte postene (komponentbibliotek uten
 forbruker, OG-delingsbilde blokkert på visuell identitet, Sentry/Brevo
 sine ubekreftede kontrakter).
+
+---
+
+## Fortsettelse av økt 7 — kritisk gjennomlesing av contact-requests.ts: reelt hull funnet og rettet (i motsetning til forrige runde)
+
+Fortsatte kritisk-lesing-listen mot `contact-requests.ts`.
+`createContactRequest()` var allerede trygg (den unike indeksen på
+`response_id` håndhever FR-043 atomisk, med `isUniqueViolation()`-fangst
+for en pen feilvei — samme mønster som digest-opprettelsen).
+
+**`respondToContactRequest()` hadde derimot et reelt hull, samme
+kategori som TOCTOU-funnene tidligere denne natten, men denne gangen med
+en billig, trygg fiks tilgjengelig:** funksjonen sjekket kun `status !==
+"pending"`, og stolte HELT på at den periodiske `runExpireContactRequests()`
+(kjører hvert 15. minutt) allerede hadde flippet status til `expired` før
+en respondent svarte. `expiresAt` ble aldri sjekket direkte — en
+kontaktforespørsel kunne dermed reelt være forbi sin 14-dagersfrist
+(FR-046) i opptil ~15 minutter uten at status hadde rukket å oppdateres,
+og i det vinduet ville `respondToContactRequest()` fortsatt godkjenne/
+avslå den som om den var gyldig.
+
+Vurderte dette opp mot forrige rundes tick.ts-funn (der en tilsvarende
+avveining ble BEVISST AKSEPTERT, ikke rettet, fordi en ekte fiks der ville
+kostet noe reelt — enten tapte påminnelser eller en oppbundet
+tilkoblingspool). Her er situasjonen annerledes: `expiresAt` ligger
+allerede i samme rad som allerede hentes, så en direkte sammenligning
+koster ingenting ekstra — ingen transaksjon, ingen lås, ingen endret
+feilhåndteringssemantikk. Rettet derfor KODEN denne gangen, ikke bare
+kommentaren: `respondToContactRequest()` avviser nå eksplisitt når
+`expiresAt < now`, i tillegg til status-sjekken, med samme feilmelding
+(`errors.contact_request_not_pending`) som de andre "ikke lenger gyldig"-
+tilstandene — ingen ny feilvei å skille ut for brukeren.
+
+**Bekreftet regresjonen empirisk igjen** (samme metode som rate-limit-
+funnet): skrev testen først, kjørte den mot den gamle koden via `git
+stash` av kun `contact-requests.ts` — testen feilet som forventet
+(`result.ok` var `true`, skulle vært `false`). Gjenopprettet fiksen,
+kjørte testen på nytt: består.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**364
+tester**, uendret — ny test er kun integrasjon), `i18n:check` (**387
+nøkler**, uendret), `design:check-tokens` (**40** komponent-CSS-filer,
+uendret), `rm -rf .next && next build` (grønn), `test:integration` mot
+ekte lokal Postgres (**244 tester**, +1 — bekreftet feiler mot gammel
+kode, består mot rettet kode).
+
+### Neste økt
+
+Tredje reelle bug funnet under kritisk gjennomlesing denne natten (delt
+e-post ved kontosletting, rate-limit-race, nå kontaktforespørsel-utløp),
+og andre runde uten funn (digests.ts/journalist-inbox.ts). Teknikken
+fortsetter å være verdt tiden. Gjenstående kandidater for samme lesing:
+`requests.ts` sin `updateDraft()`/`submitForModeration()`-flyt, eller
+`me/`-modulene (kontobytte av land, kontosletting-forespørsel). Ellers
+gjenstår de lenge bevisst utsatte postene (komponentbibliotek uten
+forbruker, OG-delingsbilde, Sentry/Brevo sine ubekreftede kontrakter).

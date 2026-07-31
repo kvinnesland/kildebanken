@@ -105,6 +105,14 @@ export async function createContactRequest(
  * FR-041, SPEC-V1.md 14.2/14.3. Kun respondenten svaret tilhører kan svare,
  * og kun mens forespørselen fortsatt er `pending` (utløpt/kansellert/allerede
  * besvart gir samme feilmelding — ingen grunn til å skille dem for brukeren).
+ *
+ * `expiresAt` sjekkes DIREKTE her, i tillegg til `status` — `status` flippes
+ * til `expired` av `runExpireContactRequests()` (tick.ts), som kun kjører
+ * periodisk (hvert 15. minutt), så en forespørsel kan reelt være forbi sin
+ * 14-dagersfrist uten at status har rukket å bli oppdatert ennå. I motsetning
+ * til påminnelsesjobbenes tilsvarende TOCTOU-avveining (bevisst akseptert,
+ * se NATTLOGG.md) koster denne sjekken ingenting ekstra — feltet er allerede
+ * hentet i samme rad — så her lukkes vinduet i stedet for å aksepteres.
  */
 export async function respondToContactRequest(
   contactRequestId: string,
@@ -115,6 +123,7 @@ export async function respondToContactRequest(
     .select({
       id: contactRequests.id,
       status: contactRequests.status,
+      expiresAt: contactRequests.expiresAt,
       journalistId: contactRequests.journalistId,
       responseRespondentId: responses.respondentId,
     })
@@ -126,11 +135,12 @@ export async function respondToContactRequest(
   if (!contactRequest || contactRequest.responseRespondentId !== respondentUserId) {
     return { ok: false, error: "errors.not_found" };
   }
-  if (contactRequest.status !== "pending") {
-    return { ok: false, error: "errors.contact_request_not_pending" };
-  }
 
   const now = new Date();
+
+  if (contactRequest.status !== "pending" || contactRequest.expiresAt < now) {
+    return { ok: false, error: "errors.contact_request_not_pending" };
+  }
 
   if (decision === "approved") {
     const [respondent] = await db
