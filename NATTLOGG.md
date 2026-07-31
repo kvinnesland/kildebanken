@@ -7178,3 +7178,71 @@ ekte kontoer). Et helt nytt inventar-søk (en seksjon av SPEC-V1.md/
 DESIGN.md/INFRASTRUCTURE.md som ikke er grundig diffet ennå) er trolig
 den beste bruken av neste times arbeid, gitt hvor produktiv den
 teknikken har vært hele denne natten.
+
+---
+
+## Fortsettelse av økt 7 — DESIGN.md 8/9 (Innholdsdesign/Akseptansekriterier) gjennomgått, ett reelt typografi-hull funnet og rettet
+
+Nytt inventar: `DESIGN.md` seksjon 8 (Innholdsdesign) og 9 (Akseptanse-
+kriterier) — ingen av dem spesifikt diffet mot koden denne natten. De
+fleste punktene holdt allerede:
+
+- "Ingen utropstegn": null `!`-tegn i noen av de to `messages/*.json`-
+  filene (grep bekreftet).
+- "«Del e-postadressen min med journalisten», ikke «Fortsett»": nøyaktig
+  denne teksten finnes allerede ordrett
+  (`response.form.contact_sharing_email`,
+  `contact_request.approve_button`), og selve innsendingsknappen i
+  bekreftelsesskjermen sier "Bekreft og send", ikke en bar "Fortsett".
+- "Ingen forespørsel til en ekstern vert" (akseptanse punkt 8): bekreftet
+  ingen Google Fonts/CDN-referanser noe sted i `src/app`/`src/components`/
+  `src/styles` — fontene er fullt selvhostet, akkurat som `DESIGN.md` 3
+  krever.
+- CI-håndhevelsen i akseptanse punkt 2 (`design:check-tokens`) dekker
+  faktisk alle tre ting spec-en nevner (hex/rgb/oklch-farger, rå
+  px-verdier utenfor en dokumentert 1px/2px-unntaksliste, OG referanser
+  til lag 1-variabler i komponentfiler) — allerede fullstendig.
+- E-postmalenes fargekonstanter (akseptanse punkt 6, "testtema slår
+  gjennom i e-post uten redigert mal") er en allerede KJENT, dokumentert
+  forenkling (`src/lib/email/colors.ts` sin egen kommentar erkjenner at
+  full byggetids-eksport-pipeline ikke er bygget, og at `colors.test.ts`
+  er "den nærmeste tilnærmingen til CI-håndhevelse" i stedet) — ikke et
+  nytt funn, bare bekreftet at det fortsatt er ærlig notert.
+- Akseptanse punkt 1, 4, 5, 7 er alle eksplisitt pre-lanserings manuelle
+  QA-porter (faktisk temabytte-øvelse, full tastatur-/skjermleser-
+  gjennomgang, 360px-visning, 40 %-tekstutvidelse) — ikke noe Fase 1-
+  kode skal verifisere ennå.
+
+**Ett reelt, tidligere ukjent hull:** `DESIGN.md` 3 krever at
+"respondentens svar slik journalisten leser det" settes med serif
+(`--font-editorial`), samme begrunnelse som forespørselens tittel/
+beskrivelse (menneskelig, ikke grensesnitt-tekst). Fant at
+`src/app/[locale]/journalist/responses/[id]/page.module.css` sin `.text`-
+klasse — brukt i `page.tsx` på nøyaktig `shortBio`, `relevanceStatement`
+OG `answerText` (alt respondent-forfattet innhold, ikke UI-tekst) — brukte
+`var(--font-ui)` i stedet. Rettet til `var(--font-editorial)`, og la til
+`line-height: var(--leading-relaxed)` for å matche mønsteret fra den
+offentlige forespørselssiden sin `.body`-klasse (samme token,
+`DESIGN.md` 3.1 sin egen kommentar sier ordrett "lange beskrivelser OG
+SVAR" om akkurat denne linjehøyden — bekrefter at dette er riktig token
+for nøyaktig dette bruksområdet).
+
+Ingen ny test — ren CSS-tokenendring, ingen eksisterende testfil for
+denne siden fra før (ingen CSS-i-JS-testrammeverk i denne kodebasen),
+dekket av `design:check-tokens` (fortsatt en tokenreferanse, ikke en rå
+verdi) og `next build`.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**360
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next
+&& next build` (grønn), `test:integration` mot ekte lokal Postgres (**239
+tester**, uendret).
+
+### Neste økt
+
+DESIGN.md 8/9 er nå gjennomgått. Gjenstående udiffet DESIGN.md-inventar:
+seksjon 4 (Rom, form og dybde) — ikke rukket denne runden. Ellers uendret:
+resten av komponentbiblioteket, OG-delingsbilde, Sentry/Brevo sine
+ubekreftede API-kontrakter.

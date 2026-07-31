@@ -35,9 +35,14 @@
   margin-bottom: var(--space-1);
 }
 
+/* DESIGN.md 3: "respondentens svar slik journalisten leser det" settes
+   med serif, samme prinsipp som forespørselens tittel/beskrivelse over
+   (.title). Brukes på shortBio, relevanceStatement og answerText i
+   page.tsx — alt respondent-forfattet innhold, ikke grensesnittekst. */
 .text {
-  font-family: var(--font-ui);
+  font-family: var(--font-editorial);
   font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
   color: var(--color-text);
   white-space: pre-wrap;
 }
