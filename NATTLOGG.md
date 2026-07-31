@@ -7246,3 +7246,72 @@ DESIGN.md 8/9 er nå gjennomgått. Gjenstående udiffet DESIGN.md-inventar:
 seksjon 4 (Rom, form og dybde) — ikke rukket denne runden. Ellers uendret:
 resten av komponentbiblioteket, OG-delingsbilde, Sentry/Brevo sine
 ubekreftede API-kontrakter.
+
+---
+
+## Fortsettelse av økt 7 — DESIGN.md 4 gjennomgått (ingen funn), pluss testdekning for de to siste komponentene uten tester
+
+**DESIGN.md 4 (Rom, form og dybde):** siste udiffede DESIGN.md-seksjon.
+Alle romtokens (`--space-1` til `--space-9`, `--radius-*`, `--shadow-*`,
+`--duration-*`, `--ease`) stemmer eksakt med `tokens/primitives.css`.
+"All bevegelse respekterer `prefers-reduced-motion`": bekreftet på FIRE
+steder — tre komponentspesifikke `@media`-blokker (`Button`, `Checkbox`,
+`RadioGroup`) OG en global catch-all i `globals.css` (`*, *::before,
+*::after { transition-duration: 0.01ms !important; ... }`) som i
+praksis allerede dekker alt, selv uten de tre komponentspesifikke
+blokkene. "Skygge brukes bare på flater som faktisk ligger over andre":
+`--shadow-md` har nøyaktig ÉN bruker i hele kodebasen —
+`Select.module.css` sin `.popover` (den flytende nedtrekkslisten) — helt
+riktig scope, ingen overforbruk på vanlige kort/flater. Ingen funn. Hele
+DESIGN.md (seksjon 1–10) er dermed nå diffet mot koden minst én gang
+denne natten.
+
+**Byttet til en annen type inventar** siden alle tre spesifikasjons-
+dokumentene (SPEC-V1.md, DESIGN.md, INFRASTRUCTURE.md) nå er grundig
+gjennomgått: testdekning. Et raskt script bekreftet at HVER ENESTE fil i
+`src/lib/` har enten en `.test.ts` eller `.integration.test.ts` — full
+dekning der. `src/components/` hadde to unntak: `LogoutButton.tsx` (reell
+logikk — POST til `/api/auth/logout`, deretter `router.push()` +
+`router.refresh()`) og `SiteHeader.tsx` (komposisjon av
+`LanguageSwitcher`/`LogoutButton` + navigasjonslenker).
+
+Skrev `LogoutButton.test.tsx` (2 tester, første i kodebasen som mocker
+`useRouter()` — samme mock-mønster som `LanguageSwitcher.test.tsx` satte
+for `usePathname()`): bekrefter riktig fetch-kall, riktig
+locale-prefikset omdirigering (`/en-GB/logg-inn`, ikke alltid nb-NO), og
+at siden faktisk oppdateres (`router.refresh()`). Merk: `/logg-inn` er
+IKKE en av stiene `src/i18n/localized-paths.ts` oversetter — den beholder
+det norske ordet i URL-en uansett locale, i likhet med `/me`/`/admin` —
+dette er eksisterende, konsistent, tilsiktet oppførsel (den oversatte-sti-
+mekanismen er bevisst avgrenset til forespørsel-relaterte offentlige
+sider, SPEC-V1.md 3.7), ikke en feil testen skulle avdekket.
+
+Skrev `SiteHeader.test.tsx` (2 tester): riktig hjem-/navigasjonslenker og
+at logg ut-knappen vises; og at en tom `navLinks`-liste ikke feiler.
+Måtte skille mellom TO `<nav>`-elementer i DOM-en (SiteHeaders egen, og
+LanguageSwitcher sin egen med `aria-label="Språk"`) ved å filtrere på
+fravær av `aria-label` — `getByRole("navigation")` alene kastet på flere
+treff, rettet før commit.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**364
+tester**, +4), `i18n:check` (**387 nøkler**, uendret), `design:check-
+tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next && next
+build` (grønn), `test:integration` mot ekte lokal Postgres (**239
+tester**, uendret — ingen databaseendring).
+
+### Neste økt
+
+Alle `src/lib/*.ts`- og `src/components/*.tsx`-filer har nå testdekning.
+Alle tre spesifikasjonsdokumentene er grundig diffet mot koden. Reelt
+gjenstående arbeid er nå kun de lenge bevisst utsatte postene: resten av
+komponentbiblioteket (fortsatt uten forbruker — Dialog/Toast/Alert/Tabs/
+Table/Pagination/SkeletonLoader), OG-delingsbilde (blokkert på uavklart
+visuell identitet), og Sentry/Brevo sine ubekreftede API-kontrakter (kan
+ikke bekreftes uten ekte kontoer). Neste økt bør trolig enten (a) lete
+etter en helt ny inventar-akse ingen tidligere økt har tenkt på ennå,
+eller (b) revurdere om noen av de utsatte postene faktisk kan gjøres
+klar for produksjon uten en ekte konto (f.eks. skrive en tydelig
+"hvordan sette opp en ekte Brevo-/Sentry-konto"-sjekkliste i
+INFRASTRUCTURE.md, som en konkret leveranse selv uten selve kontoen).
