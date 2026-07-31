@@ -6554,3 +6554,67 @@ jobbtabell mot de faktiske jobbene, eller DESIGN.md sine komponentkrav mot
 faktisk bygde komponenter), eller (b) plukke opp et av de lenge utestående,
 bevisst blokkerte postene (Brevo-integrasjon, resten av
 komponentbiblioteket, OG-delingsbilde).
+
+---
+
+## Fortsettelse av økt 7 — INFRASTRUCTURE.md sin jobbtabell mot de faktiske jobbene i tick.ts
+
+Fulgte opp forrige "Neste økt"-forslag (a): diffet `INFRASTRUCTURE.md`
+seksjon 5 sin jobbtabell mot `runTick()` i `src/lib/jobs/tick.ts`, og mot
+`netlify.toml` (som bekrefter at det KUN finnes én planlagt funksjon, `tick`,
+med `*/15 * * * *` — ingen andre cron-linjer noe sted).
+
+Tabellen påsto tre ulike kadenser utover "hvert 15. minutt":
+`expire-contact-requests` "Daglig", `deadline-reminder` "Hver time", og
+`stale-request-reminder` "Daglig". Faktisk kode: `runTick()` kaller alle tre
+UBETINGET på hvert eneste 15-minutters-tikk, nøyaktig som `digest-tick`/
+`expire-requests` — det finnes ingen egen time- eller døgnbasert sperre for
+disse tre i det hele tatt. Bare `purge-unverified` og `retention` er
+faktisk begrenset, av `shouldRunDailyJobNow()` (`hour === 3 && minute <
+15`).
+
+Vurderte om dette var et doc-hull eller et kode-hull. Landet på doc-hull:
+oppførselen i koden er trygg (idempotens via `deadlineReminderSentAt`,
+`staleReminderSentAt`, og status-sjekken for kontaktforespørsler — ikke via
+en tidsplan som antar), enklere, og gir strengere tatt BEDRE presisjon enn
+de påståtte kadensene (en påminnelse 24 timer før frist blir sjekket hvert
+kvarter, ikke hver time). Å bygge tre nye separate tids-sperrer i kode bare
+for å matche vilkårlig påståtte frekvenser, når prosjektet er i Stadium 0
+(null brukere, gratis nivå — INFRASTRUCTURE.md 16) der ekstra
+spørrefrekvens er kostnadsfritt, ville vært unødvendig kompleksitet uten
+noen reell gevinst. Rettet tabellen til å si "Hvert 15. minutt" for alle
+tre, med en forklarende note rett under tabellen som navngir den faktiske
+idempotens-mekanismen og presiserer at kun `purge-unverified`/`retention`
+er ekte døgnbegrenset.
+
+Ingen kodeendring denne runden — rent dokumentasjonsfunn, som instruert
+("spec-en er sannheten" gjelder tilsvarende for INFRASTRUCTURE.md: avdekkes
+et hull mellom dokumentasjon og kode, rettes det som er feil, og her var
+det tabellen som var feil, ikke koden).
+
+Merk: `INFRASTRUCTURE.md` 5 sin åpningstekst nevner fortsatt pg-boss som
+den planlagte kø-arkitekturen ("pg-boss i samme Postgres-instans");
+`pg-boss` er en reell `package.json`-avhengighet, men er IKKE koblet til
+noe sted i faktisk kjørende kode ennå — `tick.ts`s egen toppkommentar
+bekrefter dette er bevisst utsatt til en senere vertsform ("later en
+pg-boss-lytteprosess ... på Hetzner"), ikke et hull. Ikke rørt denne
+runden — dette er et annet, allerede eksplisitt anerkjent utsatt punkt, ikke
+den samme typen udokumentert avvik som frekvenstabellen var.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**340
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next
+&& next build` (grønn), `test:integration` mot ekte lokal Postgres (**233
+tester**, uendret — ingen kodeendring, kun dokumentasjon).
+
+### Neste økt
+
+Denne inventaren (INFRASTRUCTURE.md sin jobbtabell) er nå avstemt mot
+koden. Gjenstående kandidat fra forrige økts liste: DESIGN.md sine
+komponentkrav mot faktisk bygde komponenter (ikke gjort ennå). Ellers
+forblir de tre lenge utestående, bevisst blokkerte postene uendret: Brevo-
+integrasjon (mangler API-nøkkel), resten av komponentbiblioteket (ingen
+konkret forbruker ennå), og OG-delingsbilde (blokkert på uavklart visuell
+identitet, DESIGN.md 10).

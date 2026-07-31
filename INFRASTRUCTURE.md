@@ -137,11 +137,21 @@ Jobber i v1:
 |---|---|---|
 | `digest-tick` | Hvert 15. minutt | Se 5.2 |
 | `expire-requests` | Hvert 15. minutt | `published → expired` ved passert frist (FR-026) |
-| `expire-contact-requests` | Daglig | 14-dagersregelen (FR-046) |
+| `expire-contact-requests` | Hvert 15. minutt | 14-dagersregelen (FR-046) |
 | `retention` | Daglig | Sletting og anonymisering etter `SPEC-V1.md` 17.4 |
-| `deadline-reminder` | Hver time | Varsel 24 t før frist |
+| `deadline-reminder` | Hvert 15. minutt | Varsel 24 t før frist |
 | `purge-unverified` | Daglig | Ubekreftede kontoer eldre enn 14 dager (FR-004) |
-| `stale-request-reminder` | Daglig | Varsel til journalist 30 dager etter `published_at` hvis fortsatt `published` (`SPEC-V1.md` 9.2, 26.1 punkt 6) |
+| `stale-request-reminder` | Hvert 15. minutt | Varsel til journalist 30 dager etter `published_at` hvis fortsatt `published` (`SPEC-V1.md` 9.2, 26.1 punkt 6) |
+
+`runTick()` (`src/lib/jobs/tick.ts`) kaller faktisk `expire-contact-requests`,
+`deadline-reminder` og `stale-request-reminder` ubetinget på hvert 15-minutters
+tikk, akkurat som `digest-tick`/`expire-requests` — det finnes ingen egen
+time- eller døgnbasert sperre for disse tre. De unngår dobbeltvarsling likevel,
+via idempotens i databasen (`deadlineReminderSentAt`, `staleReminderSentAt`,
+og status-sjekken for kontaktforespørsler), ikke via en tidsplan som antar.
+Bare `purge-unverified` og `retention` er faktisk begrenset til ett vindu i
+døgnet, av `shouldRunDailyJobNow()`. Rettet under autonomt arbeid, se
+NATTLOGG.md.
 
 ### 5.2 Utsendelse per land og sommertid
 
