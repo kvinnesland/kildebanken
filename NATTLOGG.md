@@ -6933,3 +6933,82 @@ resten av komponentbiblioteket (fortsatt uten forbruker), OG-delingsbilde
 (blokkert på uavklart visuell identitet), og Brevo-integrasjonens faktiske
 API-kontrakt (kodet fra kjent v3-oppførsel, men ikke bekreftet mot en ekte
 konto).
+
+---
+
+## Fortsettelse av økt 7 — SPEC-V1.md 5 (Brukerreiser) gjennomgått, README/.env.example-drift funnet og rettet i stedet
+
+Startet på seksjon 5 (Brukerreiser) som planlagt. Begge reisene
+(journalist 5.1, mottaker 5.2) viste seg å være godt dekket allerede —
+de er i praksis samme grunn som FR-001 til FR-040 og akseptansekriterium
+1-16, begge grundig auditert i tidligere økter denne natten. Stikkprøver
+denne runden (varsling på søkerens eget språk ved godkjenning/avvisning av
+journalist, faktisk deling av e-post ved godkjent kontaktforespørsel via
+`getContactRequestDetail()` i stedet for rått i e-postteksten — en bevisst,
+allerede dokumentert designbeslutning, ikke et hull) fant ingen nye avvik.
+Ingen handling der.
+
+**Byttet derfor til en helt ny inventar-akse:** README.md og
+`.env.example` sine egne påstander mot faktisk kode — ingen tidligere økt
+har diffet DISSE to filene denne natten. `README.md`s CI-påstand
+(`.github/workflows/ci.yml` kjører hele verifiseringskjeden + integrasjons-
+tester mot en Postgres 16-service-container på hver push/PR) stemte helt.
+Men et grep av `process.env.[A-Z_]+` i `src/` mot `.env.example` sin
+variabelliste avdekket ekte drift i BEGGE retninger:
+
+- `AUTH_TOKEN_SECRET` sto oppført i `.env.example`, men leses ALDRI noe
+  sted i koden — `src/lib/auth/tokens.ts` sin egen kommentar bekrefter
+  hvorfor: tokens er 256-bit tilfeldige verdier hashet med SHA-256 ved
+  lagring, de trenger ingen HMAC-hemmelighet for å være sikre. Ingen
+  spec-fil nevner navnet i det hele tatt. Fjernet — en variabel som ser ut
+  som den gjør noe, men ikke gjør det, er verre enn ingen variabel.
+- `NEXT_PUBLIC_PLATFORM_DEFAULT_LOCALE` sto oppført, men leses ALDRI —
+  plattformens standardspråk er en hardkodet konstant i
+  `src/i18n/config.ts` (`"nb-NO" as const`), og variabelens EGEN kommentar
+  i `.env.example` sa allerede "endres IKKE per miljø; dette er en
+  produktbeslutning, ikke konfigurasjon" — selvmotsigende å samtidig
+  presentere den som noe å sette. Fjernet, av samme grunn som over.
+- `DB_POOL_MAX` leses FAKTISK i `src/db/client.ts` (poolstørrelse, faller
+  tilbake til 3 i Stadium 0), men manglet HELT i `.env.example` — motsatt
+  retning av de to over, en reell, brukbar innstilling som aldri ble
+  dokumentert. Lagt til, med forklaring av Stadium 0 vs. Stadium 1-
+  forskjellen (INFRASTRUCTURE.md 4/16.8).
+- `SENTRY_DSN` sto også oppført og leses heller ikke noe sted — men i
+  motsetning til de to fjernede, er dette en EKSPLISITT vedtatt leverandør
+  (INFRASTRUCTURE.md 3/16), ikke en glemt/feilplassert variabel, og ingen
+  fase i SPEC-V1.md 24 nevner faktisk Sentry-integrasjon som et
+  leveranse-punkt ennå (Fase 1 sin e-postleverandør-linje er Brevo, ikke
+  feilrapportering). Samme kategori som Brevo var FØR forrige økt bygget
+  den — en bevisst, forhåndsplassert variabel for en fremtidig
+  integrasjon, ikke et hull å rette nå. Beholdt, men kommentaren
+  presiserer nå eksplisitt at selve integrasjonen ikke er bygget ennå (var
+  utydelig før), slik at ingen senere økt tror den er koblet til noe.
+
+Ingen kodeendring — rent dokumentasjonsopprydding, ingen tester berørt.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**359
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next
+&& next build` (grønn), `test:integration` mot ekte lokal Postgres (**239
+tester**, uendret — ingen kode- eller databaseendring).
+
+**Sidefunn:** Postgres-klyngen hadde stoppet på nytt (fjerde gang denne
+natten) — startet igjen med `pg_ctlcluster 16 main start` før
+integrasjonssuiten kjørte, som blitt et rutinemessig første steg hver
+gang en deløkt trenger databasen.
+
+### Neste økt
+
+README.md/.env.example er nå avstemt mot koden. Reelt nytt kandidat-
+arbeid, vurdert i prioritert rekkefølge: (a) en faktisk, minimal Sentry-
+integrasjon (nettverkstilgang til npm-registeret ble bekreftet
+tilgjengelig denne runden — `npm view @sentry/nextjs version` svarte —
+så dette er IKKE lenger blokkert av manglende tilgang slik Brevo var før
+forrige økt; vurdert som en STØRRE, mer risikofylt endring enn denne
+øktens funn, siden det involverer en ny avhengighet, `instrumentation.ts`,
+og potensielt `next.config.mjs`-endringer — bør gjøres i en egen, dedikert
+runde, ikke hastes inn på slutten av en annen), (b) resten av
+komponentbiblioteket (fortsatt uten forbruker), (c) OG-delingsbilde
+(fortsatt blokkert på uavklart visuell identitet).
