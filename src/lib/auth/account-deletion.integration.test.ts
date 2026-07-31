@@ -237,6 +237,81 @@ describe("confirmAccountDeletion mot ekte Postgres — mottaker (SPEC-V1.md 17.5
     await db.delete(responses).where(eq(responses.id, response.id));
     await db.delete(requests).where(eq(requests.id, request.id));
   });
+
+  it("SPEC-V1.md 17.5: fjerner delt e-postadresse fra en allerede GODKJENT kontaktforespørsel (ikke bare ventende)", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+    const recipient = await createActiveRecipient();
+
+    const [request] = await db
+      .insert(requests)
+      .values({
+        journalistId: journalist.id,
+        countryCode: TEST_COUNTRY_CODE,
+        contentLanguage: "nb-NO",
+        title: "Testforespørsel for godkjent kontaktforespørsel",
+        summary: "Sum",
+        description: "Desc",
+        targetPersonDescription: "Target",
+        status: "published",
+        allowsAnonymousParticipation: true,
+        mayBeRecorded: false,
+        mayInvolvePhotoVideo: false,
+        responseDeadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        publishedAt: new Date(),
+      })
+      .returning({ id: requests.id });
+    if (!request) throw new Error("Klarte ikke opprette testforespørsel");
+
+    const [response] = await db
+      .insert(responses)
+      .values({
+        requestId: request.id,
+        respondentId: recipient.id,
+        relevanceStatement: "Relevant.",
+        answerText: "Svar.",
+        contactSharing: "email",
+      })
+      .returning({ id: responses.id });
+    if (!response) throw new Error("Klarte ikke opprette testsvar");
+
+    // Allerede GODKJENT, med en ekte delt e-postadresse lagret — samme
+    // tilstand som respondToContactRequest() setter ved godkjenning.
+    const [contactRequest] = await db
+      .insert(contactRequests)
+      .values({
+        responseId: response.id,
+        journalistId: journalist.id,
+        message: "Kan jeg få vite mer?",
+        requestedContactMethod: "e-post",
+        status: "approved",
+        sharedEmail: recipient.email,
+        respondedAt: new Date(),
+        expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      })
+      .returning({ id: contactRequests.id });
+    if (!contactRequest) throw new Error("Klarte ikke opprette test-kontaktforespørsel");
+
+    const rawToken = await insertDeleteToken(recipient.id);
+    const result = await confirmAccountDeletion(rawToken);
+
+    expect(result).toEqual({ ok: true });
+
+    const [afterContactRequest] = await db
+      .select()
+      .from(contactRequests)
+      .where(eq(contactRequests.id, contactRequest.id));
+    expect(afterContactRequest?.sharedEmail).toBeNull();
+    // Status er ferdigbehandlet, IKKE kansellert — bare den lagrede
+    // adressen fjernes, i motsetning til en pending kontaktforespørsel.
+    expect(afterContactRequest?.status).toBe("approved");
+
+    await db.delete(contactRequests).where(eq(contactRequests.id, contactRequest.id));
+    await db.delete(responses).where(eq(responses.id, response.id));
+    await db.delete(requests).where(eq(requests.id, request.id));
+  });
 });
 
 describe("confirmAccountDeletion mot ekte Postgres — journalist (SPEC-V1.md 17.5, siste avsnitt)", () => {

@@ -7390,3 +7390,69 @@ konto (en provisjonerings-sjekkliste, som forrige økt foreslo), eller
 lete etter en helt ny type inventar (f.eks. en grundig manuell
 gjennomgang av selve testkvaliteten — ikke bare DEKNING, men om
 eksisterende tester faktisk tester det de PÅSTÅR å teste).
+
+---
+
+## Fortsettelse av økt 7 — testkvalitet-gjennomgang: reell, alvorlig personvernbug funnet og rettet i kontosletting
+
+Fulgte opp forslaget om å vurdere TESTKVALITET, ikke bare dekning —
+begynte med det høyeste-innsats-området: kontosletting/retensjon (SPEC-
+V1.md 17.4/17.5), siden dette sletter/anonymiserer ekte personopplysninger.
+
+`retention.integration.test.ts` (den daglige retensjonsJOBBEN) holdt mål
+— grundig, dekker dry run OG ekte kjøring, tester grensetilfeller (gammel
+vs. ny, terminal vs. ventende status) for alle fem kategoriene. Ingen funn
+der.
+
+**`account-deletion.ts` (selvbetjent kontosletting) hadde derimot et
+reelt, alvorlig hull.** SPEC-V1.md 17.5 krever eksplisitt at "delt
+e-postadresse fjernes" som del av anonymiseringen. Men
+`anonymizeRecipientContent()` håndterte KUN ventende (`pending`)
+kontaktforespørsler (kansellerer dem) — en allerede GODKJENT
+kontaktforespørsel, med en EKTE delt e-postadresse lagret i
+`contact_requests.shared_email` (satt av `respondToContactRequest()` ved
+godkjenning), ble aldri rørt. Konsekvens: en respondent som deler
+e-postadressen sin med en journalist, og SENERE sletter kontoen sin (hele
+poenget med kontosletting er at e-postadressen skal forsvinne — kontoens
+egen e-post erstattes jo med en hash), ville likevel ha den ekte
+adressen sin liggende i klartekst i en annen tabellrad, for alltid, uten
+noen kodevei som noensinne rydder den opp.
+
+Bekreftet at INGEN eksisterende test noensinne øvde på dette scenarioet
+— `account-deletion.integration.test.ts` sin eneste kontaktforespørsel-
+test dekket kun den PENDING-kanselleres-veien. Nøyaktig den typen hull en
+testkvalitet-gjennomgang (i motsetning til en testDEKNING-sjekk) er ment
+å finne: testen fantes, "dekket" filen, men aldri det spesifikke,
+spec-krevde scenarioet.
+
+**Rettet:** `anonymizeRecipientContent()` fjerner nå `sharedEmail` (setter
+`null`) på alle GODKJENTE kontaktforespørsler knyttet til den slettede
+brukerens svar, i tillegg til å kansellere ventende. Status endres IKKE
+(fortsatt `approved`, ikke `cancelled` — den er ferdigbehandlet, bare den
+lagrede adressen fjernes). Bekreftet at ingen annen kode leser
+`sharedEmail` uten allerede å håndtere `null` riktig (kun
+`contact-requests/[id]/page.tsx` sin betingede visning, som allerede
+sjekker `detail.sharedEmail ?`).
+
+Ny test i `account-deletion.integration.test.ts`: oppretter en GODKJENT
+kontaktforespørsel med en ekte delt e-post, sletter kontoen, bekrefter at
+`sharedEmail` er `null` etterpå MENS `status` fortsatt er `approved` (ikke
+kansellert — et bevisst annet utfall enn den pending-banen).
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**364
+tester**, uendret — ny test er kun integrasjon), `i18n:check` (**387
+nøkler**, uendret), `design:check-tokens` (**40** komponent-CSS-filer,
+uendret), `rm -rf .next && next build` (grønn), `test:integration` mot
+ekte lokal Postgres (**242 tester**, +1).
+
+### Neste økt
+
+Testkvalitet-teknikken (lese testene NØYE, ikke bare telle dem, og lete
+etter scenarioer spec-en krever som ALDRI ble skrevet en test for) fant en
+reell bug på første forsøk i det høyeste-innsats-området. Fortsett samme
+teknikk i andre høy-risiko-områder som ikke er lest like nøye: auth/
+session.ts (økt-tilbakekalling, glidende utløp), moderation/-modulene
+(landtildeling-håndheving), eller CSRF/rate-limiting fra tidligere denne
+natten (bygget raskt, kanskje ikke lest like kritisk igjen etterpå).

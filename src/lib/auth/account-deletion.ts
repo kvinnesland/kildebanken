@@ -147,6 +147,24 @@ async function anonymizeRecipientContent(respondentUserId: string): Promise<void
     .set({ contactSharing: "none", displayNameSnapshot: null })
     .where(and(eq(responses.respondentId, respondentUserId), eq(responses.lifecycleStatus, "submitted")));
 
+  // 17.5: "delt e-postadresse fjernes" — en allerede GODKJENT
+  // kontaktforespørsel er ferdigbehandlet (kanselleres ikke, i motsetning
+  // til pending under), men den faktiske adressen den lagret ved
+  // godkjenning (respondToContactRequest()) skal ikke bli stående i
+  // klartekst etter at kontoen er anonymisert. Reelt hull frem til nå —
+  // ingen tidligere test dekket dette, kun den ventende-kanselleres-
+  // banen under (se NATTLOGG.md).
+  const approvedContactRequestIds = db
+    .select({ id: contactRequests.id })
+    .from(contactRequests)
+    .innerJoin(responses, eq(contactRequests.responseId, responses.id))
+    .where(and(eq(responses.respondentId, respondentUserId), eq(contactRequests.status, "approved")));
+
+  await db
+    .update(contactRequests)
+    .set({ sharedEmail: null })
+    .where(inArray(contactRequests.id, approvedContactRequestIds));
+
   const pendingContactRequests = await db
     .select({ id: contactRequests.id, journalistId: contactRequests.journalistId })
     .from(contactRequests)
