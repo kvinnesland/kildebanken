@@ -8075,3 +8075,86 @@ spesifikke teknikken ennå denne natten (kun via generell
 integrasjonstest-dekning fra tidligere økter). Ellers uendret: to åpne
 spørsmål (`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek,
 OG-bilde, Sentry/Brevo.
+
+## Fortsettelse av økt 7 — syvende og åttende bug: samme TOCTOU-mønster funnet i HELE modereringslaget
+
+`auth/authorize.ts` gjennomgått — liten, ren, godt kommentert
+(`requireModeratorForCountry` vs `requireAdmin` sin rollefordeling er
+tydelig og korrekt).
+
+Gikk videre til `moderation/journalists.ts`, og fant PRESIS samme
+TOCTOU-klasse som ble fikset i `respondToContactRequest` tidligere i natt
+(økt 7, bug 5): `approveJournalist()` og `rejectJournalist()` sjekker
+`verificationStatus !== "pending_review"` fra en innledende lesning, men
+skriver uten å gjenta den betingelsen i selve UPDATE-en sin WHERE-klausul.
+Til forskjell fra kontaktforespørsel-racet (samme respondent, to faner) er
+DETTE vinduet mer sannsynlig å faktisk oppstå i praksis: en
+modereringskø er per design DELT mellom flere moderatorer tildelt samme
+land (SPEC-V1.md 4) — to moderatorer som ser den samme ventende søknaden
+samtidig og handler nesten samtidig (én godkjenner, én avviser) er et helt
+naturlig scenario, ikke et kunstig konstruert et. Konsekvens uten fiks:
+begge skrivingene lykkes, den siste vinner tilstanden, MEN begge sender
+sin egen e-post (`journalist_approved` OG `journalist_rejected` til samme
+søker) og begge logger sin egen revisjonsloggoppføring — en direkte
+motstridende, forvirrende hendelseshistorikk.
+
+Fulgte deretter referansen i `approveJournalist()` sin egen kommentar
+("samme re-håndhevelsesmønster som `publishRequest()` i
+`moderation/requests.ts`") og fant IDENTISK mønster der også, i alle tre
+funksjonene (`publishRequest()`, `rejectRequest()`, `requestChanges()`) —
+samme sjekk-så-skriv uten WHERE-gjentakelse, samme delte-kø-scenario
+(FR-029s 5-i-taket-sjekk i `publishRequest()` hadde SIN egen
+race-bevissthet fra tidligere økter, men selve status-overgangen hadde det
+ikke).
+
+Sjekket også `moderation/users.ts` (`suspendUser`/`unsuspendUser`/
+`suppressUserEmail`) for samme mønster — vurdert IKKE å trenge samme fiks:
+suspendering er en idempotent TILSTAND (funksjonen returnerer eksplisitt
+`{ok: true}` for en allerede-suspendert konto, ikke en feil), ikke en
+ENGANGS, gjensidig utelukkende BESLUTNING slik godkjenning/avvisning av en
+søknad er. Et race mellom to suspend-kall er harmløst (samme idempotente
+sluttilstand); et race mellom suspend og unsuspend er en ordinær
+"siste skriving vinner"-situasjon for en løpende kontotilstand, ikke
+datakorrupsjon av en avgjørelse som skal være endelig. Annen alvorlighetsklasse,
+ingen fiks nødvendig.
+
+**Fiksen** (samme mønster begge steder, samme som kontaktforespørsel-fiksen
+tidligere i natt): la til status-betingelsen (`pending_review` /
+`submitted`) i selve UPDATE-ens WHERE-klausul, med `.returning()` for å
+oppdage 0-rads-treff, og returnerer samme feilkode
+(`errors.journalist_not_pending_review` / `errors.request_not_editable`)
+som den eksisterende sjekken allerede bruker — ingen ny kontrakt for
+kallerne.
+
+**Ingen ny race-bevisende test denne gangen** — samme konklusjon som
+kontaktforespørsel-fiksen: et forsøk på å bevise racet med ekte samtidige
+kall mot en lokal, rask Postgres viste seg tidligere i natt IKKE å fungere
+pålitelig (de to kallene blir de facto serialisert via
+tilkoblingspool-tildelingen før racet rekker å oppstå). Kjørte i stedet de
+EKSISTERENDE testsuitene for begge filer uendret (7 + 9 tester) for å
+bekrefte at ingen regresjon oppsto på det sekvensielle tilfellet de allerede
+dekker (som fortsatt fungerer identisk, siden en allerede-avgjort søknad/
+forespørsel uansett blir fanget av den opprinnelige sjekken FØR den når den
+nye WHERE-betingelsen i de fleste tilfeller).
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**364
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next
+&& next build` (grønn), `test:integration` mot ekte lokal Postgres (**246
+tester**, uendret — ingen nye tester lagt til denne runden, kun de
+eksisterende 36 testene i `moderation/`-mappen kjørt og bekreftet grønne
+mot den rettede koden).
+
+### Neste økt
+
+Samme TOCTOU-mønster er nå fikset i BÅDE `contact-requests.ts` og hele
+`moderation/`-laget (journalists.ts, requests.ts). Verdt å sjekke neste
+gang: er det FLERE steder i kodebasen med samme sjekk-så-skriv-uten-WHERE-
+gjentakelse-mønster? Kandidater ikke ennå sjekket for dette spesifikke
+mønsteret: `auth/account-deletion.ts`, `digests/digests.ts`,
+`journalist-inbox/journalist-inbox.ts` sine skrivende funksjoner (marker
+svar, legg til notat). Ellers uendret: to åpne spørsmål
+(`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek, OG-bilde,
+Sentry/Brevo.

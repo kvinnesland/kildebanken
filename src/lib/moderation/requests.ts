@@ -63,11 +63,20 @@ export async function publishRequest(requestId: string): Promise<ModerationActio
     return { ok: false, error: "errors.too_many_published_requests" };
   }
 
+  // status="submitted" i WHERE-betingelsen (ikke bare i sjekken over) lukker
+  // TOCTOU-vinduet mellom sjekken og denne skrivingen — flere moderatorer
+  // tildelt samme land ser samme moderasjonskø samtidig (4), og uten denne
+  // betingelsen kunne to av dem rekke å passere sjekken før noen skrev, og
+  // siden overskrive hverandre (én publiserer, én avviser), med tilhørende
+  // motstridende e-post og revisjonslogg til begge utfall (samme mønster
+  // som moderation/journalists.ts).
   const now = new Date();
-  await db
+  const [publishedResult] = await db
     .update(requests)
     .set({ status: "published", publishedAt: now, moderatedBy: session.userId, moderatedAt: now, updatedAt: now })
-    .where(eq(requests.id, requestId));
+    .where(and(eq(requests.id, requestId), eq(requests.status, "submitted")))
+    .returning({ id: requests.id });
+  if (!publishedResult) return { ok: false, error: "errors.request_not_editable" };
 
   await db.insert(auditLogs).values({
     actorType: "user",
@@ -99,8 +108,9 @@ export async function rejectRequest(requestId: string, reason: string): Promise<
   const session = await requireModeratorForCountry(request.countryCode);
   if (!session) return { ok: false, error: "errors.not_authorized" };
 
+  // Samme TOCTOU-lukking som i publishRequest() over.
   const now = new Date();
-  await db
+  const [rejectedResult] = await db
     .update(requests)
     .set({
       status: "rejected",
@@ -109,7 +119,9 @@ export async function rejectRequest(requestId: string, reason: string): Promise<
       moderatedAt: now,
       updatedAt: now,
     })
-    .where(eq(requests.id, requestId));
+    .where(and(eq(requests.id, requestId), eq(requests.status, "submitted")))
+    .returning({ id: requests.id });
+  if (!rejectedResult) return { ok: false, error: "errors.request_not_editable" };
 
   await db.insert(auditLogs).values({
     actorType: "user",
@@ -137,8 +149,9 @@ export async function requestChanges(requestId: string, comment: string): Promis
   const session = await requireModeratorForCountry(request.countryCode);
   if (!session) return { ok: false, error: "errors.not_authorized" };
 
+  // Samme TOCTOU-lukking som i publishRequest() over.
   const now = new Date();
-  await db
+  const [requestChangesResult] = await db
     .update(requests)
     .set({
       status: "changes_requested",
@@ -147,7 +160,9 @@ export async function requestChanges(requestId: string, comment: string): Promis
       moderatedAt: now,
       updatedAt: now,
     })
-    .where(eq(requests.id, requestId));
+    .where(and(eq(requests.id, requestId), eq(requests.status, "submitted")))
+    .returning({ id: requests.id });
+  if (!requestChangesResult) return { ok: false, error: "errors.request_not_editable" };
 
   await db.insert(auditLogs).values({
     actorType: "user",

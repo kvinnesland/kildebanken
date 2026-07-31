@@ -45,10 +45,23 @@ export async function approveJournalist(journalistUserId: string): Promise<Moder
   const session = await requireModeratorForCountry(journalist.countryCode);
   if (!session) return { ok: false, error: "errors.not_authorized" };
 
-  await db
+  // status="pending_review" i WHERE-betingelsen (ikke bare i sjekken over)
+  // lukker TOCTOU-vinduet mellom sjekken og denne skrivingen — to
+  // moderatorer tildelt samme land kan se den samme køen samtidig (4), og
+  // uten denne betingelsen kunne begge rekke å passere sjekken før noen av
+  // dem skrev, og siden overskrive hverandre (én godkjenner, én avviser),
+  // med tilhørende motstridende e-post og revisjonslogg til begge utfall.
+  const [approved] = await db
     .update(journalistProfiles)
     .set({ verificationStatus: "approved", reviewedBy: session.userId, reviewedAt: new Date() })
-    .where(eq(journalistProfiles.id, journalist.profileId));
+    .where(
+      and(
+        eq(journalistProfiles.id, journalist.profileId),
+        eq(journalistProfiles.verificationStatus, "pending_review")
+      )
+    )
+    .returning({ id: journalistProfiles.id });
+  if (!approved) return { ok: false, error: "errors.journalist_not_pending_review" };
 
   await db.insert(auditLogs).values({
     actorType: "user",
@@ -89,7 +102,8 @@ export async function rejectJournalist(
   const session = await requireModeratorForCountry(journalist.countryCode);
   if (!session) return { ok: false, error: "errors.not_authorized" };
 
-  await db
+  // Samme TOCTOU-lukking som i approveJournalist() over.
+  const [rejected] = await db
     .update(journalistProfiles)
     .set({
       verificationStatus: "rejected",
@@ -97,7 +111,14 @@ export async function rejectJournalist(
       reviewedAt: new Date(),
       reviewNote: reason,
     })
-    .where(eq(journalistProfiles.id, journalist.profileId));
+    .where(
+      and(
+        eq(journalistProfiles.id, journalist.profileId),
+        eq(journalistProfiles.verificationStatus, "pending_review")
+      )
+    )
+    .returning({ id: journalistProfiles.id });
+  if (!rejected) return { ok: false, error: "errors.journalist_not_pending_review" };
 
   await db.insert(auditLogs).values({
     actorType: "user",
