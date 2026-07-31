@@ -210,6 +210,20 @@ describe("runRetention mot ekte Postgres (17.4)", () => {
       await db.delete(contactRequests).where(eq(contactRequests.id, oldContactRequestId));
     });
 
+    it("dry run: teller den gamle AVGJORTE kontaktforespørselen, men sletter INGENTING", async () => {
+      setDryRun("true");
+      const summary = await runRetention(db);
+      const category = summary.results.find((r) => r.category === "contact_requests");
+      expect(category?.dryRun).toBe(true);
+      expect(category?.affectedCount).toBeGreaterThanOrEqual(1);
+
+      const [stillThere] = await db
+        .select({ id: contactRequests.id })
+        .from(contactRequests)
+        .where(eq(contactRequests.id, oldContactRequestId));
+      expect(stillThere).toBeDefined();
+    });
+
     it("ekte kjøring: sletter en gammel AVGJORT kontaktforespørsel, men aldri en PENDING eller en NYLIG en", async () => {
       setDryRun("false");
       await runRetention(db);
@@ -435,6 +449,17 @@ describe("runRetention mot ekte Postgres (17.4)", () => {
       await db.delete(auditLogs).where(eq(auditLogs.id, recentLogId));
     });
 
+    it("dry run: teller logglinjen eldre enn 3 år, men sletter INGENTING", async () => {
+      setDryRun("true");
+      const summary = await runRetention(db);
+      const category = summary.results.find((r) => r.category === "audit_logs");
+      expect(category?.dryRun).toBe(true);
+      expect(category?.affectedCount).toBeGreaterThanOrEqual(1);
+
+      const [stillThere] = await db.select({ id: auditLogs.id }).from(auditLogs).where(eq(auditLogs.id, oldLogId));
+      expect(stillThere).toBeDefined();
+    });
+
     it("ekte kjøring: sletter en logglinje eldre enn 3 år, lar en ett år gammel stå", async () => {
       setDryRun("false");
       await runRetention(db);
@@ -525,6 +550,22 @@ describe("runRetention mot ekte Postgres (17.4)", () => {
       await db.delete(digestDeliveries).where(eq(digestDeliveries.id, recentDeliveryId));
       await db.delete(digests).where(eq(digests.id, oldDigestId));
       await db.delete(digests).where(eq(digests.id, recentDigestId));
+    });
+
+    it("dry run: teller den gamle digesten, men sletter INGENTING", async () => {
+      setDryRun("true");
+      const summary = await runRetention(db);
+      const category = summary.results.find((r) => r.category === "digests");
+      expect(category?.dryRun).toBe(true);
+      expect(category?.affectedCount).toBeGreaterThanOrEqual(1);
+
+      const [stillThere] = await db.select({ id: digests.id }).from(digests).where(eq(digests.id, oldDigestId));
+      expect(stillThere).toBeDefined();
+      const [deliveryStillThere] = await db
+        .select({ id: digestDeliveries.id })
+        .from(digestDeliveries)
+        .where(eq(digestDeliveries.id, oldDeliveryId));
+      expect(deliveryStillThere).toBeDefined();
     });
 
     it("ekte kjøring: sletter en gammel digest OG dens leveranserad sammen, lar den nye stå", async () => {

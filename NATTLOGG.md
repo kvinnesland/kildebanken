@@ -8304,3 +8304,84 @@ raskt søk etter `Date.now() +` i `*.integration.test.ts`-filer kan avdekke
 flere kandidater neste økt. Ellers uendret: to åpne spørsmål
 (`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek, OG-bilde,
 Sentry/Brevo.
+
+## Fortsettelse av økt 7 — sveip fullført (ingen nye funn), og et testdekningshull tettet i retensjonsjobben
+
+Fullførte sveipet fra forrige runde: søkte etter `Date.now() + ` i alle
+`*.integration.test.ts`-filer. Den ENESTE andre treffen (utenom den
+allerede rettede i `documents.integration.test.ts`) var min EGEN nye test
+i `admin/countries.integration.test.ts` fra tidligere i natt
+(FREMTIDSDATERT-testen for `setCountryStatus()`) — men den bruker en
+ISOLERT, tilfeldig landkode (`input.code` fra `testCountryInput()`, ikke
+den delte `TEST_COUNTRY_CODE`) og rydder opp i `legalDocuments`-radene sine
+via `deleteTestCountry()` i `afterAll`. Ingen akkumulering, ingen delt
+identifikator på tvers av kjøringer — samme sårbarhetsklasse krever BEGGE
+deler (delt/fast identifikator OG "nyeste rad"-spørring), og denne testen
+har ingen av dem. Ingen fiks nødvendig. Sveipet er dermed fullført uten
+flere funn.
+
+Gikk deretter til `jobs/retention.ts` (17.4/17.5) — høy risiko siden den
+sletter/anonymiserer ekte persondata, byggingen ble eksplisitt gjort
+forsiktig tidligere i natt med egne tester. Leste alle fem kategoriene
+kritisk mot spec-tabellen i 17.4: `purgeOldResponses` (innsendt svar),
+`purgeOldContactRequests` (kontaktforespørsel),
+`purgeRejectedJournalistApplications` (avvist journalistsøknad, hele
+kaskaden av sletting på tvers av tabeller kontrollert linje for linje —
+resonnementet i kommentaren om at en avvist journalist umulig kan ha noen
+publisert forespørsel, svar eller kontaktforespørsel stemmer),
+`purgeOldAuditLogs` (revisjonslogg), `purgeOldDigests` (digest). Alle fem
+stemmer med spec-tabellens ordlyd.
+
+Ett spec-rad avklart, ikke en kodefeil: "Sikkerhetslogg | 6 måneder" har
+INGEN egen `purge`-funksjon i `retention.ts`. Sjekket om dette er et hull —
+det er det ikke: `rate_limit_hits` (19.16, nærmeste treff på "sikkerhetslogg"
+i skjemaet) er allerede selvrensende (`checkRateLimit()` sletter rader
+eldre enn sitt EGET tidsvindu — 15 min til 24 timer — ved hver eneste kall,
+se `security/rate-limit.ts` sin egen kommentar om dette). Radene lever
+aldri i nærheten av 6 måneder, så det er ingenting for den daglige
+retensjonsjobben å gjøre der — retensjonsgrensen er en ØVRE grense, og å
+slette tidligere enn nødvendig er strengt tatt MER personvernvennlig, ikke
+et avvik.
+
+**Reell finner**: testdekningen for de fem kategoriene var ASYMMETRISK —
+kun 2 av 5 (`innsendte svar`, `avviste journalistsøknader`) hadde en
+`dry run`-test i tillegg til "ekte kjøring"-testen. De tre resterende
+(`kontaktforespørsler`, `revisjonslogg`, `digest og leveringsstatus`) hadde
+KUN "ekte kjøring" testet — ingenting ville fanget opp om `if (!dryRun...)`
+-vakten for en av disse tre kategoriene noensinne ble ødelagt ved en
+fremtidig endring, til tross for at `RETENTION_DRY_RUN`s STANDARDVERDI
+(sann) er selve sikkerhetsnettet brukerens opprinnelige instruks eksplisitt
+ba om. La til de tre manglende dry-run-testene, samme mønster som de to
+eksisterende.
+
+Bekreftet EMPIRISK at de nye testene faktisk beviser noe (samme disiplin
+som resten av natten, men her ved å midlertidig BRYTE produksjonskoden i
+stedet for git stash, siden endringen var ren TESTTILLEGGELSE uten
+tilhørende kodefiks å stashe): fjernet `!dryRun &&` fra alle tre
+vaktene midlertidig (ren tekst-erstatning via et engangsskript, ikke
+lagret), kjørte testfilen — alle tre nye tester feilet nøyaktig som
+forventet (`expected undefined to be defined` — raden var borte selv i
+dry-run-modus). Gjenopprettet den ekte filen fra en sikkerhetskopi
+(`cp`, IKKE git — ingen commit fantes å gå tilbake til underveis), bekreftet
+at alle 10 tester består igjen mot den ekte koden.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**364
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next
+&& next build` (grønn), `test:integration` mot ekte lokal Postgres (**249
+tester**, +3 — bekreftet feiler mot midlertidig ødelagt dryRun-vakt for
+alle tre nye tester, består mot ekte kode).
+
+### Neste økt
+
+Sveipet etter "tidsavhengig fremtidsdatert fixture"-mønsteret er ferdig,
+ingen flere funn. `jobs/retention.ts` sin logikk er nå fullt gjennomgått og
+bekreftet korrekt, med symmetrisk dry-run-dekning på alle fem kategorier.
+Neste kandidat for kritisk lesing: `email/send.ts`, `email/digest.ts`,
+eller en fornyet, kritisk gjennomlesing av `jobs/tick.ts` (sist grundig
+gjennomgått i en tidligere økt, før denne nattens mest intensive
+TOCTOU-jakt) — ingen av dem sjekket med DENNE spesifikke teknikken ennå i
+natt. Ellers uendret: to åpne spørsmål (`runExpireRequests()`, 18.1 vs
+16.2/FR-051), komponentbibliotek, OG-bilde, Sentry/Brevo.
