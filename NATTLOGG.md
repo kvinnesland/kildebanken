@@ -8537,3 +8537,71 @@ samme kritiske gjennomlesing som selve lib-laget i natt — CSRF-sjekk,
 inputvalidering, feilhåndtering). Ellers uendret: to åpne spørsmål
 (`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek, OG-bilde,
 Sentry/Brevo.
+
+## Fortsettelse av økt 7 — tolvte bug: reell, uautentisert åpen-redirect-omgåelse i digest-tilgangsruten
+
+Gikk til `src/lib/http/safe-redirect.ts` som varslet — kort, men
+sikkerhetskritisk (åpen-redirect-vern for `?to=`-parameteren i
+`GET /api/digest-access/[token]`, ruten som bytter et digest-tilgangstoken
+inn i en økt og videresender). Den eksisterende sjekken var
+`value.startsWith("/") && !value.startsWith("//")` — dekker den opplagte
+`//evil.com`-varianten, men IKKE to andre, velkjente omgåelser av nøyaktig
+denne sjekkemåten. Bekreftet BEGGE empirisk mot Node sin `URL`-parser (den
+SAMME WHATWG-implementasjonen selve redirect-kallet bruker,
+`new URL(safeDestination, url.origin)` i route-filen):
+
+1. `new URL("/\\evil.com", origin)` → `https://evil.com/`. Baklengs
+   skråstrek oppfører seg som fremover skråstrek for "spesielle" skjema
+   (http/https) i WHATWG-spesifikasjonen, men KUN i posisjon 1 (rett etter
+   den innledende skråstreken) — testet at en baklengs skråstrek SENERE i
+   stien (`/nb-NO/foo\bar`) bare blir et ordinært sti-skille, ufarlig.
+2. `new URL("/\t/evil.com", origin)` → `https://evil.com/`. Spesifikasjonen
+   fjerner ethvert ASCII tab/linjeskift fra HELE strengen (ikke bare start/
+   slutt) FØR parsing — en tab som andre tegn gjør strengen om til
+   "//evil.com" i parserens øyne, selv om den bokstavelig aldri starter med
+   "//".
+
+**Alvorlighet**: dette er ikke bare en teoretisk sårbarhet — route-filen
+(`api/digest-access/[token]/route.ts`) videresender til `safeDestination`
+i BEGGE grener, INKLUDERT når tokenet er ugyldig/ikke finnes (linje 53-55:
+"Ugyldig token... videresend uten å opprette økt"). Det betyr en
+angriper IKKE trenger noe gyldig digest-token i det hele tatt — en lenke
+som `https://kildebanken.example/api/digest-access/hva-som-helst?to=%2F%5Cevil.com`
+(URL-en dekoder `%2F%5C` til `/\` før `isSafeRelativePath()` ser den) ser
+ut som en lenke fra en klarert domene, men omdirigerer stille til et
+angriper-kontrollert nettsted — en klassisk phishing-vektor, fullt
+uautentisert.
+
+**Fiksen**: normaliserer verdien (fjerner tab/linjeskift/vognretur, samme
+steg parseren selv gjør) FØR sjekken, og sjekker deretter at tegn nummer 2
+(rett etter den innledende skråstreken) verken er `/` eller `\`.
+
+**Verifisert empirisk**: la til to nye testtilfeller (baklengs skråstrek i
+posisjon 1, tab i posisjon 1) pluss en bekreftende test for at baklengs
+skråstrek SENERE i stien fortsatt godtas. Bekreftet via `git stash` at
+begge de nye sikkerhetstestene feiler mot den gamle koden (`expected true
+to be false` — omgåelsen slapp gjennom) og består mot fiksen (10/10
+tester).
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**368
+tester**, +4 — bekreftet feiler mot gammel kode for begge de nye
+sikkerhetstestene, består mot rettet kode), `i18n:check` (**387 nøkler**,
+uendret), `design:check-tokens` (**40** komponent-CSS-filer, uendret),
+`rm -rf .next && next build` (grønn), `test:integration` mot ekte lokal
+Postgres (**251 tester**, uendret — denne fiksen berører ingen
+integrasjonstestet kode).
+
+### Neste økt
+
+Den nest mest alvorlige sikkerhetsfeilen denne natten (etter
+FR-004-fiksen) er nå rettet og bevist. Verdt å sjekke: er
+`isSafeRelativePath()` brukt andre steder enn `digest-access`-ruten som
+også burde bruke den, men ikke gjør det ennå? Kun ett treff ved forrige
+sveip (kun denne ene ruten). Neste kandidat for kritisk lesing:
+`src/app/api/webhooks/email-events/route.ts` (Brevo-normalisering, aldri
+verifisert mot ekte konto), eller en runde gjennom API-rute-lagene i
+`src/app/api/` selv. Ellers uendret: to åpne spørsmål
+(`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek, OG-bilde,
+Sentry/Brevo.
