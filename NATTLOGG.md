@@ -6468,3 +6468,21 @@ Fortsett resten av seksjon 23s 20 punkter — spesielt punkt 17–20
 DKIM/DMARC + ekte innboks-levering) er infrastruktur/drift, ikke noe kode
 kan verifisere. Ellers: Brevo-integrasjon, resten av komponentbiblioteket,
 og OG-delingsbilde forblir alle korrekt blokkert.
+
+**Tilleggssjekk samme runde** (punkt 18, "et andre språk er fullstendig
+oversatt"): bekreftet at `nb-NO.json`/`en-GB.json` har PERFEKT
+nøkkelparitet i begge retninger (421 nøkler hver, ingen mangler noe sted)
+— punkt 18 er dermed reelt oppfylt på nøkkelnivå (oversettelsens
+SPRÅKLIGE kvalitet er ikke noe kode kan verifisere). Fant underveis at
+`check-keys.ts`s "387 nøkler funnet"-tall er antall `t(...)`-KALLSTEDER,
+ikke unike nøkler — 93 av de 421 definerte nøklene har ingen bokstavelig
+`t("nøkkel")`-treff i kildekoden, men nesten alle er forklarbare som
+DYNAMISKE oppslag regex-en ikke kan fange (`t(\`request.status.${x}\`)`,
+`t(result.error)` for API-feilnøkler, osv.) — bekreftet ved stikkprøve.
+Ett unntak: `auth.verify.already_used` er et OVERSATT, men reelt ubrukt
+strengpar — `verifyMagicLink()` returnerer bevisst bare ÉN generisk
+`null`/`auth.verify.expired` for ALLE feilårsaker (19.15: "ikke to ulike
+feilveier"), så den mer spesifikke meldingen ble aldri koblet til. Ufarlig
+dødt innhold, ikke en funksjonell feil — IKKE ryddet bort denne runden
+(lav verdi sammenlignet med resten av funnet i denne økten, og fjerning
+uten videre grunn er unødvendig churn).
