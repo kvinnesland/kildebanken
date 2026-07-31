@@ -48,6 +48,15 @@ describe("renderDigestContent", () => {
     expect(rendered.html).not.toContain("et annet språk enn ditt");
   });
 
+  it("SPEC-V1.md 21.2: setter lang-attributt på tittel/oppsummering/stedsnotat til forespørselens EGET innholdsspråk, ikke digestens locale", () => {
+    const foreign: DigestRequestItem = { ...sampleRequest, contentLanguage: "en-GB" };
+    const rendered = renderDigestContent("nb-NO", [foreign]);
+
+    expect(rendered.html).toContain('<h2 lang="en-GB"');
+    expect(rendered.html).toContain('<p class="eb-text" lang="en-GB"');
+    expect(rendered.html).toContain('<p class="eb-muted" lang="en-GB"');
+  });
+
   it("SPEC-V1.md 3.7: bruker locale-ens EGET, oversatte stinavn i lenken, ikke alltid nb-NO sitt", () => {
     const nbRendered = renderDigestContent("nb-NO", [sampleRequest]);
     expect(nbRendered.html).toContain(encodeURIComponent(`/nb-NO/foresporsler/${sampleRequest.id}/${sampleRequest.slug}`));

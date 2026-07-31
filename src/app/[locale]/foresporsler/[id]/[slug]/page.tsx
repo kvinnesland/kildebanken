@@ -109,7 +109,9 @@ export default async function RequestDetailPage({
         <Badge tone={publicRequestStatusTone(request.status)}>
           {t(`request.status.${request.status}`)}
         </Badge>
-        <h1 className={styles.title}>{request.title}</h1>
+        <h1 className={styles.title} lang={request.contentLanguage}>
+          {request.title}
+        </h1>
         <p className={styles.byline}>
           {t("request.published_by", {
             publishedAt: publishedText,
@@ -126,14 +128,20 @@ export default async function RequestDetailPage({
       {request.status === "closed" ? <p className={styles.notice}>{t("request.closed_notice")}</p> : null}
       {request.status === "expired" ? <p className={styles.notice}>{t("request.expired_notice")}</p> : null}
 
-      <p className={styles.summary}>{request.summary}</p>
+      <p className={styles.summary} lang={request.contentLanguage}>
+        {request.summary}
+      </p>
 
-      <div className={styles.body}>{request.description}</div>
+      <div className={styles.body} lang={request.contentLanguage}>
+        {request.description}
+      </div>
 
       {request.targetPersonDescription ? (
         <section>
           <h2 className={styles.sectionTitle}>{t("request.target_person_label")}</h2>
-          <p className={styles.body}>{request.targetPersonDescription}</p>
+          <p className={styles.body} lang={request.contentLanguage}>
+            {request.targetPersonDescription}
+          </p>
         </section>
       ) : null}
 

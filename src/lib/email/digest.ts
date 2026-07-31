@@ -87,14 +87,14 @@ export function renderDigestContent(
             )}</p>`
           : "";
       const geoLine = r.geographicNote
-        ? `<p class="eb-muted" style="color:${EMAIL_COLORS.textMuted};font-size:14px;margin:4px 0 0;">${escapeHtml(r.geographicNote)}</p>`
+        ? `<p class="eb-muted" lang="${r.contentLanguage}" style="color:${EMAIL_COLORS.textMuted};font-size:14px;margin:4px 0 0;">${escapeHtml(r.geographicNote)}</p>`
         : "";
 
       return `<tr><td class="eb-border" style="padding:16px 0;border-bottom:1px solid ${EMAIL_COLORS.border};">
-        <h2 style="font-size:18px;margin:0 0 8px;font-family:Georgia,'Times New Roman',serif;">
+        <h2 lang="${r.contentLanguage}" style="font-size:18px;margin:0 0 8px;font-family:Georgia,'Times New Roman',serif;">
           <a href="${url}" class="eb-link" style="color:${EMAIL_COLORS.link};text-decoration:none;">${escapeHtml(r.title)}</a>
         </h2>
-        <p class="eb-text" style="margin:0 0 8px;color:${EMAIL_COLORS.text};">${escapeHtml(r.summary)}</p>
+        <p class="eb-text" lang="${r.contentLanguage}" style="margin:0 0 8px;color:${EMAIL_COLORS.text};">${escapeHtml(r.summary)}</p>
         <p class="eb-muted" style="color:${EMAIL_COLORS.textMuted};font-size:13px;margin:0;">${escapeHtml(r.organizationName)}</p>
         <p class="eb-muted" style="color:${EMAIL_COLORS.textMuted};font-size:13px;margin:2px 0 0;">${escapeHtml(
           t("request.deadline_label", { deadline: dateFormatter.format(r.responseDeadline) })

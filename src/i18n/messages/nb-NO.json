@@ -150,7 +150,7 @@
   "journalist.inbox.total_label": "{count} svar totalt",
   "journalist.inbox.unread_label": "{count} uleste",
   "journalist.inbox.shortlisted_label": "{count} aktuelle",
-  "journalist.inbox.contact_requests_label": "{count} kontaktforespørsler",
+  "journalist.inbox.contact_requests_label": "{count, plural, one {# kontaktforespørsel} other {# kontaktforespørsler}}",
   "journalist.inbox.empty_title": "Ingen svar ennå",
   "journalist.inbox.empty_description": "Svar fra mottakere vises her etter hvert som de sendes inn.",
   "journalist.inbox.email_shared_badge": "E-post delt",

@@ -147,10 +147,10 @@
   "admin.dashboard.digest_status.failed": "failed",
 
   "journalist.inbox.title": "Responses to {title}",
-  "journalist.inbox.total_label": "{count} responses total",
+  "journalist.inbox.total_label": "{count, plural, one {# response total} other {# responses total}}",
   "journalist.inbox.unread_label": "{count} unread",
   "journalist.inbox.shortlisted_label": "{count} shortlisted",
-  "journalist.inbox.contact_requests_label": "{count} contact requests",
+  "journalist.inbox.contact_requests_label": "{count, plural, one {# contact request} other {# contact requests}}",
   "journalist.inbox.empty_title": "No responses yet",
   "journalist.inbox.empty_description": "Responses from recipients appear here as they're submitted.",
   "journalist.inbox.email_shared_badge": "Email shared",

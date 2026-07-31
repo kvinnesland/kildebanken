@@ -6857,3 +6857,79 @@ komponentbiblioteket (fortsatt uten forbruker) og OG-delingsbilde
 (blokkert på uavklart visuell identitet). Et godt neste steg er trolig
 seksjon 5 (Brukerreiser) eller 21 (Ikke-funksjonelle krav) i SPEC-V1.md —
 begge er ennå ikke spesifikt diffet mot koden denne økten.
+
+---
+
+## Fortsettelse av økt 7 — SPEC-V1.md 21 (Ikke-funksjonelle krav) mot faktisk kode, to reelle hull funnet
+
+Nytt inventar, per forrige "Neste økt": seksjon 21 (Ytelse, Tilgjengelighet,
+Internasjonalisering, Øvrig, Analyse) mot koden. Mesteparten var allerede
+riktig eller er infrastruktur/drift (ytelse, oppetid, EØS-plassering,
+sikkerhetskopi — ikke noe kode kan bygge eller verifisere). Sjekket
+konkret, kodesjekkbare punkter:
+
+- CI feiler på manglende nøkkel i nb-NO, advarer (ikke feiler) på manglende
+  nøkkel i andre språk: `check-keys.ts` dekker første halvdel (feiler
+  build), og runtime-fallback-kjeden i `get-messages.ts` dekker andre
+  halvdel (logger en advarsel og faller tilbake, akkurat som spec-en sier)
+  — riktig lag for hver av de to kravene, ingen handling.
+- Locale-aware sortering: eneste `.sort()`-kallet i kildekoden
+  (`admin/page.tsx`, landkoder) bruker allerede `localeCompare`. Ingen
+  handling.
+- **Reelt hull 1 — manglende ICU-flertallsformer:** `journalist.inbox.
+  total_label` (en-GB: "{count} responses total") og `.contact_requests_
+  label` (begge språk: "{count} kontaktforespørsler"/"{count} contact
+  requests") hardkodet flertallsform uansett antall — "1 responses total",
+  "1 kontaktforespørsler" for et faktisk antall på 1 (feltene
+  `summary.totalResponses`/`summary.contactRequestCount` i
+  `journalist/requests/[id]/responses/page.tsx` kan reelt være 1). Direkte
+  brudd på 21.3: "Alle strenger i ICU MessageFormat, med flertallsformer
+  der det er relevant." Rettet til samme `{count, plural, one {...} other
+  {...}}`-mønster som allerede brukes i `digest.subject`. `unread_label`/
+  `shortlisted_label` trengte IKKE retting — adjektiv, ikke substantiv,
+  bøyes ikke i noen av språkene her. Ny `get-messages.test.ts` (2 tester)
+  bekrefter riktig bøying for telling 0/1/flere i begge språk.
+- **Reelt hull 2 — manglende element-nivå `lang`:** 21.2 krever
+  "`lang`-attributt ... på elementnivå der innhold har et annet språk enn
+  siden". Dokumentnivået var allerede riktig (`<html lang=...>` i både
+  `app/[locale]/layout.tsx` og e-postens egen `<html>`), men selve
+  forespørselsteksten (tittel/oppsummering/beskrivelse/stedsnotat — alt
+  journalist-forfattet i `request.content_language`, ofte annerledes enn
+  leserens/mottakerens locale) hadde INGEN `lang`-attributt noe sted, kun
+  en tekstlig "dette er på et annet språk"-varsel. En skjermleser ville
+  lest en norsk forespørsel med engelsk uttale for en engelsk mottaker,
+  nøyaktig scenarioet 21.2 selv beskriver. Rettet TO steder: den offentlige
+  forespørselssiden (`foresporsler/[id]/[slug]/page.tsx` — tittel,
+  oppsummering, beskrivelse, målpersonbeskrivelse) og den daglige digesten
+  (`lib/email/digest.ts` — tittel, oppsummering, stedsnotat), begge satt
+  til forespørselens EGET `contentLanguage`, ubetinget (riktig uansett om
+  det tilfeldigvis matcher siden/mottakerens locale, enklere enn en
+  betinget sjekk). Ny test i `digest.test.ts` (1 test) bekrefter
+  `lang="en-GB"` på riktige elementer i en fremmedspråklig forespørsel i en
+  norsk digest. Ingen ny test på selve web-siden — ren JSX-attributtending
+  uten eksisterende testoppsett for den filen, dekket av tsc/build i
+  stedet.
+
+**Sidefunn under verifisering:** den lokale Postgres-klyngen hadde stoppet
+igjen (tredje gang denne økten) — startet på nytt med `pg_ctlcluster 16
+main start` før integrasjonssuiten kjørte. Ingen varig løsning funnet for
+hvorfor klyngen stopper mellom deløkter; bare notert som et gjentakende,
+lavkost oppstartssteg.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**359
+tester**, +3), `i18n:check` (**387 nøkler**, uendret — kun verdier endret,
+ingen nye/fjernede nøkler), `design:check-tokens` (**40**
+komponent-CSS-filer, uendret), `rm -rf .next && next build` (grønn),
+`test:integration` mot ekte lokal Postgres (**239 tester**, uendret — ingen
+databaseendring denne runden).
+
+### Neste økt
+
+Seksjon 21 er nå tilstrekkelig gjennomgått for kodens del. Gjenstående
+udiffet inventar: seksjon 5 (Brukerreiser) i SPEC-V1.md. Ellers uendret:
+resten av komponentbiblioteket (fortsatt uten forbruker), OG-delingsbilde
+(blokkert på uavklart visuell identitet), og Brevo-integrasjonens faktiske
+API-kontrakt (kodet fra kjent v3-oppførsel, men ikke bekreftet mot en ekte
+konto).
