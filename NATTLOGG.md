@@ -8470,3 +8470,70 @@ brukerrad bygges. Neste kandidat for kritisk lesing: `email/send.ts`,
 `email/digest.ts`. Ellers uendret: to åpne spørsmål
 (`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek, OG-bilde,
 Sentry/Brevo.
+
+## Fortsettelse av økt 7 — sveip etter "bar sletting"-mønsteret (ingen nye funn), og gjennomgang av e-postlaget (ingen funn)
+
+Sveipet raskt etter forrige rundes lærdom: grep etter `.delete(users)` i
+hele `src/lib` fant KUN de to stedene som allerede er gjennomgått og
+rettet (`retention.ts`, `tick.ts`). Et bredere søk etter alle `.delete(...)`-
+kall i `src/lib` fant ingen andre kandidater utover disse to og
+`withdrawResponse()` (`responses/responses.ts`), som allerede korrekt
+nuller ut `contactRequests.responseId` for ALLE tilhørende rader FØR selve
+svaret slettes (gjennomgått tidligere i natt). Sveipet er dermed ferdig.
+
+Gikk deretter til `email/send.ts` og `email/digest.ts` som varslet. Begge
+er grundig bygget og fant INGEN bugs ved kritisk lesing:
+
+- `send.ts`: alle 23 transaksjonelle malene i `TransactionalTemplate`
+  matcher nøyaktig SPEC-V1.md 15 sin tabell (24 rader minus selve
+  digest-raden, som er BULK, ikke transaksjonell — egen funksjon,
+  `sendBulkEmail`). Atskilt avsender for transaksjonell vs. bulk (samme
+  som INFRASTRUCTURE.md 6.1/6.3 krever), `List-Unsubscribe`/
+  `List-Unsubscribe-Post` obligatorisk (ikke valgfritt) på `sendBulkEmail`
+  sin input-type (FR-038) — en glemt header ville vært en TYPEFEIL, ikke en
+  kjøretidsfeil.
+- `digest.ts`: sjekket spesifikt for XSS, siden dette er den ENESTE malen
+  som rendrer journalist-VALGT fritekst (`title`, `summary`,
+  `organizationName`, `geographicNote`) til et STORT antall mottakere i
+  bulk — den mest alvorlige tenkelige treffflaten om escaping sviktet noe
+  sted. Alle fire feltene går konsekvent gjennom `escapeHtml()`
+  (`email/escape-html.ts`, standard, riktig rekkefølge — `&` FØRST) i
+  HTML-versjonen; PLAIN TEXT-versjonen bruker dem bevisst UESCAPET (riktig
+  — HTML-escaping i ren tekst ville vist `&lt;`-koder rått til mottakeren,
+  ikke motsatt). Sjekket også at `href="${url}"` (bygget fra `r.slug`) er
+  trygt UTEN escaping: `slugify()` (`requests/slug.ts`) begrenser en slug
+  til strengt `[a-z0-9-]` etter transkribering av norske spesialtegn —
+  ingen anførselstegn eller vinkelparenteser kan noensinne forekomme i en
+  slug, uansett tittel.
+
+  Vurderte én teoretisk, ufarlig kant: `insertPerRecipientTokens()` bytter
+  ut plassholderstrengene (`__ACCESS_TOKEN__`/`__UNSUBSCRIBE_TOKEN__`) med
+  et personlig token PER MOTTAKER via `replaceAll()` på den delte, allerede
+  rendrede HTML-en/teksten. Skulle en journalist (bevisst eller ved en
+  tilfeldighet) skrive en tittel som bokstavelig inneholder
+  `"__ACCESS_TOKEN__"`, ville DEN teksten også bli erstattet med mottakerens
+  eget tilgangstoken der forespørselens tittel vises i digesten — men dette
+  lekker INGENTING på tvers av brukere: hver mottaker får bare SITT EGET
+  token satt inn i SIN EGEN kopi (rendringen er delt FØR personalisering,
+  men selve erstatningen skjer separat per mottaker via `replaceAll()`,
+  som returnerer en ny streng — ingen delt, muterbar tilstand). I verste
+  fall en forvirrende, korrupt tittelvisning for mottakeren selv, ikke et
+  sikkerhetshull. Ikke rettet — for lav alvorlighet og ingen reell
+  utnyttelsesvei til å rettferdiggjøre en kodeendring.
+
+Ingen kodeendringer denne runden — kun gjennomlesing og bekreftelse. Ingen
+ny commit for kodeendringer, kun denne NATTLOGG-oppdateringen.
+
+### Neste økt
+
+`email/send.ts` og `email/digest.ts` er nå bekreftet rene. Kandidater for
+neste kritisk-lesing-runde, ingen av dem sjekket med denne spesifikke
+teknikken ennå: `src/lib/http/safe-redirect.ts` (kort, men sikkerhetskritisk
+— åpen-redirect-vern), `src/app/api/webhooks/email-events/route.ts` (selve
+normaliseringslaget mellom Brevo og `email-events.ts`, aldri verifisert mot
+en ekte Brevo-konto), eller en runde gjennom API-rute-lagene i `src/app/api/`
+selv (rutene er tynne adaptere over lib-funksjonene, men har ikke fått
+samme kritiske gjennomlesing som selve lib-laget i natt — CSRF-sjekk,
+inputvalidering, feilhåndtering). Ellers uendret: to åpne spørsmål
+(`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek, OG-bilde,
+Sentry/Brevo.
