@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import type { SupportedLocale } from "@/i18n/config";
 import { createTranslator } from "@/i18n/get-messages";
 import { TextField } from "@/components/TextField";
 import { Button } from "@/components/Button";
+import { focusFirstInvalidField } from "@/lib/forms/focus-first-invalid";
 import styles from "./LoginForm.module.css";
 
 type Status = "idle" | "submitting" | "sent";
@@ -19,13 +20,17 @@ export function LoginForm({ locale }: { locale: SupportedLocale }) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [attempted, setAttempted] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const emailValid = /\S+@\S+\.\S+/.test(email);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setAttempted(true);
-    if (!emailValid) return;
+    if (!emailValid) {
+      focusFirstInvalidField(formRef);
+      return;
+    }
 
     setStatus("submitting");
     try {
@@ -47,7 +52,7 @@ export function LoginForm({ locale }: { locale: SupportedLocale }) {
   }
 
   return (
-    <form className={styles.form} onSubmit={handleSubmit} noValidate>
+    <form ref={formRef} className={styles.form} onSubmit={handleSubmit} noValidate>
       <TextField
         label={t("auth.request_link.email_label")}
         value={email}

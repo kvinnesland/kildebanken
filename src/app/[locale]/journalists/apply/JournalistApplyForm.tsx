@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { match } from "@formatjs/intl-localematcher";
 import { createTranslator } from "@/i18n/get-messages";
@@ -9,6 +9,7 @@ import { TextField } from "@/components/TextField";
 import { Select, type SelectOption } from "@/components/Select";
 import { Checkbox } from "@/components/Checkbox";
 import { Button } from "@/components/Button";
+import { focusFirstInvalidField } from "@/lib/forms/focus-first-invalid";
 import styles from "./JournalistApplyForm.module.css";
 
 interface CountryOption {
@@ -42,6 +43,7 @@ export function JournalistApplyForm({ locale }: { locale: SupportedLocale }) {
   const [status, setStatus] = useState<Status>("loading_countries");
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [attempted, setAttempted] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const [fullName, setFullName] = useState("");
   const [jobEmail, setJobEmail] = useState("");
@@ -116,7 +118,10 @@ export function JournalistApplyForm({ locale }: { locale: SupportedLocale }) {
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setAttempted(true);
-    if (!formValid) return;
+    if (!formValid) {
+      focusFirstInvalidField(formRef);
+      return;
+    }
 
     setStatus("submitting");
     setErrorKey(null);
@@ -159,7 +164,7 @@ export function JournalistApplyForm({ locale }: { locale: SupportedLocale }) {
   }));
 
   return (
-    <form className={styles.form} onSubmit={handleSubmit} noValidate>
+    <form ref={formRef} className={styles.form} onSubmit={handleSubmit} noValidate>
       {errorKey ? <p className={styles.formError}>{t(errorKey)}</p> : null}
 
       <TextField

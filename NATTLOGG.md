@@ -6618,3 +6618,68 @@ forblir de tre lenge utestående, bevisst blokkerte postene uendret: Brevo-
 integrasjon (mangler API-nøkkel), resten av komponentbiblioteket (ingen
 konkret forbruker ennå), og OG-delingsbilde (blokkert på uavklart visuell
 identitet, DESIGN.md 10).
+
+---
+
+## Fortsettelse av økt 7 — DESIGN.md sitt komponentkrav mot faktisk bygde komponenter, og et reelt kodefunn underveis
+
+Fulgte opp den andre halvdelen av forrige "Neste økt": diffet DESIGN.md
+seksjon 6 sitt "minimumssett for v1" (17 komponenter) mot
+`src/components/`. 10 av 17 er bygget (`Button`, `TextField`, `TextArea`,
+`Checkbox`, `RadioGroup`, `Select`, `Badge`, `Card`, `EmptyState`,
+`LanguageSwitcher`). De 7 gjenstående (`Dialog`, `Toast`, `Alert`, `Tabs`,
+`Table`, `Pagination`, `SkeletonLoader`) har INGEN forbruker noe sted i
+appen ennå — bekreftet ved søk etter `<table`, `role="dialog"`,
+`role="alert"`, `toast`/`Toast`, `pagination` i `src/app/`: null treff.
+Dette bekrefter bare den allerede riktige, tidligere beslutningen om å
+utsette resten av biblioteket (ingen konkret forbruker = ingen grunn til å
+bygge dem nå) — ingen ny handling der.
+
+**Fant derimot et reelt gap i samme seksjon.** DESIGN.md 6.1 krever:
+"Skjemaer med feil flytter fokus til første feilende felt." Søk etter
+`.focus()` i hele `src/app/`/`src/components/` ga NULL treff — kravet var
+ikke implementert i noen av de 6 skjemaene (`SubscribeForm`, `LoginForm`,
+`JournalistApplyForm`, `ResponseForm`, `ReportForm`,
+`RequestEditForm`). Dette er, i motsetning til INFRASTRUCTURE.md-funnet
+tidligere i denne økten, et ekte KODE-hull, ikke et dokumentasjons-hull —
+kravet er en bevisst, navngitt tilgjengelighetsbeslutning i DESIGN.md sitt
+eget "Fokus og feil"-avsnitt, ikke noe koden gjør annerledes av en god
+grunn.
+
+Rettet det: ny `src/lib/forms/focus-first-invalid.ts` med
+`focusFirstInvalidField(formRef)` — finner første element med
+`aria-invalid="true"` inni skjemaet (React Aria Components setter dette
+attributtet automatisk på selve det fokuserbare elementet når `isInvalid`
+er sant, uansett om det er `TextField`, `Select`, `Checkbox` eller
+`RadioGroup`) og fokuserer det, via `requestAnimationFrame` slik at
+søket skjer ETTER at React har committet de nye `aria-invalid`-
+attributtene. Koblet inn i alle 6 skjemaene: de 5 med synkron
+klient-validering kaller den rett etter `setAttempted(true)` når
+`formValid` er usann, og `RequestEditForm` (som får feil asynkront
+tilbake fra serveren) kaller den rett etter hver `setFieldErrors(...)`
+ved en mislykket lagring/innsending.
+
+Ny enhetstest for selve hjelperen (3 tester: fokuserer riktig felt,
+gjør ingenting uten ugyldige felt, gjør ingenting uten et `formRef`), og
+en ny test i `LoginForm.test.tsx` som bekrefter den FAKTISKE oppførselen
+ende-til-ende i en ekte gjengitt komponent (ikke bare hjelperen isolert):
+e-postfeltet får fokus etter et mislykket innsendingsforsøk.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**344
+tester**, +4 — ny hjelpertest-fil og én ny test i `LoginForm.test.tsx`),
+`i18n:check` (**387 nøkler**, uendret), `design:check-tokens` (**40**
+komponent-CSS-filer, uendret), `rm -rf .next && next build` (grønn),
+`test:integration` mot ekte lokal Postgres (**233 tester**, uendret —
+ingen databaseendring).
+
+### Neste økt
+
+Både INFRASTRUCTURE.md sin jobbtabell og DESIGN.md sitt komponentkrav er
+nå avstemt mot koden denne økten. Ingen nye inventar-kandidater er
+identifisert ennå. Neste gode bruk av tiden: enten et helt nytt
+inventar-søk (gjennomgå seksjoner av SPEC-V1.md/DESIGN.md/
+INFRASTRUCTURE.md som ikke er sjekket ennå), eller plukke opp et av de tre
+lenge utestående, bevisst blokkerte postene (Brevo-integrasjon, resten av
+komponentbiblioteket — fortsatt uten forbruker, OG-delingsbilde).

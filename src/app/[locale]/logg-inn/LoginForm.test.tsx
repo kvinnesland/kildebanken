@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LoginForm } from "./LoginForm";
 
@@ -13,6 +13,12 @@ describe("LoginForm", () => {
     render(<LoginForm locale="nb-NO" />);
     await userEvent.click(screen.getByRole("button", { name: "Send innloggingslenke" }));
     expect(screen.getByText("Dette feltet er obligatorisk.")).toBeInTheDocument();
+  });
+
+  it("DESIGN.md 6.1: flytter fokus til feltet ved mislykket valideringsforsøk", async () => {
+    render(<LoginForm locale="nb-NO" />);
+    await userEvent.click(screen.getByRole("button", { name: "Send innloggingslenke" }));
+    await waitFor(() => expect(screen.getByLabelText("E-postadresse")).toHaveFocus());
   });
 
   it("viser suksessmelding etter innsending, uansett om kontoen finnes (SPEC-V1.md 6.1: avslører ingenting)", async () => {

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import type { SupportedLocale } from "@/i18n/config";
 import { createTranslator } from "@/i18n/get-messages";
 import { TextField } from "@/components/TextField";
 import { TextArea } from "@/components/TextArea";
 import { RadioGroup } from "@/components/RadioGroup";
 import { Button } from "@/components/Button";
+import { focusFirstInvalidField } from "@/lib/forms/focus-first-invalid";
 import styles from "./ResponseForm.module.css";
 
 const LIMITS = {
@@ -37,6 +38,7 @@ export function ResponseForm({
   const [step, setStep] = useState<Step>("form");
   const [attempted, setAttempted] = useState(false);
   const [errorKey, setErrorKey] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const [relevanceStatement, setRelevanceStatement] = useState("");
   const [answerText, setAnswerText] = useState("");
@@ -54,7 +56,10 @@ export function ResponseForm({
   function handleContinue(event: FormEvent) {
     event.preventDefault();
     setAttempted(true);
-    if (!formValid) return;
+    if (!formValid) {
+      focusFirstInvalidField(formRef);
+      return;
+    }
     setStep("confirm");
   }
 
@@ -121,7 +126,7 @@ export function ResponseForm({
   }
 
   return (
-    <form className={styles.form} onSubmit={handleContinue} noValidate>
+    <form ref={formRef} className={styles.form} onSubmit={handleContinue} noValidate>
       <TextArea
         label={t("response.form.relevance_label")}
         value={relevanceStatement}

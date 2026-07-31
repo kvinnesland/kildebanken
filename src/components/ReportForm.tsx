@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import type { SupportedLocale } from "@/i18n/config";
 import { createTranslator } from "@/i18n/get-messages";
 import { TextField } from "@/components/TextField";
 import { TextArea } from "@/components/TextArea";
 import { Button } from "@/components/Button";
+import { focusFirstInvalidField } from "@/lib/forms/focus-first-invalid";
 import styles from "./ReportForm.module.css";
 
 type Status = "collapsed" | "expanded" | "submitting" | "success" | "error";
@@ -32,6 +33,7 @@ export function ReportForm({
   const [reason, setReason] = useState("");
   const [comment, setComment] = useState("");
   const [errorKey, setErrorKey] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   if (status === "success") {
     return <p className={styles.success}>{t("report.success")}</p>;
@@ -50,7 +52,10 @@ export function ReportForm({
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setAttempted(true);
-    if (!reasonValid) return;
+    if (!reasonValid) {
+      focusFirstInvalidField(formRef);
+      return;
+    }
 
     setStatus("submitting");
     setErrorKey(null);
@@ -79,7 +84,7 @@ export function ReportForm({
   }
 
   return (
-    <form className={styles.form} onSubmit={handleSubmit} noValidate>
+    <form ref={formRef} className={styles.form} onSubmit={handleSubmit} noValidate>
       {errorKey ? <p className={styles.formError}>{t(errorKey)}</p> : null}
 
       <TextField

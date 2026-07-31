@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { match } from "@formatjs/intl-localematcher";
 import { createTranslator } from "@/i18n/get-messages";
@@ -9,6 +9,7 @@ import { TextField } from "@/components/TextField";
 import { Select, type SelectOption } from "@/components/Select";
 import { Checkbox } from "@/components/Checkbox";
 import { Button } from "@/components/Button";
+import { focusFirstInvalidField } from "@/lib/forms/focus-first-invalid";
 import styles from "./SubscribeForm.module.css";
 
 interface CountryOption {
@@ -56,6 +57,7 @@ export function SubscribeForm({ locale }: { locale: SupportedLocale }) {
   const [consentEmail, setConsentEmail] = useState(false);
   const [consentTerms, setConsentTerms] = useState(false);
   const [consentAge, setConsentAge] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,7 +120,10 @@ export function SubscribeForm({ locale }: { locale: SupportedLocale }) {
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setAttempted(true);
-    if (!formValid) return;
+    if (!formValid) {
+      focusFirstInvalidField(formRef);
+      return;
+    }
 
     setStatus("submitting");
     setErrorKey(null);
@@ -160,7 +165,7 @@ export function SubscribeForm({ locale }: { locale: SupportedLocale }) {
   }));
 
   return (
-    <form className={styles.form} onSubmit={handleSubmit} noValidate>
+    <form ref={formRef} className={styles.form} onSubmit={handleSubmit} noValidate>
       {errorKey ? <p className={styles.formError}>{t(errorKey)}</p> : null}
 
       <TextField

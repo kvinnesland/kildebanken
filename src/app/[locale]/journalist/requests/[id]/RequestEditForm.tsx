@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SupportedLocale } from "@/i18n/config";
 import { createTranslator } from "@/i18n/get-messages";
@@ -11,6 +11,7 @@ import { TextArea } from "@/components/TextArea";
 import { Select, type SelectOption } from "@/components/Select";
 import { RadioGroup } from "@/components/RadioGroup";
 import { Button } from "@/components/Button";
+import { focusFirstInvalidField } from "@/lib/forms/focus-first-invalid";
 import styles from "./RequestEditForm.module.css";
 
 const LIMITS = {
@@ -79,6 +80,7 @@ export function RequestEditForm({
   const [fieldErrors, setFieldErrors] = useState<SubmitValidationError[]>([]);
   const [generalError, setGeneralError] = useState<string | null>(null);
   const router = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
 
   const topicOptions: SelectOption[] = [
     { id: NO_TOPIC, label: t("journalist.request_form.topic_placeholder") },
@@ -129,6 +131,7 @@ export function RequestEditForm({
         setPhase("error");
         setGeneralError(data.error ?? "errors.generic");
         setFieldErrors(data.fieldErrors ?? []);
+        focusFirstInvalidField(formRef);
         return;
       }
       setPhase("saved");
@@ -154,6 +157,7 @@ export function RequestEditForm({
         setPhase("error");
         setGeneralError(saveData.error ?? "errors.generic");
         setFieldErrors(saveData.fieldErrors ?? []);
+        focusFirstInvalidField(formRef);
         return;
       }
 
@@ -164,6 +168,7 @@ export function RequestEditForm({
         setPhase("error");
         setGeneralError(submitData.error ?? "errors.generic");
         setFieldErrors(submitData.fieldErrors ?? []);
+        focusFirstInvalidField(formRef);
         return;
       }
       setPhase("submitted");
@@ -193,7 +198,7 @@ export function RequestEditForm({
   const busy = phase === "saving" || phase === "submitting";
 
   return (
-    <form className={styles.form} onSubmit={(event) => event.preventDefault()} noValidate>
+    <form ref={formRef} className={styles.form} onSubmit={(event) => event.preventDefault()} noValidate>
       {generalError ? <p className={styles.formError}>{t(generalError)}</p> : null}
       {phase === "saved" ? <p className={styles.success}>{t("journalist.request_form.saved")}</p> : null}
       {phase === "submitted" ? (
