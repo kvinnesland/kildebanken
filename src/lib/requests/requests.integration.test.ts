@@ -1,15 +1,17 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { auditLogs, moderatorCountries, requests, users } from "@/db/schema";
+import { auditLogs, moderatorCountries, requests, responses, users } from "@/db/schema";
 import {
   createActiveJournalist,
+  createActiveRecipient,
   ensureSecondTestCountry,
   ensureTestCountry,
   TEST_COUNTRY_CODE,
   TEST_COUNTRY_CODE_2,
   uniqueTestEmail,
 } from "@/db/integration/fixtures";
+import { submitResponse } from "@/lib/responses/responses";
 import { closeRequest, createDraft, getPublicRequest, updateDraft } from "./requests";
 
 describe("getPublicRequest mot ekte Postgres", () => {
@@ -169,6 +171,63 @@ describe("closeRequest mot ekte Postgres — moderator er begrenset til tildelt 
       .where(and(eq(auditLogs.entityId, requestId), eq(auditLogs.action, "request.close")));
     expect(log?.actorUserId).toBe(moderatorSameCountryId);
     expect(log?.countryCode).toBe(TEST_COUNTRY_CODE);
+  });
+});
+
+describe("closeRequest mot ekte Postgres — varsler respondenter (SPEC-V1.md 15: 'Forespørsel du har svart på er lukket')", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("sender response_request_closed til en respondent med et INNSENDT svar, når journalisten lukker forespørselen selv", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+    const respondent = await createActiveRecipient();
+
+    const [request] = await db
+      .insert(requests)
+      .values({
+        journalistId: journalist.id,
+        countryCode: TEST_COUNTRY_CODE,
+        contentLanguage: "nb-NO",
+        title: "Lukketest med respondentvarsel",
+        summary: "sum",
+        description: "desc",
+        targetPersonDescription: "target",
+        responseDeadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        status: "published",
+        allowsAnonymousParticipation: true,
+        mayBeRecorded: false,
+        mayInvolvePhotoVideo: false,
+        publishedAt: new Date(),
+      })
+      .returning({ id: requests.id });
+    if (!request) throw new Error("Klarte ikke opprette testforespørsel");
+
+    const submitResult = await submitResponse(request.id, respondent.id, {
+      relevanceStatement: "Relevant.",
+      answerText: "Svar.",
+      contactSharing: "none",
+    });
+    if (!submitResult.ok) throw new Error("Klarte ikke sende inn testsvar");
+
+    const result = await closeRequest(request.id, journalist.id);
+
+    expect(result.ok).toBe(true);
+    expect(
+      warnSpy.mock.calls.some((call) => String(call[0]).includes("response_request_closed"))
+    ).toBe(true);
+    expect(
+      warnSpy.mock.calls.some(
+        (call) => String(call[0]).includes(respondent.email) && String(call[0]).includes("response_request_closed")
+      )
+    ).toBe(true);
+
+    await db.delete(responses).where(eq(responses.requestId, request.id));
+    await db.delete(requests).where(eq(requests.id, request.id));
   });
 });
 

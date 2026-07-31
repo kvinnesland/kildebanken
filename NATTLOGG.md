@@ -7702,3 +7702,80 @@ fortsetter å være verdt tiden. Gjenstående kandidater for samme lesing:
 `me/`-modulene (kontobytte av land, kontosletting-forespørsel). Ellers
 gjenstår de lenge bevisst utsatte postene (komponentbibliotek uten
 forbruker, OG-delingsbilde, Sentry/Brevo sine ubekreftede kontrakter).
+
+---
+
+## Fortsettelse av økt 7 — fjerde reelle bug: respondenter ble ALDRI varslet når en forespørsel lukkes normalt
+
+Fortsatte kritisk-lesing-listen mot `requests.ts` sin `closeRequest()`.
+Dette var det STØRSTE funnet av de fire denne natten, målt i faktisk
+brukerpåvirkning.
+
+`SPEC-V1.md` 15 sin e-postmal-tabell har en rad "Forespørsel du har svart
+på er lukket | mottaker" (linje 830) — en helt egen, respondent-rettet mal
+(`response_request_closed`), atskilt fra journalist-varselet på raden
+rett over ("Forespørsel lukket | journalist", `request_closed`). Malen
+FANTES allerede, var testet, og var korrekt koblet inn ETT sted:
+`closeJournalistContentOnDeletion()` i `src/lib/auth/account-deletion.ts`
+(17.5, siste avsnitt — når en JOURNALIST sletter kontoen sin, og
+forespørslene hens dermed lukkes automatisk).
+
+**Men den var ALDRI koblet inn i selve `closeRequest()`** — funksjonen
+som BÅDE `POST /requests/:id/close` (journalisten selv) OG `POST
+/admin/requests/:id/close` (moderator/administrator) faktisk bruker, den
+desidert vanligste veien en forespørsel lukkes på. `closeRequest()` sendte
+allerede `request_closed` til JOURNALISTEN (rettet i en tidligere økt,
+se linje ~4799 i denne loggen) — men aldri `response_request_closed` til
+RESPONDENTENE som hadde svart. Spec-raden skiller ikke på lukkeårsak, så
+dette gjaldt uansett om journalisten selv lukket den, eller en moderator/
+administrator gjorde det på hens vegne.
+
+**Konsekvens før rettelsen:** en respondent som sender inn et svar, får
+ALDRI vite at forespørselen de svarte på er lukket — med mindre den
+tilfeldigvis ble lukket via at journalisten SLETTET KONTOEN sin (den ene,
+sjeldne veien som faktisk sendte varselet). Den normale, forventede
+lukkingen (journalisten avslutter saken, eller en moderator gjør det) var
+helt stille for respondenten.
+
+**Rettet:** lagt til nøyaktig samme spørring/løkke-mønster som allerede
+fantes i `closeJournalistContentOnDeletion()` — hent alle respondenter med
+`lifecycle_status = submitted` for forespørselen, send
+`response_request_closed` til hver, rett etter at journalisten er
+varslet. Ingen ny mal, ingen ny type, bare koblet inn på det STEDET
+spec-en faktisk krever det.
+
+**Bekreftet regresjonen empirisk** (samme metode som de to forrige
+funnene): skrev testen (ny respondent, innsendt svar, lukk forespørselen,
+forvent `response_request_closed` i loggen), kjørte den mot gammel kode
+via `git stash` — feilet som forventet. Gjenopprettet fiksen — består.
+
+**Ikke undersøkt videre denne runden, notert som åpent spørsmål:** bør
+`runExpireRequests()` (automatisk lukking ved passert frist, FR-026, en
+egen, direkte bulk-UPDATE i `tick.ts` som IKKE går via `closeRequest()`)
+ALSO sende samme varsel? Brukerreisen i seksjon 5.1 punkt 11 sier
+"Journalisten lukker forespørselen, ELLER den lukkes automatisk ved
+frist" — språklig behandlet som samme hendelse fra brukerens ståsted,
+men datamodellen skiller `closed` fra `expired` som to distinkte
+statusverdier, og spec-raden i 15 presiserer ikke eksplisitt om automatisk
+utløp teller. Krever en bevisst beslutning (og i så fall en STØRRE endring
+av `runExpireRequests()`, fra en enkel bulk-UPDATE til en per-rad-løkke
+med e-postutsendelse) — utsatt til en egen runde fremfor å hastes inn nå.
+
+### Verifisert før commit
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**364
+tester**, uendret — ny test er kun integrasjon), `i18n:check` (**387
+nøkler**, uendret), `design:check-tokens` (**40** komponent-CSS-filer,
+uendret), `rm -rf .next && next build` (grønn), `test:integration` mot
+ekte lokal Postgres (**245 tester**, +1 — bekreftet feiler mot gammel
+kode, består mot rettet kode).
+
+### Neste økt
+
+Fjerde reelle bug funnet under kritisk gjennomlesing denne natten, og den
+med størst reell brukerpåvirkning (respondenter fikk aldri vite at en sak
+de svarte på ble lukket, i det vanligste tilfellet). Åpent spørsmål notert
+over: bør `runExpireRequests()` (automatisk utløp) også sende
+`response_request_closed`? Krever en egen, større runde. Ellers: fortsett
+kritisk lesing i `me/`-modulene, eller plukk opp en av de lenge bevisst
+utsatte postene (komponentbibliotek, OG-bilde, Sentry/Brevo).

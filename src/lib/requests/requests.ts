@@ -373,6 +373,29 @@ export async function closeRequest(
     });
   }
 
+  // SPEC-V1.md 15: "Forespørsel du har svart på er lukket | mottaker" —
+  // samme rad som request_closed over, men til RESPONDENTEN, ikke
+  // journalisten. Manglet her frem til nå — malen (response_request_closed)
+  // fantes og var allerede koblet inn i closeJournalistContentOnDeletion()
+  // (src/lib/auth/account-deletion.ts, 17.5), men den er en HELT ANNEN,
+  // mye sjeldnere lukkevei enn denne funksjonen (journalistens/moderatorens
+  // vanlige lukking) — spec-raden skiller ikke mellom lukkeårsak, så
+  // respondenter skal varsles uansett hvilken vei som faktisk lukket den.
+  // Samme spørring/løkke-mønster som account-deletion.ts sin funksjon.
+  const respondents = await db
+    .select({ email: users.email, locale: users.locale })
+    .from(responses)
+    .innerJoin(users, eq(responses.respondentId, users.id))
+    .where(and(eq(responses.requestId, requestId), eq(responses.lifecycleStatus, "submitted")));
+
+  for (const respondent of respondents) {
+    await sendTransactionalEmail({
+      template: "response_request_closed",
+      to: { email: respondent.email, locale: respondent.locale },
+      data: { requestId, title: existing.title, slug: existing.slug },
+    });
+  }
+
   return { ok: true, id: requestId };
 }
 
