@@ -8385,3 +8385,88 @@ gjennomgått i en tidligere økt, før denne nattens mest intensive
 TOCTOU-jakt) — ingen av dem sjekket med DENNE spesifikke teknikken ennå i
 natt. Ellers uendret: to åpne spørsmål (`runExpireRequests()`, 18.1 vs
 16.2/FR-051), komponentbibliotek, OG-bilde, Sentry/Brevo.
+
+## Fortsettelse av økt 7 — ellevte og alvorligste bug: FR-004-jobben har ALDRI faktisk fungert mot ekte data
+
+Gjorde den varslede fornyede kritiske gjennomlesingen av `jobs/tick.ts`.
+`runDigestTick()`/`sendDigestToRecipients()` (FR-030–038) er godt bygget —
+unik indeks + `onConflictDoNothing()` gjør digest-opprettelsen trygg mot
+overlappende tikk, FR-036-isolasjon per land og per mottaker er reell.
+`runExpireRequests()`, `runExpireContactRequests()` er enkle, rene
+bulk-UPDATE-er uten TOCTOU-eksponering (ingen bruker-synlig
+beslutningsgren å kappløpe om). `runDeadlineReminders()` og
+`runStaleRequestReminders()` sin bevisst aksepterte race-avveining
+(dokumentert tidligere i natt) står seg ved fornyet lesing.
+
+**`runPurgeUnverified()` (FR-004, "ubekreftet konto: 14 dager") var derimot
+reelt, alvorlig ødelagt** — den mest alvorlige feilen funnet denne natten,
+fordi den betyr en spec-påkrevd funksjon aldri har fungert i det hele tatt,
+ikke bare en sjelden race. Funksjonen gjorde en BAR `DELETE FROM users`
+uten å først rydde bort rader som refererer til den. `auth_tokens.user_id`,
+`consent_records.user_id`, `journalist_profiles.user_id` og
+`email_subscriptions.user_id` refererer ALLE `users.id` UTEN
+`ON DELETE CASCADE` (bekreftet i schema.ts) — og enhver EKTE registrering
+(mottaker via `registration/recipient.ts`, journalist via
+`registration/journalist.ts`) setter alltid inn en `authTokens`-rad (selve
+bekreftelseslenken som nettopp IKKE ble klikket) og en `consentRecords`-rad
+UNAVHENGIG av e-postbekreftelse — akkurat den tilstanden en
+`pending_email_verification`-konto alltid er i.
+
+Den eksisterende testen ("sletter en ubekreftet konto eldre enn 14 dager")
+fanget aldri dette fordi den satte inn en `users`-rad DIREKTE, uten noen av
+disse tilhørende radene — testen testet dermed en tilstand som ALDRI
+oppstår i den ekte applikasjonen. Bekreftet empirisk med et
+reproduksjonsskript som satte inn en realistisk bruker MED en `authTokens`-
+og `consentRecords`-rad (nøyaktig det enhver ekte registrering ville gjort)
+og kjørte `runPurgeUnverified()` mot den: kastet umiddelbart
+`update or delete on table "users" violates foreign key constraint
+"auth_tokens_user_id_users_id_fk"`. FR-004 har med andre ord ALDRI faktisk
+slettet en eneste ekte, ubekreftet konto i praksis — funksjonen har kastet
+en ufanget unntak hver gang den kjørte mot ekte data siden den ble bygget.
+
+**Fiksen**: samme mønster som `purgeRejectedJournalistApplications()`
+(`jobs/retention.ts`, allerede gjennomgått og bekreftet korrekt tidligere i
+natt) — hent kandidatene FØRST, løkke over hver, slett i riktig rekkefølge
+(`requests`/`journalistProfiles`/`emailSubscriptions`/`consentRecords`/
+`authTokens`/`sessions`, deretter selve `users`-raden), med try/catch PER
+KANDIDAT slik at én kandidats feil ikke stopper resten (samme FR-036-
+isolasjonsprinsipp som resten av jobblaget). `sessions` slettes defensivt
+selv om en ubekreftet konto aldri skal kunne ha en økt i praksis (økten
+opprettes først ETTER at `verifyMagicLink()` lykkes, som samtidig flipper
+status bort fra `pending_email_verification`).
+
+**Verifisert empirisk i to trinn**: (1) kjørte reproduksjonsskriptet på
+nytt mot den RETTEDE koden — samme realistiske bruker (med authTokens +
+consentRecords) ble nå slettet uten feil (`processed: 1, errors: []`),
+bekreftet fraværende i databasen etterpå. (2) La til to nye, realistiske
+integrasjonstester (én mottaker med authTokens/consentRecords/
+emailSubscriptions, én journalist med authTokens/consentRecords/
+journalistProfiles/et utkast) og bekreftet via `git stash` at BEGGE feiler
+mot den gamle koden med nøyaktig samme fremmednøkkelfeil som
+reproduksjonsskriptet fant, og består mot den rettede koden (24/24 tester
+i tick.integration.test.ts).
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**364
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next
+&& next build` (grønn), `test:integration` mot ekte lokal Postgres (**251
+tester**, +2 — bekreftet feiler mot gammel kode med nøyaktig samme
+fremmednøkkelfeil som reproduksjonsskriptet, består mot rettet kode).
+
+### Neste økt
+
+Den mest alvorlige feilen denne natten er nå rettet og godt bevist. Verdt å
+vurdere som en generell lærdom: er det FLERE steder i kodebasen som gjør en
+"bar" DELETE/UPDATE på en `users`-rad (eller annen rad med mange
+inn-refererende fremmednøkler) uten først å sjekke om alle
+fremmednøkkel-relasjoner er dekket? `performAccountDeletion()`
+(`auth/account-deletion.ts`) og `purgeRejectedJournalistApplications()`
+(`jobs/retention.ts`) er begge allerede gjennomgått og korrekte — de er
+nettopp MØNSTERET denne fiksen kopierte. Ingen flere kandidater identifisert
+ennå, men verdt å holde i bakhodet neste gang en ny sletting av en
+brukerrad bygges. Neste kandidat for kritisk lesing: `email/send.ts`,
+`email/digest.ts`. Ellers uendret: to åpne spørsmål
+(`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek, OG-bilde,
+Sentry/Brevo.

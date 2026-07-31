@@ -11,6 +11,8 @@
 import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import { db, type Database } from "@/db/client";
 import {
+  authTokens,
+  consentRecords,
   contactRequests,
   countries,
   digestDeliveries,
@@ -18,6 +20,7 @@ import {
   emailSubscriptions,
   journalistProfiles,
   requests,
+  sessions,
   users,
 } from "@/db/schema";
 import { sendTransactionalEmail, sendBulkEmail } from "@/lib/email/send";
@@ -503,20 +506,59 @@ export async function runStaleRequestReminders(dbase: Database): Promise<TickRes
 // purge-unverified — FR-004 (14 dager), kjøres daglig
 // ---------------------------------------------------------------------------
 
+/**
+ * Reelt hull frem til nå: en bar `DELETE FROM users` uten å først rydde
+ * bort rader som refererer til den, feilet ALLTID med et
+ * fremmednøkkelbrudd mot ekte data — `auth_tokens.user_id`,
+ * `consent_records.user_id`, `journalist_profiles.user_id` og
+ * `email_subscriptions.user_id` refererer alle `users.id` UTEN
+ * `ON DELETE CASCADE`, og enhver reell registrering (mottaker ELLER
+ * journalist) setter alltid inn en `authTokens`-rad (selve
+ * bekreftelseslenken) og en `consentRecords`-rad FØR e-postbekreftelse.
+ * Den eksisterende testen fanget ikke dette fordi den satte inn en
+ * `users`-rad direkte, uten noen av disse tilhørende radene — bekreftet
+ * empirisk mot en realistisk brukerrad (se NATTLOGG.md).
+ *
+ * Rekkefølge: alt som refererer til user_id FØR selve User-raden, samme
+ * mønster som `purgeRejectedJournalistApplications()`
+ * (`src/lib/jobs/retention.ts`). `requests`/`journalistProfiles` gjelder
+ * kun journalistsøknader; en ubekreftet konto kan uansett ikke ha rukket å
+ * logge inn (økten opprettes først ETTER at `verifyMagicLink()` lykkes, som
+ * SAMTIDIG flipper status bort fra `pending_email_verification`) — så
+ * `sessions` skal aldri faktisk ha noen rad her, men slettes defensivt
+ * uansett, samme forsiktighetsprinsipp som retention.ts.
+ */
 export async function runPurgeUnverified(dbase: Database): Promise<TickResult> {
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+  const errors: string[] = [];
 
-  const deleted = await dbase
-    .delete(users)
+  const candidates = await dbase
+    .select({ id: users.id })
+    .from(users)
     .where(
       and(
         eq(users.status, "pending_email_verification"),
         lt(users.createdAt, fourteenDaysAgo)
       )
-    )
-    .returning({ id: users.id });
+    );
 
-  return { job: "purge-unverified", processed: deleted.length, errors: [] };
+  let processed = 0;
+  for (const candidate of candidates) {
+    try {
+      await dbase.delete(requests).where(eq(requests.journalistId, candidate.id));
+      await dbase.delete(journalistProfiles).where(eq(journalistProfiles.userId, candidate.id));
+      await dbase.delete(emailSubscriptions).where(eq(emailSubscriptions.userId, candidate.id));
+      await dbase.delete(consentRecords).where(eq(consentRecords.userId, candidate.id));
+      await dbase.delete(authTokens).where(eq(authTokens.userId, candidate.id));
+      await dbase.delete(sessions).where(eq(sessions.userId, candidate.id));
+      await dbase.delete(users).where(eq(users.id, candidate.id));
+      processed += 1;
+    } catch (err) {
+      errors.push(`${candidate.id}: ${(err as Error).message}`);
+    }
+  }
+
+  return { job: "purge-unverified", processed, errors };
 }
 
 // ---------------------------------------------------------------------------

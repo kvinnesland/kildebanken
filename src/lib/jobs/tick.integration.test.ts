@@ -4,6 +4,8 @@ import { eq, inArray } from "drizzle-orm";
 import * as emailSend from "@/lib/email/send";
 import { db } from "@/db/client";
 import {
+  authTokens,
+  consentRecords,
   contactRequests,
   countries,
   digestDeliveries,
@@ -21,6 +23,7 @@ import {
   TEST_COUNTRY_CODE,
   uniqueTestEmail,
 } from "@/db/integration/fixtures";
+import { generateToken, hashToken } from "@/lib/auth/tokens";
 import {
   runDeadlineReminders,
   runDigestTick,
@@ -354,6 +357,119 @@ describe("runPurgeUnverified mot ekte Postgres (FR-004)", () => {
     const [after] = await db.select().from(users).where(eq(users.id, user.id));
     expect(after).toBeUndefined();
     expect(result.processed).toBeGreaterThanOrEqual(1);
+  });
+
+  it("sletter en REALISTISK ubekreftet mottakerkonto med tilhørende rader (authTokens, consentRecords, emailSubscriptions)", async () => {
+    // Den forrige testen setter inn en bar users-rad direkte, uten noen av
+    // radene en EKTE registrering faktisk oppretter (se
+    // registration/recipient.ts) — det skjulte at DELETE FROM users uten
+    // opprydding i disse først ALLTID feilet med et fremmednøkkelbrudd mot
+    // ekte data (reelt hull, se NATTLOGG.md). Denne testen speiler det
+    // virkelige forløpet.
+    await ensureTestCountry();
+    const email = uniqueTestEmail("purge-realistic-recipient");
+    const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+    const [user] = await db
+      .insert(users)
+      .values({
+        email,
+        role: "recipient",
+        status: "pending_email_verification",
+        countryCode: TEST_COUNTRY_CODE,
+        locale: "nb-NO",
+        createdAt: fifteenDaysAgo,
+      })
+      .returning({ id: users.id });
+    if (!user) throw new Error("Klarte ikke opprette testbruker");
+
+    await db.insert(authTokens).values({
+      userId: user.id,
+      tokenHash: hashToken(generateToken()),
+      purpose: "login",
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    });
+    await db.insert(consentRecords).values({
+      userId: user.id,
+      consentType: "terms",
+      countryCode: TEST_COUNTRY_CODE,
+      locale: "nb-NO",
+      granted: true,
+      source: "registration_form",
+    });
+    await db.insert(emailSubscriptions).values({
+      userId: user.id,
+      unsubscribeTokenHash: hashToken(generateToken()),
+    });
+
+    const result = await runPurgeUnverified(db);
+
+    expect(result.errors).toEqual([]);
+    const [after] = await db.select().from(users).where(eq(users.id, user.id));
+    expect(after).toBeUndefined();
+  });
+
+  it("sletter en REALISTISK ubekreftet journalistsøknad med tilhørende rader (journalistProfiles, utkast)", async () => {
+    await ensureTestCountry();
+    const email = uniqueTestEmail("purge-realistic-journalist");
+    const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+    const [user] = await db
+      .insert(users)
+      .values({
+        email,
+        role: "journalist",
+        status: "pending_email_verification",
+        countryCode: TEST_COUNTRY_CODE,
+        locale: "nb-NO",
+        createdAt: fifteenDaysAgo,
+      })
+      .returning({ id: users.id });
+    if (!user) throw new Error("Klarte ikke opprette testbruker");
+
+    await db.insert(authTokens).values({
+      userId: user.id,
+      tokenHash: hashToken(generateToken()),
+      purpose: "login",
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    });
+    await db.insert(consentRecords).values({
+      userId: user.id,
+      consentType: "journalist_terms",
+      countryCode: TEST_COUNTRY_CODE,
+      locale: "nb-NO",
+      granted: true,
+      source: "registration_form",
+    });
+    await db.insert(journalistProfiles).values({
+      userId: user.id,
+      fullName: "Test Journalist",
+      jobTitle: "Reporter",
+      organizationName: "Testavisen",
+      organizationUrl: "https://example.invalid",
+    });
+    // Et utkast en journalist kan ha begynt på FØR e-postbekreftelse er
+    // ikke egentlig nåbart i praksis (økten opprettes først etter
+    // bekreftelse) — men slettes defensivt uansett, se kommentaren i
+    // runPurgeUnverified().
+    await db.insert(requests).values({
+      journalistId: user.id,
+      countryCode: TEST_COUNTRY_CODE,
+      contentLanguage: "nb-NO",
+      title: "Et utkast før bekreftelse",
+      summary: "sum",
+      description: "desc",
+      targetPersonDescription: "target",
+      responseDeadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      status: "draft",
+      allowsAnonymousParticipation: true,
+      mayBeRecorded: false,
+      mayInvolvePhotoVideo: false,
+    });
+
+    const result = await runPurgeUnverified(db);
+
+    expect(result.errors).toEqual([]);
+    const [after] = await db.select().from(users).where(eq(users.id, user.id));
+    expect(after).toBeUndefined();
   });
 
   it("lar en fersk, ubekreftet konto stå uslettet", async () => {
