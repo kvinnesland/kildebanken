@@ -7582,3 +7582,65 @@ trolig enten fortsette kritisk lesing i et HELT nytt lib-område som
 ennå ikke er sett med dette blikket (f.eks. `digests.ts`/`journalist-
 inbox.ts`), eller plukke opp en av de lenge bevisst utsatte postene
 (komponentbibliotek, OG-bilde, Sentry/Brevo-kontrakter).
+
+---
+
+## Fortsettelse av økt 7 — kritisk gjennomlesing av `digests.ts` og `journalist-inbox.ts`: begge holder mål, ingen nye funn
+
+Fortsatte kritisk-lesing-listen mot to nye lib-områder. Ingen av de to
+funnene fra de to forrige rundene (delt e-post ved kontosletting, race
+condition i rate-limit) gjentok seg her — begge filene holder mål ved nøye
+lesing, ikke bare ved automatisk dekning:
+
+- **`digests.ts` sin `retryFailedDigestDeliveries()`:** mistenkte først at
+  `recipientCount: digest.recipientCount + retriedCount` kunne
+  dobbelttelle mottakere (originalt mislykkede leveranser som senere
+  telles på nytt ved retry). Sjekket `tick.ts` sin egen
+  `sentCount`-logikk: den økes KUN ved faktisk vellykket sending, aldri
+  ved mislykket — så det opprinnelige `recipientCount` inneholder ALDRI
+  de mislykkede leveransene fra start av. Å legge til `retriedCount`
+  (nå vellykkede retries) er dermed korrekt, ikke dobbelttelling. Bekreftet
+  av en eksisterende test som setter opp nøyaktig dette scenarioet og
+  forventer `recipientCount` = 2 (1 opprinnelig + 1 retry) — allerede
+  riktig og allerede testet.
+- **`journalist-inbox.ts` sin `hasSharedEmail`-logikk**
+  (`contactSharing === "email" || approvedContactByResponse.has(r.id)`):
+  så først ut som en mulig sammenblanding av to ulike delingsmekanismer.
+  Bekreftet mot SPEC-V1.md 12.2/14: dette er faktisk to REELT uavhengige,
+  gyldige veier til samme utfall (journalisten har e-posten) — "del
+  e-postadressen min med journalisten" ved innsending (adressen følger
+  svaret direkte) versus en egen kontaktforespørsel godkjent i etterkant.
+  OR-betingelsen er korrekt, og allerede dekket av en egen test
+  ("hasSharedEmail er true når kontaktforespørselen er GODKJENT, selv om
+  contactSharing er none").
+- Merket samtidig at `ResponseListSummary.shortlistedResponses` og
+  `.contactRequestCount` ikke er eksplisitt krevd av SPEC-V1.md 13 (som
+  bare nevner "antall svar, antall uleste og status/frist") — ikke en
+  feil, bare en ekstra, ufarlig opplysning utover spec-en. Ingen handling.
+- Verifiserte at `hideResponse()` sin kommentar om at duplisering mellom
+  `tick.ts` og `digests.ts` er "notert i NATTLOGG.md som en kandidat for
+  opprydding i dagslys" faktisk STEMMER (grep bekrefter flere tidligere
+  økters notater om nettopp dette) — vurderte å faktisk gjøre
+  refaktoreringen nå, men lot være: den samme, gjentatte begrunnelsen
+  fra tidligere økter (risikoen ved å røre en allerede testet, sikkerhets-
+  /personvern-sensitiv kjerneflyt uten tilsyn oppveier gevinsten) er like
+  gyldig nå som da den ble skrevet — respekterte den konsistente,
+  gjentatte vurderingen fremfor å overstyre den under samme uovervåkede
+  betingelser.
+
+Ingen kodeendring denne runden — ren verifisering. Verdien ligger i å
+BEKREFTE at disse to områdene er trygge, ikke i å finne noe å rette.
+
+### Verifisert før commit
+
+Ingen kodeendring gjort — kun lesing og NATTLOGG-oppdatering. Ingen ny
+verifiseringskjøring nødvendig (ingen fil utenom NATTLOGG.md endret).
+
+### Neste økt
+
+To områder til bekreftet trygge. Fortsett kritisk lesing i et nytt
+område (kandidater: `contact-requests.ts`, `requests.ts` sin
+`updateDraft()`/`submitForModeration()`-flyt, eller `me/`-modulene), eller
+plukk opp en av de lenge bevisst utsatte postene (komponentbibliotek uten
+forbruker, OG-delingsbilde blokkert på visuell identitet, Sentry/Brevo
+sine ubekreftede kontrakter).
