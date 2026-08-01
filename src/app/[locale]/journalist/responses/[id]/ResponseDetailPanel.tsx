@@ -32,6 +32,7 @@ export function ResponseDetailPanel({
   const [marking, setMarking] = useState<Marking>(initialMarking);
   const [note, setNote] = useState(initialNote);
   const [savingStatus, setSavingStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [markingError, setMarkingError] = useState<string | null>(null);
 
   const [contactFormOpen, setContactFormOpen] = useState(false);
   const [contactMessage, setContactMessage] = useState("");
@@ -41,12 +42,24 @@ export function ResponseDetailPanel({
 
   async function handleSaveMarking() {
     setSavingStatus("saving");
-    const response = await fetch(`/api/journalist/responses/${responseId}/status`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ marking, note }),
-    });
-    setSavingStatus(response.ok ? "saved" : "idle");
+    setMarkingError(null);
+    try {
+      const response = await fetch(`/api/journalist/responses/${responseId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ marking, note }),
+      });
+      if (!response.ok) {
+        const data: { error?: string } = await response.json().catch(() => ({}));
+        setMarkingError(data.error ?? "errors.generic");
+        setSavingStatus("idle");
+        return;
+      }
+      setSavingStatus("saved");
+    } catch {
+      setMarkingError("errors.generic");
+      setSavingStatus("idle");
+    }
   }
 
   async function handleSendContactRequest() {
@@ -85,6 +98,7 @@ export function ResponseDetailPanel({
         maxLength={NOTE_LIMIT}
         rows={3}
       />
+      {markingError ? <p className={styles.error}>{t(markingError)}</p> : null}
       <div className={styles.actions}>
         <Button onPress={handleSaveMarking} isDisabled={savingStatus === "saving"}>
           {t("journalist.response_detail.save_marking")}

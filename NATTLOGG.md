@@ -9477,3 +9477,68 @@ ResponseDetailPanel.tsx` — ingen av disse er lest kritisk med denne
 nattens sjekkliste ennå. Ellers uendret: de to åpne spec-spørsmålene og
 "24.3"-referanseopprydding er fortsatt utestående for morgengjennomgang,
 ikke noe hastverk med dem.
+
+## Økt (fortsettelse): fullførte /journalist-sveipen — enda en taus-feil-bug, nå INNAD i samme komponent
+
+Fullførte gjennomlesingen fra forrige runde. Leste `RequestEditForm.tsx`
+(hele lagre-/innsendingsflyten, feltvalidering, fokushåndtering),
+`requests/[id]/page.tsx` (server-siden av redigeringssiden) og
+`responses/[id]/ResponseDetailPanel.tsx` i sin helhet.
+
+`RequestEditForm.tsx` og `requests/[id]/page.tsx` er begge rene — viser
+`generalError`/feltfeil konsekvent, kaller `focusFirstInvalidField()`
+riktig på både lagre- og innsendingsfeil, ingen auto-fyring, korrekt
+skrivebeskyttet visning for ikke-redigerbare statuser. Ingen funn der.
+
+**Funn**: `ResponseDetailPanel.tsx` (journalistens svardetalj-side, med
+merking/notat OG en kontaktforespørsel-seksjon i SAMME komponent) hadde
+et rendyrket asymmetrisk-vakt-tilfelle INNAD i én og samme fil:
+`handleSendContactRequest()` fanger og viser korrekt `contactError` ved
+en mislykket sending — men `handleSaveMarking()`, rett over den, satte
+bare `savingStatus` tilbake til `"idle"` ved en mislykket lagring, uten
+NOEN feilindikasjon. En journalist som prøvde å merke et svar mens
+forespørselen f.eks. ikke lenger var i riktig tilstand (`errors.
+not_found` fra `updateResponseMarking()`) ville sett "Lagre"-knappen
+bare gå tilbake til normal tilstand, akkurat samme mønster som de tause
+admin-kø- og `NewRequestButton`-funnene tidligere i natt — men denne
+gangen var den KORREKTE referanseimplementasjonen bokstavelig talt
+20 linjer unna i samme fil, ikke i en annen del av kodebasen.
+
+**Fiksen**: la til `markingError`-tilstand, nullstilt ved hvert forsøk og
+satt til `data.error ?? "errors.generic"` ved en ikke-OK-respons eller
+kastet feil (samme `.json().catch(() => ({}))`-mønster som resten av
+kodebasen), vist med den samme, allerede eksisterende `.error`-CSS-
+klassen som `contactError` allerede bruker (ingen ny CSS trengtes).
+
+**Testdekning**: ingen testfil eksisterte for denne komponenten i det
+hele tatt. La til to tester: suksess (lagrer og viser "Lagret."), og
+feilmelding ved en mislykket lagring (`errors.not_found`).
+
+**Empirisk verifisering**: `git stash push` på komponentfilen for å
+midlertidig gjenopprette den tause versjonen → kjørte testfilen →
+bekreftet at nøyaktig 1 av 2 tester feiler (feilmelding-testen; suksess-
+testen består uendret) → `git stash pop` for å gjenopprette fiksen →
+bekreftet begge tester består.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**388
+tester**, +2), `i18n:check` (389 nøkler, uendret — `errors.not_found`
+fantes allerede), `design:check-tokens` (OK, 41 komponent-CSS-filer,
+uendret — ingen ny CSS-modul denne gangen, gjenbrukte `.error`),
+`next build` (grønn), `test:integration` mot ekte lokal Postgres (267
+tester, uendret — ingen server-side kontrakt endret).
+
+### Neste økt
+
+Hele `/journalist`-laget er nå kritisk gjennomlest (layout, forespørsels-
+liste, redigeringsskjema, lukkeknapp, svardetalj-panel) — fire tause-
+feil-/asymmetri-funn totalt denne natten på tvers av `/me`, `/admin` og
+`/journalist` (task #58, #61, #67, #69), alle av samme mønster: en
+handling feiler uten at brukeren får vite hvorfor. Verdt å vurdere om
+mønsteret er uttømt nå, eller om det er verdt én runde til på et
+gjenstående, ennå ukritisk-lest område (f.eks. `/foresporsler/[id]/svar`
+sitt `ResponseForm.tsx` — allerede nevnt testet tidligere i natt, men
+ikke eksplisitt sjekket for DENNE spesifikke bug-klassen). Ellers
+uendret: de to åpne spec-spørsmålene og "24.3"-referanseopprydding er
+fortsatt utestående for morgengjennomgang, ikke noe hastverk med dem.
