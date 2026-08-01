@@ -149,10 +149,10 @@ describe("closeRequest mot ekte Postgres — moderator er begrenset til tildelt 
     await db.delete(requests).where(eq(requests.id, requestId));
   });
 
-  it("nekter en moderator som IKKE er tildelt forespørselens land å lukke den", async () => {
+  it("nekter en moderator som IKKE er tildelt forespørselens land å lukke den, med errors.not_found (FR-023: skal ikke bekrefte at den finnes i et annet land)", async () => {
     const result = await closeRequest(requestId, moderatorOtherCountryId);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toBe("errors.not_authorized");
+    if (!result.ok) expect(result.error).toBe("errors.not_found");
 
     const [row] = await db.select({ status: requests.status }).from(requests).where(eq(requests.id, requestId));
     expect(row?.status).toBe("published");

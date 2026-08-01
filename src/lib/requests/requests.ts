@@ -348,7 +348,13 @@ export async function closeRequest(
           )
         )
         .limit(1);
-      if (!assignment) return { ok: false, error: "errors.not_authorized" };
+      // FR-023 (SPEC-V1.md 22, akseptansekriterium: "moderator for NO får
+      // 404 på en forespørsel i SE"): errors.not_found her, IKKE
+      // errors.not_authorized — en moderator tildelt et annet land skal
+      // ikke få en respons som bekrefter at forespørselen finnes et annet
+      // sted. Se checkModeratorForCountry() i auth/authorize.ts, brukt av
+      // søsterfunksjonene i moderation/requests.ts, for samme resonnement.
+      if (!assignment) return { ok: false, error: "errors.not_found" };
     } else if (actor.role !== "admin") {
       return { ok: false, error: "errors.not_authorized" };
     }

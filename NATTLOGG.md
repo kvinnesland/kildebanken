@@ -9716,3 +9716,80 @@ motsigelse om hvem som kan lese et svars innhold) og
 morgengjennomgang, ikke noe hastverk med dem. Kodebasen er i en solid,
 grønn tilstand: alle tester består, ingen kjente uhåndterte krasjer,
 ingen kjente tause feilveier i klientkomponenter.
+
+## Økt (fortsettelse): fant og rettet et reelt FR-023-avvik ved en fersk, målrettet gjennomgang
+
+Fortsatte den avveide anbefalingen fra forrige runde med en fersk, men
+MÅLRETTET (ikke full på-nytt-gjennomgang av alle 40) sjekk av seksjon 22s
+FR-krav — spesifikt krav med en presis, lett-å-bryte-uten-å-merke-det
+påstand. Fant et reelt, konkret avvik:
+
+**Funn**: FR-023s akseptansekriterium er eksplisitt og presist: "moderator
+for `NO` får **404** på en forespørsel i `SE`." Men `publishRequest()`,
+`rejectRequest()`, `requestChanges()` (`moderation/requests.ts`) og
+`closeRequest()` (`requests/requests.ts`) returnerte alle
+`errors.not_authorized` — som samtlige tilhørende ruter mapper til
+**403**, ikke 404 — når en moderator er tildelt et ANNET land enn
+forespørselens. Dette var ingen tilfeldig glipp: en EKSISTERENDE,
+bevisst skrevet test (`requests.integration.test.ts`) asserterte
+eksplisitt `errors.not_authorized` for nøyaktig dette scenarioet — en
+reell spec-vs-kode-motsigelse, ikke en åpenbar bug, nøyaktig den typen
+funn regelen "spec-en er sannheten" er skrevet for.
+
+Sjekket samtidig HVOR UTBREDT mønsteret er: identisk "hent ressurs →
+sjekk `requireModeratorForCountry()` → `errors.not_authorized` ved
+`null`" finnes IKKE bare for forespørsler, men også i
+`moderation/users.ts` (suspender/opphev/sperr e-post),
+`moderation/journalists.ts` (godkjenn/avvis), `moderation/responses.ts`
+(skjul/åpne), og `digests/digests.ts` (kjør på nytt) — men FR-023s
+akseptansekriterium nevner UTTRYKKELIG bare "en forespørsel", ikke disse
+andre ressurstypene. Bevisst IKKE utvidet fiksen til disse fem andre
+filene i denne runden — det ville vært en stille, egen beslutning om et
+BREDERE sikkerhetsprinsipp enn det spec-en faktisk sier ordrett, ikke en
+retting av et konkret, spec-forankret avvik. Flagger det som et åpent
+spørsmål for morgengjennomgang i stedet (se under).
+
+**Fiksen**: la til `checkModeratorForCountry()` i `auth/authorize.ts` —
+en ny, presisjonsvariant av `requireModeratorForCountry()` som skiller
+`"unauthorized"` (ingen økt/feil rolle — skal fortsatt gi 403) fra
+`"wrong_country"` (gyldig moderatorøkt, men feil land — skal nå gi 404
+via `errors.not_found`). Den DELTE `requireModeratorForCountry()` selv
+er URØRT (fortsatt brukt uendret av de fem andre filene). Oppdaterte de
+fire request-modererende funksjonene til å bruke den nye, mer presise
+sjekken.
+
+**Testdekning**: oppdaterte de to eksisterende testenes assertions
+(`errors.not_authorized` → `errors.not_found`, for `closeRequest()` og
+`publishRequest()`), og la til to HELT NYE tester som manglet fra før
+(`rejectRequest()`/`requestChanges()` hadde ALDRI hatt egen
+feil-land-testdekning i det hele tatt).
+
+**Empirisk verifisering**: `git stash push` på alle tre berørte
+kildefiler → kjørte begge testfilene → bekreftet at nøyaktig 4 av 20
+tester feiler (de to oppdaterte og de to nye — alle fire med tydelig
+`errors.not_authorized` mottatt der `errors.not_found` var forventet; de
+16 andre besto uendret) → `git stash pop` → bekreftet alle 20 tester
+består.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (391
+tester, uendret — ren lib-/integrasjonsfiks), `i18n:check` (389 nøkler,
+uendret), `design:check-tokens` (OK, 41 komponent-CSS-filer, uendret),
+`next build` (grønn), `test:integration` mot ekte lokal Postgres
+(**269 tester**, +2).
+
+### Neste økt
+
+**Åpent spørsmål for morgengjennomgang** (tredje i rekken, se de to
+andre under): bør samme 403→404-presisering (FR-023s prinsipp: ikke
+bekreft at en ressurs finnes utenfor moderatorens tildelte land) utvides
+til `moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts` og `digests/digests.ts`, som alle i dag
+fortsatt returnerer 403 for akkurat samme "moderator i feil land"-
+scenario? Spec-teksten (seksjon 4: "en moderator ... ser bare køer og
+brukere tilhørende disse") antyder at PRINSIPPET er ment å gjelde bredt,
+men FR-023s KONKRETE akseptansekriterium nevner bare forespørsler
+eksplisitt — ikke stort nok grunnlag til å utvide stille i natt. Ellers
+uendret: de to andre åpne spec-spørsmålene og "24.3"-referanseopprydding
+er fortsatt utestående, ikke noe hastverk med dem.

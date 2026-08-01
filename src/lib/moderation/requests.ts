@@ -2,7 +2,7 @@ import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { auditLogs, journalistProfiles, requests, users } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
-import { requireModeratorForCountry, getAssignedCountryCodes } from "@/lib/auth/authorize";
+import { checkModeratorForCountry, getAssignedCountryCodes } from "@/lib/auth/authorize";
 import type { CurrentSession } from "@/lib/auth/session";
 
 const MAX_CONCURRENT_PUBLISHED = 5; // FR-029, samme grense som src/lib/requests/requests.ts
@@ -51,8 +51,13 @@ export async function publishRequest(requestId: string): Promise<ModerationActio
   if (!request) return { ok: false, error: "errors.not_found" };
   if (request.status !== "submitted") return { ok: false, error: "errors.request_not_editable" };
 
-  const session = await requireModeratorForCountry(request.countryCode);
-  if (!session) return { ok: false, error: "errors.not_authorized" };
+  // FR-023: en moderator tildelt et ANNET land skal få errors.not_found
+  // (404), ikke errors.not_authorized (403) — se checkModeratorForCountry()
+  // i auth/authorize.ts for hvorfor.
+  const check = await checkModeratorForCountry(request.countryCode);
+  if (check.status === "unauthorized") return { ok: false, error: "errors.not_authorized" };
+  if (check.status === "wrong_country") return { ok: false, error: "errors.not_found" };
+  const session = check.session;
 
   const [publishedRow] = await db
     .select({ value: count() })
@@ -105,8 +110,11 @@ export async function rejectRequest(requestId: string, reason: string): Promise<
   if (!request) return { ok: false, error: "errors.not_found" };
   if (request.status !== "submitted") return { ok: false, error: "errors.request_not_editable" };
 
-  const session = await requireModeratorForCountry(request.countryCode);
-  if (!session) return { ok: false, error: "errors.not_authorized" };
+  // FR-023: samme skille som i publishRequest() over.
+  const check = await checkModeratorForCountry(request.countryCode);
+  if (check.status === "unauthorized") return { ok: false, error: "errors.not_authorized" };
+  if (check.status === "wrong_country") return { ok: false, error: "errors.not_found" };
+  const session = check.session;
 
   // Samme TOCTOU-lukking som i publishRequest() over.
   const now = new Date();
@@ -146,8 +154,11 @@ export async function requestChanges(requestId: string, comment: string): Promis
   if (!request) return { ok: false, error: "errors.not_found" };
   if (request.status !== "submitted") return { ok: false, error: "errors.request_not_editable" };
 
-  const session = await requireModeratorForCountry(request.countryCode);
-  if (!session) return { ok: false, error: "errors.not_authorized" };
+  // FR-023: samme skille som i publishRequest() over.
+  const check = await checkModeratorForCountry(request.countryCode);
+  if (check.status === "unauthorized") return { ok: false, error: "errors.not_authorized" };
+  if (check.status === "wrong_country") return { ok: false, error: "errors.not_found" };
+  const session = check.session;
 
   // Samme TOCTOU-lukking som i publishRequest() over.
   const now = new Date();

@@ -124,7 +124,7 @@ describe("publishRequest/rejectRequest/requestChanges mot ekte Postgres", () => 
     ).toBe(true);
   });
 
-  it("publishRequest(): en moderator tildelt et ANNET land nektes (SPEC-V1.md 4)", async () => {
+  it("publishRequest(): en moderator tildelt et ANNET land nektes med errors.not_found (FR-023, SPEC-V1.md 4: skal ikke bekrefte at forespørselen finnes i et annet land)", async () => {
     await ensureTestCountry();
     await ensureSecondTestCountry();
     const journalist = await createActiveJournalistPlain(TEST_COUNTRY_CODE);
@@ -134,7 +134,7 @@ describe("publishRequest/rejectRequest/requestChanges mot ekte Postgres", () => 
 
     const result = await publishRequest(request.id);
 
-    expect(result).toEqual({ ok: false, error: "errors.not_authorized" });
+    expect(result).toEqual({ ok: false, error: "errors.not_found" });
     const [after] = await db.select().from(requests).where(eq(requests.id, request.id));
     expect(after?.status).toBe("submitted");
   });
@@ -238,6 +238,36 @@ describe("publishRequest/rejectRequest/requestChanges mot ekte Postgres", () => 
     expect(after?.status).toBe("changes_requested");
     expect(after?.moderatorComment).toBe("Vær mer spesifikk om tidsrommet.");
     expect(warnSpy.mock.calls.some((call) => String(call[0]).includes("changes_requested"))).toBe(true);
+  });
+
+  it("rejectRequest(): en moderator tildelt et ANNET land nektes med errors.not_found (FR-023)", async () => {
+    await ensureTestCountry();
+    await ensureSecondTestCountry();
+    const journalist = await createActiveJournalistPlain(TEST_COUNTRY_CODE);
+    const moderator = await createModerator(TEST_COUNTRY_CODE_2);
+    const request = await createSubmittedRequest(journalist.id);
+    await loginAs(moderator.id);
+
+    const result = await rejectRequest(request.id, "En begrunnelse.");
+
+    expect(result).toEqual({ ok: false, error: "errors.not_found" });
+    const [after] = await db.select().from(requests).where(eq(requests.id, request.id));
+    expect(after?.status).toBe("submitted");
+  });
+
+  it("requestChanges(): en moderator tildelt et ANNET land nektes med errors.not_found (FR-023)", async () => {
+    await ensureTestCountry();
+    await ensureSecondTestCountry();
+    const journalist = await createActiveJournalistPlain(TEST_COUNTRY_CODE);
+    const moderator = await createModerator(TEST_COUNTRY_CODE_2);
+    const request = await createSubmittedRequest(journalist.id);
+    await loginAs(moderator.id);
+
+    const result = await requestChanges(request.id, "En kommentar.");
+
+    expect(result).toEqual({ ok: false, error: "errors.not_found" });
+    const [after] = await db.select().from(requests).where(eq(requests.id, request.id));
+    expect(after?.status).toBe("submitted");
   });
 
   it("en administrator kan publisere UANSETT land (19.4: trenger ingen moderator_countries-rad)", async () => {
