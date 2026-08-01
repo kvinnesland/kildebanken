@@ -10405,3 +10405,152 @@ enten bygget eller utvidet, unntatt:
 
 Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
 bevisst latt åpne for menneskelig gjennomgang.
+
+## Økt (fortsettelse): bygget admin-siden "Land" (SPEC-V1.md 16.2, kun administrator) — den siste av de tre opprinnelig manglende admin-seksjonene
+
+Bygget med den ekstra forsiktigheten forrige økt selv ba om — dette er den
+eneste admin-siden som kan endre landkonfigurasjon, aktivere/pause et
+land, tildele moderator og publisere juridiske dokumentversjoner, alt
+noe ekte brukere stoler på.
+
+**Ny lib-funksjon**: `listLegalDocumentsForCountry(countryCode)` i
+`src/lib/admin/legal-documents.ts` — fantes ikke fra før, til tross for at
+`publishLegalDocument()` selv gjorde. Uten den kunne ikke UI-et vise
+HVILKE dokumentversjoner som allerede finnes for et land før man
+publiserer en ny. Returnerer bevisst ALLE versjoner, nyeste først (ikke
+bare den gjeldende) — 17.2 sier eldre versjoner beholdes uendret, og en
+administrator bør kunne se hele historikken, ikke bare siste versjon.
+
+**Rollegating er strengere enn de tre andre admin-sidene**: "Land" er
+FØRSTE admin-side som krever `role === "admin"` alene — de tre andre
+(Utsendelser, Mottakere, Journalister) tillater `moderator || admin`,
+per 16.2s eksplisitte "(kun administrator)" for akkurat denne seksjonen.
+`admin/layout.tsx` henter nå sesjonen i selve layout-et og viser
+"Land"-lenken KUN til administratorer — uten dette ville en moderator
+sett en lenke som bare førte til en forvirrende omdirigering til
+innloggingssiden.
+
+**Arkitekturvalg verdt å notere**: `Country.nameKey` og
+`Country.senderNameKey` er i18n-NØKKELSTRENGER (f.eks. `"country.no.name"`),
+ikke visningstekst — de slås opp via `t(nameKey)` andre steder i
+kodebasen (bl.a. dashbordet). Siden FR-012 håndhever i18n-nøkler ved
+BYGGETIDSPUNKT (`i18n/check-keys.ts`), kan et genuint nytt land ALDRI bli
+fullt selvbetjent fra dette skjemaet alene — å opprette et nytt land
+krever nødvendigvis at en utvikler i tillegg legger til den tilhørende
+i18n-nøkkelen i en egen kodeendring. Dette er IKKE en feil, men er
+eksplisitt dokumentert i selve UI-et (hjelpetekst under begge feltene i
+opprettelses- og redigeringsskjemaet) i stedet for enten (a) å bygge en
+stille ødelagt brukeropplevelse som gir manglende-oversettelse-fallbacks,
+eller (b) å finne opp et system for kjøretids-i18n-nøkkelhåndtering som
+ligger utenfor omfanget av det spec-en ber om.
+
+**Statusbytte og feltredigering er bevisst TO separate handlinger**
+(egne knapper, egne feilmeldinger) — speiler `updateCountry()` og
+`setCountryStatus()` sin egen kommentar i den eksisterende PATCH-ruten:
+"statusbytte har egne forutsetninger... skal ikke kunne omgås ved
+samtidig å sende andre felt."
+
+**Nye filer**: `admin/countries/page.tsx` (server-komponent, henter
+`listAllCountries()` + `listLegalDocumentsForCountry()` per land via
+`Promise.all`, formaterer datoer server-side — ingen rå `Date`-objekter
+sendes til klient-komponenter, samme konvensjon som de tre andre
+admin-sidene), `CreateCountryForm.tsx` (kollapset skjema for nytt land),
+`CountryCard.tsx` (visning + redigering + statusbytte + moderator-
+tildeling for ett land), `LegalDocumentsSection.tsx` (liste over
+eksisterende dokumentversjoner + kollapset publiseringsskjema), med
+tilhørende CSS-moduler. ~50 nye i18n-nøkler i begge locales under
+`admin.countries.*`.
+
+**Testdekning**: 3 nye integrasjonstester for
+`listLegalDocumentsForCountry()` (avvises uten admin-sesjon; returnerer
+ALLE versjoner nyeste-først — verifisert med to eksplisitt navngitte
+versjoner og en 5ms pause mellom publiseringene, ikke bare en løs
+array-sammenligning; lekker ALDRI et annet lands dokumenter). 4
+komponenttester i `CreateCountryForm.test.tsx`, 8 i `CountryCard.test.tsx`
+(visning vs. redigering, forhåndsutfylling, feilmelding og suksessmelding
+for HVER av de tre uavhengige handlingene, tildel-moderator krever
+ikke-tom e-post), 6 i `LegalDocumentsSection.test.tsx`.
+
+**Empirisk verifisering**: for `legal-documents.ts` (sporet fil):
+`git stash push` → bekreftet at nøyaktig de 3 nye testene feiler
+("is not a function") → `git stash pop` → alle 11 tester i filen
+består. For de tre NYE, usporede komponentfilene (der `git stash` ikke
+er relevant) ble en tilsvarende teknikk brukt: sikkerhetskopi til
+`/tmp/*.bak`, fjernet feilhåndteringen i én handler om gangen, kjørte
+akkurat den testfilen, bekreftet at NØYAKTIG feilstien(e) feilte og
+resten fortsatt besto, gjenopprettet fra sikkerhetskopi og bekreftet
+alle tester grønne igjen:
+- `CreateCountryForm.tsx`: 1 av 4 tester feilet (feilmeldingstesten) —
+  gjenopprettet, alle 4 består.
+- `CountryCard.tsx`: 1 av 8 tester feilet (statusbytte-feilmeldingen) —
+  gjenopprettet, alle 8 består.
+- `LegalDocumentsSection.tsx`: 1 av 6 tester feilet
+  (publiserings-feilmeldingen) — gjenopprettet, alle 6 består.
+
+**Reell nettleserverifisering (Playwright, ikke bare enhetstester)**:
+opprettet en midlertidig admin-økt direkte i Postgres (rå token hvis
+SHA-256-hash matcher en `sessions`-rad, samme mønster som
+`hashToken()`), kjørte hele den gyldne stien i ekte Chromium: opprett
+land → rediger felt → tildel moderator → FORSØK aktivering BLOKKERES
+riktig (ingen juridiske dokumenter ennå) → publiser 4 dokumentversjoner
+(vilkår + personvern på begge språk) → aktivering LYKKES. Ryddet opp
+ALT manuelt opprettet testdata etterpå (landet, dokumentene, moderator-
+tildelingen, den midlertidige admin-kontoen/økten, tilhørende
+revisjonslogg-rader) — for å ikke etterlate engangs-verifiseringsstøy i
+den delte, langvarige testdatabasen (til forskjell fra den allerede
+akseptable opphopningen fra selve den automatiserte integrasjonstest-
+suiten, som er en kjent og tolerert unntak, se `fixtures.ts`).
+
+**Miljøoppdagelse verdt å ta vare på for FREMTIDIG nettleserverifisering**:
+`npx next dev` hydrerer IKKE korrekt i dette miljøet — CSP-headeren i
+`src/middleware.ts` bruker bevisst `script-src 'self' 'nonce-...'
+'strict-dynamic'` UTEN `unsafe-eval` (riktig for produksjon), men Next
+sin DEV-moduses HMR-kjøretid er avhengig av `eval()`, som denne CSP-en
+blokkerer — knapper/skjemaer rendres, men `onClick`-håndterere kjører
+aldri, HELT STILLE (ingen synlig feil i UI-et, kun i
+`page.on("pageerror")`-loggen). Bekreftet at dette OGSÅ skjer på den
+eksisterende, urørte `/admin/journalists`-siden — altså en allerede
+eksisterende miljøbegrensning, ikke en regresjon fra denne øktens kode.
+**Løsning for enhver fremtidig manuell nettleserverifisering av
+klient-interaktivitet i dette miljøet**: bruk `npx next build && npx
+next start` (produksjonsmodus, ingen eval-avhengig modulinnpakking) i
+stedet for `next dev`.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren, etter å ha rettet en reell typefeil i egen ny
+testfil — `getByRole(..., { name, exact: true })` er ikke en gyldig
+`ByRoleOptions`-egenskap i `@testing-library/dom`s typer; `name`
+matches allerede eksakt som standard, så `exact: true` var overflødig
+og ble fjernet), `eslint .` (0 feil/advarsler), `vitest run` (**435
+tester**, +18), `i18n:check` (**498 nøkler**, +64), `design:check-tokens`
+(OK, **52 komponent-CSS-filer**, +4, ingen rå verdier), `next build`
+(grønn — `/[locale]/admin/countries` og
+`/api/admin/countries`-familien med i rutelisten), `test:integration`
+mot ekte lokal Postgres (**295 tester**, +3).
+
+### Neste økt
+
+Alle tre opprinnelig helt manglende admin-seksjonene fra SPEC-V1.md 16.2
+er nå ferdig bygget: Utsendelser, Mottakere, Journalister (utvidet) og
+Land. Ingen kjent gjenstående admin-side-mangel fra 16.2.
+
+Mulige neste steg (ingen er hastesaker, ingen kjente feil driver dem):
+- Et generelt søk gjennom resten av SPEC-V1.md etter eventuelle andre
+  ikke-implementerte "kun administrator"/"kun moderator"-detaljer utenfor
+  seksjon 16.2 spesifikt.
+- Vurdere om `CreateCountryForm`/`CountryCard` sin
+  nameKey/senderNameKey-begrensning (utvikler må legge til i18n-nøkkelen
+  separat) bør nevnes i README.md eller INFRASTRUCTURE.md som en kjent
+  driftsprosess for lansering av nye land, ikke bare i selve UI-hjelpe-
+  teksten.
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   auditLogs,
@@ -11,6 +11,51 @@ import {
 import { isUniqueViolation } from "@/db/errors";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { requireAdmin } from "@/lib/auth/authorize";
+
+export interface LegalDocumentSummary {
+  id: string;
+  locale: string;
+  documentType: (typeof legalDocumentType.enumValues)[number];
+  version: string;
+  publishedAt: Date;
+  isMaterialChange: boolean;
+}
+
+export type ListLegalDocumentsResult =
+  | { ok: true; documents: LegalDocumentSummary[] }
+  | { ok: false; error: string };
+
+/**
+ * GET-siden av admin/land-siden (natt til 2026-08-01, se NATTLOGG.md) —
+ * 16.2 sier "publisere NYE versjoner", men en admin-UI kan ikke ta et
+ * informert publiseringsvalg uten å først se hvilke versjoner som
+ * allerede finnes per (locale, dokumenttype). Ingen skriving her, bare
+ * lesing — samme `requireAdmin()`-gate som resten av denne filen.
+ * Returnerer ALLE versjoner (ikke bare gjeldende, i motsetning til
+ * `getCurrentLegalDocument()` i src/lib/legal/documents.ts) — 17.2 sier
+ * eksplisitt at gamle versjoner "beholdes uendret", og en administrator
+ * som vurderer en ny publisering bør se HELE historikken, ikke bare det
+ * som er gjeldende akkurat nå.
+ */
+export async function listLegalDocumentsForCountry(countryCode: string): Promise<ListLegalDocumentsResult> {
+  const session = await requireAdmin();
+  if (!session) return { ok: false, error: "errors.not_authorized" };
+
+  const documents = await db
+    .select({
+      id: legalDocuments.id,
+      locale: legalDocuments.locale,
+      documentType: legalDocuments.documentType,
+      version: legalDocuments.version,
+      publishedAt: legalDocuments.publishedAt,
+      isMaterialChange: legalDocuments.isMaterialChange,
+    })
+    .from(legalDocuments)
+    .where(eq(legalDocuments.countryCode, countryCode))
+    .orderBy(desc(legalDocuments.publishedAt));
+
+  return { ok: true, documents };
+}
 
 export interface PublishLegalDocumentInput {
   countryCode: string;

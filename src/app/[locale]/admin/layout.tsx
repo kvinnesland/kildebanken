@@ -1,5 +1,6 @@
 import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
 import { createTranslator } from "@/i18n/get-messages";
+import { getCurrentSession } from "@/lib/auth/session";
 import { SiteHeader } from "@/components/SiteHeader";
 
 // Delt topptekst for hele /[locale]/admin-området — se
@@ -15,6 +16,14 @@ export default async function AdminLayout({
   const locale = isSupportedLocale(rawLocale) ? rawLocale : PLATFORM_DEFAULT_LOCALE;
   const t = createTranslator(locale);
 
+  // "Land" vises KUN for administrator (16.2: "kun administrator") — til
+  // forskjell fra de fire andre lenkene, som en moderator også har tilgang
+  // til. Uten dette ville en moderator sett en lenke som bare førte til en
+  // forvirrende omdirigering til innloggingssiden (samme "logget ut"-
+  // fremtoning som resten av admin-sidenes felles redirect-mønster gir for
+  // enhver feil rolle, se admin/countries/page.tsx).
+  const session = await getCurrentSession();
+
   return (
     <>
       <SiteHeader
@@ -25,6 +34,9 @@ export default async function AdminLayout({
           { href: `/${locale}/admin/requests`, label: t("admin.requests.title") },
           { href: `/${locale}/admin/recipients`, label: t("admin.recipients.title") },
           { href: `/${locale}/admin/digests`, label: t("admin.digests.title") },
+          ...(session?.role === "admin"
+            ? [{ href: `/${locale}/admin/countries`, label: t("admin.countries.title") }]
+            : []),
           { href: `/${locale}/me`, label: t("nav.my_account") },
         ]}
       />

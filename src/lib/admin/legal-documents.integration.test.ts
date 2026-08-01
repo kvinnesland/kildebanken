@@ -2,10 +2,14 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { auditLogs, emailSubscriptions, legalDocuments, sessions, users } from "@/db/schema";
+import { auditLogs, countries, emailSubscriptions, legalDocuments, sessions, users } from "@/db/schema";
 import { ensureTestCountry, TEST_COUNTRY_CODE, uniqueTestEmail } from "@/db/integration/fixtures";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
-import { publishLegalDocument, type PublishLegalDocumentInput } from "./legal-documents";
+import {
+  listLegalDocumentsForCountry,
+  publishLegalDocument,
+  type PublishLegalDocumentInput,
+} from "./legal-documents";
 
 // Unike versjonsstrenger per kall — legal_documents har en UNIQUE-indeks på
 // (land, locale, type, versjon). Kjøring nummer to av samme test ville
@@ -251,5 +255,79 @@ describe("publishLegalDocument mot ekte Postgres", () => {
     expect(
       warnSpy.mock.calls.some((call) => String(call[0]).includes("legal_terms_material_change"))
     ).toBe(false);
+  });
+});
+
+describe("listLegalDocumentsForCountry mot ekte Postgres", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("nektes uten en administrator-økt", async () => {
+    vi.mocked(cookies).mockResolvedValue({
+      get: () => undefined,
+    } as unknown as Awaited<ReturnType<typeof cookies>>);
+
+    const result = await listLegalDocumentsForCountry(TEST_COUNTRY_CODE);
+
+    expect(result).toEqual({ ok: false, error: "errors.not_authorized" });
+  });
+
+  it("returnerer ALLE versjoner for landet, nyeste først, uten å filtrere på gjeldende status", async () => {
+    await ensureTestCountry();
+    const admin = await createAdmin();
+    await loginAs(admin.id);
+
+    const olderVersion = uniqueVersion();
+    const newerVersion = uniqueVersion();
+    expect(await publishLegalDocument(documentInput({ version: olderVersion }))).toEqual({ ok: true });
+    // publishedAt settes til "nå" ved hvert kall — en liten, garantert forskjell
+    // sikrer en entydig rekkefølge selv om begge kallene skjer i samme millisekund.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(await publishLegalDocument(documentInput({ version: newerVersion }))).toEqual({ ok: true });
+
+    const result = await listLegalDocumentsForCountry(TEST_COUNTRY_CODE);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const olderIndex = result.documents.findIndex((d) => d.version === olderVersion);
+    const newerIndex = result.documents.findIndex((d) => d.version === newerVersion);
+    expect(olderIndex).toBeGreaterThanOrEqual(0);
+    expect(newerIndex).toBeGreaterThanOrEqual(0);
+    expect(newerIndex).toBeLessThan(olderIndex);
+  });
+
+  it("skiller på land — viser ALDRI et annet lands dokumenter", async () => {
+    await ensureTestCountry();
+    const admin = await createAdmin();
+    await loginAs(admin.id);
+    const otherCountryCode = "XZ";
+    await db
+      .insert(countries)
+      .values({
+        code: otherCountryCode,
+        nameKey: "country.test.name",
+        defaultLocale: "nb-NO",
+        availableLocales: ["nb-NO"],
+        timezone: "Europe/Oslo",
+        minimumAge: 18,
+        digestSendTime: "07:00",
+        senderNameKey: "email.sender_name.test",
+        supportEmail: "test@example.invalid",
+        status: "draft",
+      })
+      .onConflictDoNothing();
+    const otherVersion = uniqueVersion();
+    const publishedElsewhere = await publishLegalDocument(
+      documentInput({ countryCode: otherCountryCode, version: otherVersion })
+    );
+    expect(publishedElsewhere).toEqual({ ok: true });
+
+    const result = await listLegalDocumentsForCountry(TEST_COUNTRY_CODE);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.documents.some((d) => d.version === otherVersion)).toBe(false);
   });
 });
