@@ -23,6 +23,7 @@ export default async function AdminLayout({
           { href: `/${locale}/admin`, label: t("admin.dashboard.title") },
           { href: `/${locale}/admin/journalists`, label: t("admin.journalists.title") },
           { href: `/${locale}/admin/requests`, label: t("admin.requests.title") },
+          { href: `/${locale}/admin/recipients`, label: t("admin.recipients.title") },
           { href: `/${locale}/admin/digests`, label: t("admin.digests.title") },
           { href: `/${locale}/me`, label: t("nav.my_account") },
         ]}

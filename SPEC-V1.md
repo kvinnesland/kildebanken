@@ -841,7 +841,8 @@ De tre siste radene er lagt til under autonomt arbeid (økt 7, se
 mottaker — en journalistkonto kan også slettes (17.5, siste avsnitt).
 Bekreftelseslenken er en egen mal, adskilt fra den vanlige innloggingslenken,
 fordi den utløser en irreversibel handling og bør si det tydelig i teksten
-(24.3: "særlig sensitive handlinger skal kreve ny autentisering"). "Innhold
+(18.2: eget bekreftelsestoken for sensitive, irreversible handlinger).
+"Innhold
 rapportert" manglet i denne tabellen selv om 12.5 og 20 begge forutsetter at
 den finnes ("sender e-post til moderatorene for det aktuelle landet") — et
 reelt hull mellom to deler av spec-en, ikke en ny beslutning.
@@ -1374,10 +1375,10 @@ hvor selve engangstokenet lagres. Uten denne tabellen er 6.1 uimplementerbar.
 ```
 id
 user_id                     FK User
-token_hash                  unik – aldri rå token, jf. 24.3
+token_hash                  unik – aldri rå token, jf. 18
 purpose                     login | delete_account | data_export
-                            (24.3: "særlig sensitive handlinger skal kreve
-                            ny autentisering" – samme mekanisme, annet formål)
+                            (18.2: eget token for sensitive, irreversible
+                            handlinger – samme mekanisme, annet formål)
 expires_at                  15 minutter fra utstedelse (6.1)
 used_at                     nullable – tokenet er engangsbruk
 created_at
@@ -1463,7 +1464,7 @@ GET    /digest-access/:token        6.2: bytter tokenet inn i en 30-dagers økt,
 GET    /me
 PATCH  /me                          visningsnavn, locale, timezone
 POST   /me/change-country           krever aksept av nye vilkår
-POST   /me/request-deletion         steg 1 av 2 (24.3: fersk autentisering)
+POST   /me/request-deletion         steg 1 av 2 (18.2: eget bekreftelsestoken)
 POST   /me/confirm-deletion         steg 2 av 2, { token } — ingen økt kreves, tokenet er autoriteten
 
 POST   /unsubscribe/:token          uten innlogging, ett klikk
@@ -1500,9 +1501,11 @@ POST   /report                      { entity_type, entity_id, reason, comment }
 GET    /admin/journalists
 POST   /admin/journalists/:id/approve
 POST   /admin/journalists/:id/reject
+GET    /admin/users?email=...       søk på e-postadresse, se 16.2
 POST   /admin/users/:id/suspend
 POST   /admin/users/:id/unsuspend
 POST   /admin/users/:id/suppress-email
+POST   /admin/users/:id/delete       gjennomfør sletting direkte, se 16.2
 GET    /admin/moderation/requests
 POST   /admin/requests/:id/publish
 POST   /admin/requests/:id/reject
@@ -1562,13 +1565,29 @@ bounce/klage/avmelding (`suppressions`-tabellen 19.13, `reason`-verdiene
 variant (`reason: manual`) noe sted, til tross for at selve `manual`-verdien
 alltid har eksistert i enumen.
 
+`GET /admin/users?email=...` og `POST /admin/users/:id/delete` er lagt til
+under autonomt arbeid (natt til 2026-08-01, se `NATTLOGG.md`) — 16.2 lister
+"søk på e-postadresse" og "gjennomfør sletting" som to av "Mottakere"-
+seksjonens fire konkrete moderatorhandlinger, men verken en søkefunksjon,
+en administratorutløst slettehandling, eller rutene for dem fantes noe
+sted. `performAccountDeletion()` (`src/lib/auth/account-deletion.ts`) fantes
+allerede som selve slettelogikken (brukt av den selvbetjente
+tokenflyten, 18.2) — bare uten noen vei dit for en moderator som selv
+bestemmer at en konto skal slettes (f.eks. etter en misbruksrapport), i
+stedet for at brukeren selv ber om det. `POST .../delete` krever ingen
+bekreftelseslenke (til forskjell fra `/me/request-deletion`) — moderatoren
+har allerede autentisert seg og tar en bevisst, direkte beslutning; det er
+IKKE brukeren selv som ber om sletting via en e-post de kan ha mottatt ved
+en feil. Scoped til mottakerkontoer (`role = recipient`) — 16.2 lister
+denne handlingen kun under "Mottakere", ikke under "Journalister".
+
 `POST /me/request-deletion` og `POST /me/confirm-deletion` erstatter den
 opprinnelige `DELETE /me`-linjen (økt 7, fortsettelse, funnet ved å
 sammenligne denne listen mot de faktiske rutene i `src/app/api/`) — koden
 har alltid vært bygget som en topunkts bekreftelsesflyt
 (`src/lib/auth/account-deletion.ts`, "Steg 1 av 2"/"Steg 2 av 2"), nøyaktig
-som 24.3 krever ("særlig sensitive handlinger skal kreve ny
-autentisering") og som e-postmaltabellen i seksjon 15 allerede henviste
+som 18.2 krever (eget bekreftelsestoken for en sensitiv, irreversibel
+handling) og som e-postmaltabellen i seksjon 15 allerede henviste
 til under navnet "kontosletting" — men selve API-referansen i DENNE
 seksjonen ble aldri oppdatert til å vise de to faktiske rutene. Ren
 dokumentasjonsdrift, ingen atferdsendring i koden.

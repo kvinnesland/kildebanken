@@ -10200,3 +10200,119 @@ helt manglende admin-seksjonene (16.2):
 
 Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
 bevisst latt åpne for menneskelig gjennomgang.
+
+## Økt (fortsettelse): bygget admin-siden "Mottakere" (SPEC-V1.md 16.2), inkludert to nye ruter i spec-en
+
+Fortsatte til "Mottakere", nest anbefalte fra forrige runde. Denne krevde,
+i motsetning til "Utsendelser", HELT NY lib-funksjonalitet — verken søk
+eller en administratorutløst sletting fantes noe sted.
+
+**Rettet spec-en FØRST** (samme disiplin som `provider_message_id`- og
+"24.3"-fiksene tidligere i natt): 16.2 lister "søk på e-postadresse" og
+"gjennomfør sletting" som to av "Mottakere"s fire konkrete
+moderatorhandlinger, men verken en søkerute, en administratorutløst
+sletterute, eller de underliggende funksjonene fantes i seksjon 20s
+ruteliste. La til `GET /admin/users?email=...` og
+`POST /admin/users/:id/delete` med en footnote som forklarer hullet
+(se SPEC-V1.md, rett før `/me/request-deletion`-footnoten).
+
+**Et TREDJE sted "24.3" dukket opp**: da jeg leste rundt i spec-en for å
+finne riktig sted å legge til footnoten, fant jeg at forrige natts
+"24.3"-opprydding hadde MISSET flere siteringer — jeg grep'et forrige
+gang kun `src/`, aldri selve `SPEC-V1.md`. Fem gjenværende treff (linje
+844, 1377/1379 i 19.14 AuthToken, 1466 i ruteoversikten, 1572 i en
+footnote) siterte samme oppdiktede "24.3". Rettet alle fem til enten 18.2
+(sensitive/irreversible handlinger) eller en enkel "18"-henvisning (generell
+token-hashing, der siteringen egentlig gjaldt DEN, ikke 18.2s mer
+spesifikke prinsipp) — samme presisjon som forrige natts fiks, ikke en
+mekanisk søk-og-erstatt. Lærdom for fremtidige spec-siteringsopprydninger:
+grep HELE repoet, ikke bare `src/`.
+
+**Bygget**:
+- `performAccountDeletion()` (`src/lib/auth/account-deletion.ts`) er nå
+  eksportert med en ny, valgfri `actorUserId`-parameter (faller tilbake
+  til `userId` selv — selvbetjent sletting via `confirmAccountDeletion()`
+  er UENDRET). Dette er den SAMME slettelogikken som den selvbetjente
+  to-stegs tokenflyten bruker — ingen duplisert kopi.
+- `searchUsersByEmail(session, emailQuery)` og `adminDeleteUser(userId)`
+  i `src/lib/moderation/users.ts`, ved siden av `suspendUser()`/
+  `unsuspendUser()`/`suppressUserEmail()`. Søket er delvis og
+  versalufølsomt (`ilike`), scoped til `role = recipient` (16.2 skiller
+  eksplisitt "Mottakere" fra "Journalister" — journalistsøk hører til et
+  ANNET, ennå ubygget hjørne av samme seksjon), landfiltrert som
+  `listDigests()`, med en enkel `SEARCH_RESULT_LIMIT = 20` som
+  sikkerhetsventil (ikke spec-krevd, men et fornuftig standardvalg mot et
+  altfor vidt søk). `adminDeleteUser()` sender inn `session.userId` som
+  `actorUserId` slik at revisjonsloggen viser MODERATOREN, ikke
+  mottakeren selv, som utførende — til forskjell fra selvbetjent sletting.
+  Krever INGEN bekreftelseslenke (18.2s prinsipp gjelder der brukeren
+  selv ber om det via en lenke de kan ha mottatt ved en feil — her har
+  moderatoren allerede autentisert seg og tar en bevisst, direkte
+  beslutning).
+- To nye API-ruter: `GET /admin/users` og `POST /admin/users/:id/delete`.
+- `src/app/[locale]/admin/recipients/page.tsx` (server-komponent, søk via
+  URL-en `?email=...`, samme mønster som `CountrySelector.tsx`s
+  landvalg — ingen klientside-datahenting), `SearchForm.tsx` (klient,
+  navigerer via `router.push()` ved innsending), `RecipientRow.tsx`
+  (klient — viser status og samtykkehistorikk, ETT eksplisitt
+  bekreftelsestrinn for sletting FØR selve API-kallet fyrer, samme
+  `errorKey`-mønster som de fire tidligere silent-failure-fiksene,
+  fulgt fra første forsøk).
+- Ny navigasjonslenke, nye i18n-nøkler i begge locales
+  (`admin.recipients.*`).
+
+**Testdekning**: 10 nye integrasjonstester i
+`moderation/users.integration.test.ts` (søk: delvis/versalufølsomt
+treff med samtykkehistorikk, tomt søk gir tom liste, landfiltrering for
+moderator, alle-land for administrator, ALDRI en journalist-/
+moderatorkonto; sletting: ukjent ID, feil rolle avvises, feil land
+avvises, sletter direkte og logger MODERATOREN som actorUserId, avviser
+en allerede slettet konto). Under skrivingen av landfiltrering-testen
+oppdaget jeg at et generisk søkeord ("recipient") ville matchet et stort,
+ukontrollert antall rader fra MANGE tidligere netters testkjøringer i
+denne delte, aldri-nullstilte databasen (se fixtures.ts sin egen
+"disponibel sandkasse"-advarsel) — rettet til å søke på et utsnitt av
+selve den tilfeldige UUID-delen i stedet for et fast prefiks, en
+lærdom verdt å huske for FREMTIDIGE `ilike`-baserte søketester i denne
+databasen. 8 nye komponenttester i `RecipientRow.test.tsx` (visning,
+krever ikke-tom begrunnelse for suspensjon, feilmelding ved mislykket
+suspensjon/sletting, suksessmelding for begge, det eksplisitte
+bekreftelsestrinnet før sletting faktisk fyrer, begge handlinger
+deaktivert for en allerede slettet konto) og 1 i `SearchForm.test.tsx`.
+
+**Empirisk verifisering**: `git stash push` på `users.ts` +
+`account-deletion.ts` sammen → bekreftet at NØYAKTIG de 10 nye
+integrasjonstestene feiler (funksjonene finnes ikke) → `git stash pop` →
+alle 24 tester i filen består. For `RecipientRow.tsx`: fjernet
+midlertidig feilhåndteringen OG bekreftelsestrinnet for sletting (kalte
+`fetch` direkte fra førsteklikks-knappen) → bekreftet 3 av 8 tester
+feiler (nøyaktig de som tester akkurat DISSE to tingene) → gjenopprettet,
+alle 8 består.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**409
+tester**, +9), `i18n:check` (**421 nøkler**, +20), `design:check-tokens`
+(OK, **46 komponent-CSS-filer**, +3, ingen rå verdier), `next build`
+(grønn — `/[locale]/admin/recipients`, `/api/admin/users`,
+`/api/admin/users/[id]/delete` alle med i rutelisten), `test:integration`
+mot ekte lokal Postgres (**286 tester**, +10, etter én forbigående,
+urelatert feil i to andre testfiler pga. den kjente
+tilfeldig-dato-kollisjonsrisikoen i `uniqueScheduledFor()`-mønsteret —
+bekreftet IKKE reproduserbar i en påfølgende full kjøring, samme klasse
+delt-database-støy sett flere ganger tidligere).
+
+### Neste økt
+
+To av de tre opprinnelig helt manglende admin-seksjonene er nå bygget
+("Utsendelser", "Mottakere"). Gjenstår:
+- **Land** (kun administrator): opprette/redigere landkonfigurasjon,
+  status, moderator-tildeling, publisere juridiske dokumentversjoner.
+  Mest sensitivt — bør bygges sist, med egen forsiktighet (endrer
+  juridisk-dokument-status og landkonfigurasjon som faktiske brukere kan
+  stole på).
+- **Journalister**-siden mangler fortsatt søk, suspender/opphev
+  suspensjon, og "se tidligere forespørsler".
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang.

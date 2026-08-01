@@ -1,11 +1,97 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { auditLogs, contactRequests, suppressions, users } from "@/db/schema";
+import { auditLogs, consentRecords, contactRequests, suppressions, users } from "@/db/schema";
 import { revokeAllSessionsForUser } from "@/lib/auth/session";
-import { requireModeratorForCountry } from "@/lib/auth/authorize";
+import { getAssignedCountryCodes, requireModeratorForCountry } from "@/lib/auth/authorize";
 import { hashToken } from "@/lib/auth/tokens";
+import { performAccountDeletion } from "@/lib/auth/account-deletion";
+import type { CurrentSession } from "@/lib/auth/session";
 
 export type SuspendUserResult = { ok: true } | { ok: false; error: string };
+
+export interface UserSearchResultConsent {
+  consentType: string;
+  granted: boolean;
+  grantedAt: Date;
+  withdrawnAt: Date | null;
+}
+
+export interface UserSearchResult {
+  id: string;
+  email: string;
+  status: "pending_email_verification" | "active" | "suspended" | "deleted";
+  countryCode: string;
+  createdAt: Date;
+  consents: UserSearchResultConsent[];
+}
+
+const SEARCH_RESULT_LIMIT = 20;
+
+/**
+ * GET /admin/users?email=... (SPEC-V1.md 16.2: "søk på e-postadresse, se
+ * kontostatus og samtykkehistorikk") — filtrert på moderatorens tildelte
+ * land, samme mønster som `listDigests()`. Scoped til `role = recipient`,
+ * nøyaktig som 16.2 selv scoper "Mottakere"-seksjonen (journalistsøk lever
+ * under "Journalister", en annen, ennå ubygget del av samme seksjon).
+ * Delvis, versalufølsomt treff (`ilike`) — en moderator husker sjelden en
+ * hel adresse ordrett. `SEARCH_RESULT_LIMIT` er en enkel, ikke spec-krevd
+ * sikkerhetsventil mot et vidt søk (f.eks. ett enkelt tegn) som ville
+ * returnert svært mange rader.
+ */
+export async function searchUsersByEmail(
+  session: CurrentSession,
+  emailQuery: string
+): Promise<UserSearchResult[]> {
+  const trimmed = emailQuery.trim().toLowerCase();
+  if (!trimmed) return [];
+
+  const assigned = await getAssignedCountryCodes(session);
+  if (assigned !== "all" && assigned.length === 0) return [];
+
+  const conditions = [eq(users.role, "recipient"), ilike(users.email, `%${trimmed}%`)];
+  if (assigned !== "all") conditions.push(inArray(users.countryCode, assigned));
+
+  const matches = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      status: users.status,
+      countryCode: users.countryCode,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .where(and(...conditions))
+    .limit(SEARCH_RESULT_LIMIT);
+
+  if (matches.length === 0) return [];
+
+  const userIds = matches.map((m) => m.id);
+  const consentRows = await db
+    .select({
+      userId: consentRecords.userId,
+      consentType: consentRecords.consentType,
+      granted: consentRecords.granted,
+      grantedAt: consentRecords.grantedAt,
+      withdrawnAt: consentRecords.withdrawnAt,
+    })
+    .from(consentRecords)
+    .where(inArray(consentRecords.userId, userIds))
+    .orderBy(desc(consentRecords.createdAt));
+
+  const consentsByUser = new Map<string, UserSearchResultConsent[]>();
+  for (const row of consentRows) {
+    const list = consentsByUser.get(row.userId) ?? [];
+    list.push({
+      consentType: row.consentType,
+      granted: row.granted,
+      grantedAt: row.grantedAt,
+      withdrawnAt: row.withdrawnAt,
+    });
+    consentsByUser.set(row.userId, list);
+  }
+
+  return matches.map((m) => ({ ...m, consents: consentsByUser.get(m.id) ?? [] }));
+}
 
 /**
  * POST /admin/users/:id/suspend (SPEC-V1.md 8.1, 16.2). Journalistens
@@ -152,6 +238,43 @@ export async function suppressUserEmail(userId: string, reason: string): Promise
     entityId: userId,
     reason,
   });
+
+  return { ok: true };
+}
+
+/**
+ * POST /admin/users/:id/delete (SPEC-V1.md 16.2: "gjennomfør sletting").
+ * Kaller nøyaktig samme `performAccountDeletion()` som den selvbetjente
+ * to-stegs tokenflyten (`src/lib/auth/account-deletion.ts`, 18.2) — men
+ * UTEN noen bekreftelseslenke: moderatoren har allerede autentisert seg og
+ * tar en bevisst, direkte beslutning (typisk etter en misbruksrapport),
+ * til forskjell fra `/me/request-deletion` der brukeren selv ber om det
+ * og MÅ bekrefte via en egen e-post (18.2s prinsipp gjelder der nettopp
+ * fordi forespørselen kan komme fra hvem som helst med tilgang til
+ * innloggingsøkten — her er selve moderator-autentiseringen allerede den
+ * ferske autentiseringen).
+ *
+ * Scoped til `role = recipient` — 16.2 lister denne handlingen KUN under
+ * "Mottakere", ikke under "Journalister" (som bare lister suspender/opphev
+ * suspensjon). Sender inn `session.userId` som `actorUserId` slik at
+ * revisjonsloggen viser moderatoren, ikke mottakeren selv, som utførende.
+ */
+export async function adminDeleteUser(userId: string): Promise<SuspendUserResult> {
+  const [user] = await db
+    .select({ id: users.id, role: users.role, status: users.status, countryCode: users.countryCode })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!user) return { ok: false, error: "errors.not_found" };
+
+  if (user.role !== "recipient") return { ok: false, error: "errors.validation_failed" };
+
+  const session = await requireModeratorForCountry(user.countryCode);
+  if (!session) return { ok: false, error: "errors.not_authorized" };
+
+  if (user.status === "deleted") return { ok: false, error: "errors.not_found" };
+
+  await performAccountDeletion(userId, user.role, session.userId);
 
   return { ok: true };
 }

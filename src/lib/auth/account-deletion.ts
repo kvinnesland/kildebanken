@@ -95,9 +95,20 @@ export async function confirmAccountDeletion(rawToken: string): Promise<AccountD
   return { ok: true };
 }
 
-async function performAccountDeletion(
+/**
+ * Selve slettelogikken, eksportert (natt til 2026-08-01, se NATTLOGG.md) slik
+ * at `adminDeleteUser()` i src/lib/moderation/users.ts kan kalle NØYAKTIG
+ * samme funksjon som den selvbetjente tokenflyten over — ikke en egen
+ * kopi. `actorUserId` er valgfri og faller tilbake til `userId` selv
+ * (selvbetjent sletting, uendret atferd for `confirmAccountDeletion()` under);
+ * en moderator-utløst sletting sender inn SIN EGEN økt-ID i stedet, slik at
+ * revisjonsloggen (19.12) viser hvem som faktisk tok beslutningen, ikke bare
+ * hvem kontoen tilhørte.
+ */
+export async function performAccountDeletion(
   userId: string,
-  role: "recipient" | "journalist" | "moderator" | "admin"
+  role: "recipient" | "journalist" | "moderator" | "admin",
+  actorUserId: string = userId
 ): Promise<void> {
   const [user] = await db
     .select({ email: users.email, locale: users.locale })
@@ -136,7 +147,7 @@ async function performAccountDeletion(
 
   await db.insert(auditLogs).values({
     actorType: "user",
-    actorUserId: userId,
+    actorUserId,
     action: "account.delete",
     entityType: "user",
     entityId: userId,

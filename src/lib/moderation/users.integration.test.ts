@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
+  auditLogs,
+  consentRecords,
   contactRequests,
   journalistProfiles,
   moderatorCountries,
@@ -21,7 +23,20 @@ import {
   uniqueTestEmail,
 } from "@/db/integration/fixtures";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
-import { suppressUserEmail, suspendUser, unsuspendUser } from "./users";
+import type { CurrentSession } from "@/lib/auth/session";
+import { adminDeleteUser, searchUsersByEmail, suppressUserEmail, suspendUser, unsuspendUser } from "./users";
+
+function makeSession(overrides: Partial<CurrentSession> = {}): CurrentSession {
+  return {
+    sessionId: "session-id",
+    userId: "user-id",
+    role: "moderator",
+    countryCode: TEST_COUNTRY_CODE,
+    locale: "nb-NO",
+    email: "test@example.invalid",
+    ...overrides,
+  };
+}
 
 // Samme mønster som de andre moderation/-integrasjonstestene: mocker
 // next/headers for å simulere en innlogget moderator/administrator via en
@@ -328,5 +343,197 @@ describe("suppressUserEmail mot ekte Postgres (SPEC-V1.md 12.5)", () => {
       .from(suppressions)
       .where(eq(suppressions.emailHash, hashToken(recipient.email)));
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe("searchUsersByEmail mot ekte Postgres (SPEC-V1.md 16.2)", () => {
+  it("finner en mottaker på et DELVIS, versalufølsomt treff, med samtykkehistorikk", async () => {
+    await ensureTestCountry();
+    const recipient = await createActiveRecipient();
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    await db.insert(consentRecords).values({
+      userId: recipient.id,
+      consentType: "email_subscription",
+      countryCode: TEST_COUNTRY_CODE,
+      locale: "nb-NO",
+      granted: true,
+      source: "registration_form",
+    });
+
+    // Et utsnitt av selve den TILFELDIGE UUID-delen (ikke det faste
+    // "recipient-"-prefikset — det matcher hver testmottaker som noensinne
+    // er opprettet i denne delte databasen, på tvers av mange netters
+    // kjøringer, og ville gjort søket ubrukelig spesifikt).
+    const partialQuery = recipient.email.slice(10, 18).toUpperCase();
+    const result = await searchUsersByEmail(
+      makeSession({ userId: moderator.id, role: "moderator", countryCode: TEST_COUNTRY_CODE }),
+      partialQuery
+    );
+
+    const match = result.find((u) => u.id === recipient.id);
+    expect(match).toBeDefined();
+    expect(match?.consents).toEqual([
+      expect.objectContaining({ consentType: "email_subscription", granted: true }),
+    ]);
+  });
+
+  it("returnerer en tom liste for et tomt/blankt søk, uten å liste alle brukere", async () => {
+    await ensureTestCountry();
+    await createActiveRecipient();
+
+    const result = await searchUsersByEmail(
+      makeSession({ role: "moderator", countryCode: TEST_COUNTRY_CODE }),
+      "   "
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  it("filtrerer på moderatorens tildelte land, ikke andre lands mottakere", async () => {
+    // Egen, delt og unik markør i BEGGE e-postadressene (ikke bare
+    // "recipient" — databasen er delt på tvers av mange netters
+    // testkjøringer, og et generisk søkeord ville matchet et stort,
+    // ukontrollert antall gamle rader og risikert å skyve DENNE testens
+    // egne rader utenfor SEARCH_RESULT_LIMIT).
+    const marker = uniqueTestEmail("shared-country-filter-marker").split("@")[0];
+    await ensureTestCountry();
+    await ensureSecondTestCountry();
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    const [ownRecipient] = await db
+      .insert(users)
+      .values({
+        email: `${marker}-own@example.invalid`,
+        role: "recipient",
+        status: "active",
+        countryCode: TEST_COUNTRY_CODE,
+        locale: "nb-NO",
+        emailVerifiedAt: new Date(),
+      })
+      .returning({ id: users.id });
+    const [otherRecipient] = await db
+      .insert(users)
+      .values({
+        email: `${marker}-other@example.invalid`,
+        role: "recipient",
+        status: "active",
+        countryCode: TEST_COUNTRY_CODE_2,
+        locale: "nb-NO",
+        emailVerifiedAt: new Date(),
+      })
+      .returning({ id: users.id });
+
+    const result = await searchUsersByEmail(
+      makeSession({ userId: moderator.id, role: "moderator", countryCode: TEST_COUNTRY_CODE }),
+      marker!
+    );
+
+    expect(result.some((u) => u.id === ownRecipient!.id)).toBe(true);
+    expect(result.some((u) => u.id === otherRecipient!.id)).toBe(false);
+  });
+
+  it("gir en administrator treff på tvers av ALLE land (19.4)", async () => {
+    await ensureTestCountry();
+    await ensureSecondTestCountry();
+    const email = uniqueTestEmail("admin-search-recipient");
+    const [otherCountryRecipient] = await db
+      .insert(users)
+      .values({
+        email,
+        role: "recipient",
+        status: "active",
+        countryCode: TEST_COUNTRY_CODE_2,
+        locale: "nb-NO",
+        emailVerifiedAt: new Date(),
+      })
+      .returning({ id: users.id });
+
+    // Søker på et utsnitt av selve den unike UUID-delen, ikke det faste
+    // "admin-search-recipient"-prefikset — samme lærdom som testen over
+    // (dette prefikset alene ville akkumulert treff fra HVER natt denne
+    // spesifikke testen noensinne har kjørt i denne delte databasen).
+    const uniquePart = email.slice("admin-search-recipient-".length, "admin-search-recipient-".length + 8);
+    const result = await searchUsersByEmail(makeSession({ role: "admin" }), uniquePart);
+
+    expect(result.some((u) => u.id === otherCountryRecipient!.id)).toBe(true);
+  });
+
+  it("returnerer ALDRI en journalist- eller moderatorkonto, kun mottakere", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+
+    const result = await searchUsersByEmail(
+      makeSession({ role: "admin" }),
+      journalist.email.slice(0, 8)
+    );
+
+    expect(result.some((u) => u.id === journalist.id)).toBe(false);
+  });
+});
+
+describe("adminDeleteUser mot ekte Postgres (SPEC-V1.md 16.2, 18.2)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returnerer errors.not_found for en ukjent bruker-ID", async () => {
+    const result = await adminDeleteUser("00000000-0000-0000-0000-000000000000");
+    expect(result).toEqual({ ok: false, error: "errors.not_found" });
+  });
+
+  it("avviser en journalistkonto — 16.2 scoper denne handlingen til Mottakere", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    await loginAs(moderator.id);
+
+    const result = await adminDeleteUser(journalist.id);
+
+    expect(result).toEqual({ ok: false, error: "errors.validation_failed" });
+    const [after] = await db.select().from(users).where(eq(users.id, journalist.id));
+    expect(after?.status).not.toBe("deleted");
+  });
+
+  it("en moderator tildelt et ANNET land nektes", async () => {
+    await ensureTestCountry();
+    await ensureSecondTestCountry();
+    const recipient = await createActiveRecipient();
+    const moderator = await createModerator(TEST_COUNTRY_CODE_2);
+    await loginAs(moderator.id);
+
+    const result = await adminDeleteUser(recipient.id);
+
+    expect(result).toEqual({ ok: false, error: "errors.not_authorized" });
+    const [after] = await db.select().from(users).where(eq(users.id, recipient.id));
+    expect(after?.status).not.toBe("deleted");
+  });
+
+  it("sletter en mottakerkonto DIREKTE, uten bekreftelseslenke, og logger MODERATOREN (ikke mottakeren) som utførende", async () => {
+    await ensureTestCountry();
+    const recipient = await createActiveRecipient();
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    await loginAs(moderator.id);
+
+    const result = await adminDeleteUser(recipient.id);
+
+    expect(result).toEqual({ ok: true });
+    const [after] = await db.select().from(users).where(eq(users.id, recipient.id));
+    expect(after?.status).toBe("deleted");
+    expect(after?.email).not.toBe(recipient.email); // anonymisert (17.5)
+
+    const [log] = await db.select().from(auditLogs).where(eq(auditLogs.entityId, recipient.id));
+    expect(log?.action).toBe("account.delete");
+    expect(log?.actorUserId).toBe(moderator.id); // IKKE recipient.id
+  });
+
+  it("avviser en allerede SLETTET konto (idempotent avvisning, ikke en dobbel sletting)", async () => {
+    await ensureTestCountry();
+    const recipient = await createActiveRecipient();
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    await loginAs(moderator.id);
+    await db.update(users).set({ status: "deleted" }).where(eq(users.id, recipient.id));
+
+    const result = await adminDeleteUser(recipient.id);
+
+    expect(result).toEqual({ ok: false, error: "errors.not_found" });
   });
 });
