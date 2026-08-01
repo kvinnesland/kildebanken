@@ -142,6 +142,16 @@ status                  draft | active | paused
 personvernerklæring i hvert tilgjengelige språk, komplette oversettelser, og
 minst én moderator tildelt landet. Ingen utrulling, ingen migrasjon.
 
+`name_key` og `sender_name_key` er selv oversettelsesnøkler, ikke
+visningsstrenger (jf. tabellen over) — FR-012 håndhever at enhver nøkkel som
+brukes faktisk finnes, ved byggetidspunkt. Et genuint nytt land (en nøkkel som
+ikke allerede finnes i kodebasen) kan derfor ALDRI opprettes fullt
+selvbetjent fra administrasjonsgrensesnittet alene: en utvikler må legge til
+selve nøkkelen i en egen kodeendring FØR konfigurasjonsraden opprettes eller
+oppdateres til å bruke den. Dette er en bevisst konsekvens av FR-012, ikke et
+hull i administrasjonsgrensesnittet — se `admin/countries`-sidens egen
+hjelpetekst for feltene.
+
 Et land i `draft` er usynlig for alle utenom administrator. `paused` stopper nye
 registreringer og utsendelser, men beholder data og innlogging.
 

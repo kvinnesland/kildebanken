@@ -10664,19 +10664,90 @@ seks funksjonene har nå en reell vei inn fra administrasjonsgrensesnittet.
 
 Ingen kjent gjenstående admin-side-mangel fra 16.2 i det hele tatt nå.
 
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt (fortsettelse): ryddet opp de to gjenstående punktene fra forrige økts "Neste økt" — begge små, ingen kjente feil drev dem
+
+### `listModerationQueue()` manglet egne, direkte integrasjonstester
+
+Nøyaktig samme mangel `listActiveRequests()` hadde før forrige økt:
+funksjonen ble bare testet INDIREKTE (via UI-et og via at
+`publishRequest`/`rejectRequest`/`requestChanges` fungerer), aldri en test
+som kaller `listModerationQueue()` selv og sjekker landfiltrering/innhold
+direkte. Rettet med samme mønster som `listActiveRequests()` sine
+tester fra forrige økt (samme `makeSession()`-hjelper, samme
+`createActiveJournalistWithProfile()` for å tilfredsstille
+`innerJoin(journalistProfiles, ...)`): 5 nye tester — moderator ser en
+innsendt forespørsel for EGET land, ser den ALDRI for et annet lands,
+administrator ser uansett land, en allerede BEHANDLET forespørsel
+(f.eks. publisert) vises ALDRI her, og — en test utover
+`listActiveRequests()`-mønsteret, siden `listModerationQueue()` har en
+tidlig-retur-vei `listActiveRequests()` ikke har på samme måte — en
+moderator UTEN noe tildelt land ser en TOM liste, ikke alle land
+(bekrefter at "tomt utvalg" ikke feiltolkes som "alle land", se
+`getAssignedCountryCodes()`sin egen kommentar om nettopp denne
+distinksjonen).
+
+**Empirisk verifisering**: fjernet midlertidig landfiltreringen fra
+`listModerationQueue()` (kommenterte ut
+`conditions.push(inArray(requests.countryCode, assigned))`) → bekreftet
+at NØYAKTIG 1 av de 20 testene i filen feiler (testen som beviser at en
+moderator i et ANNET land IKKE ser forespørselen — akkurat den testen
+som skal fange denne klassen feil; den tomme-listen-testen for en
+moderator UTEN tildelt land fortsatte å bestå urørt, siden den tidlige
+returen `if (assigned !== "all" && assigned.length === 0) return [];`
+er en HELT separat sjekk fra selve WHERE-betingelsen jeg fjernet) →
+gjenopprettet fra sikkerhetskopi, alle 20 tester består igjen.
+
+### Dokumenterte nameKey/senderNameKey-begrensningen som en eksplisitt del av "å åpne et nytt land"
+
+`SPEC-V1.md` 3.3 sin egen liste over hva som kreves for å åpne et nytt
+land ("konfigurasjonsrad, juridisk gjennomgåtte vilkår ..., komplette
+oversettelser, og minst én moderator") nevnte aldri eksplisitt at
+`name_key`/`sender_name_key` SELV er oversettelsesnøkler, ikke
+visningsstrenger — og at FR-012s byggetidshåndhevelse dermed gjør det
+umulig å opprette et GENUINT nytt land fullt selvbetjent fra
+administrasjonsgrensesnittet alene, uten en egen kodeendring fra en
+utvikler først. Dette var allerede riktig implementert (se forrige
+økts `admin/countries`-arbeid) og allerede forklart i selve UI-ets
+hjelpetekst, men aldri skrevet ned i spec-ens egen "hva kreves"-liste —
+et hull mellom spec og faktisk (korrekt) atferd, ikke en kodefeil. Rettet
+spec-en først (`SPEC-V1.md` 3.3, ett nytt avsnitt), speilet med én ny
+setning i `README.md` sin eksisterende i18n-arkitekturprinsipp-kulepunkt
+(ingen kodeendring, ingen ny test — ren dokumentasjon av en allerede
+korrekt og allerede testet begrensning).
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run`
+(**439 tester**, uendret — ingen nye komponent-/enhetstester denne
+runden), `i18n:check` (**507 nøkler**, uendret), `test:integration` mot
+ekte lokal Postgres, to påfølgende ganger (**304 tester** hver gang, +5
+fra `listModerationQueue()`). `design:check-tokens` og `next build` ikke
+kjørt på nytt etter dokumentasjonsendringene — ingen kode-, CSS- eller
+byggpåvirkende filer ble rørt i den delen av økten, bare to
+Markdown-filer og én testfil (som selv ble grundig verifisert over).
+
+### Neste økt
+
+Ingen kjent gjenstående punkt fra forrige økts "Neste økt"-liste. Ingen
+nye, konkrete mangler oppdaget denne runden utover det som allerede er
+rettet.
+
 Mulige neste steg (ingen er hastesaker, ingen kjente feil driver dem):
-- `listModerationQueue()` selv mangler fortsatt egne, direkte
-  integrasjonstester (oppdaget under denne øktens arbeid — funksjonen
-  testes i dag bare INDIREKTE via UI-et og via at
-  `publishRequest`/`rejectRequest`/`requestChanges` fungerer, aldri en
-  test som kaller `listModerationQueue()` selv og sjekker landfiltrering/
-  innhold). Samme mangel som `listActiveRequests()` hadde FØR denne
-  økten — verdt å rette i en fremtidig økt for symmetri.
-- Vurdere om `CreateCountryForm`/`CountryCard` sin
-  nameKey/senderNameKey-begrensning (utvikler må legge til i18n-nøkkelen
-  separat) bør nevnes i README.md eller INFRASTRUCTURE.md som en kjent
-  driftsprosess for lansering av nye land, ikke bare i selve UI-hjelpe-
-  teksten.
+- Et bredere blikk på om NOEN av de andre `list*()`-funksjonene i
+  `src/lib/moderation/` og `src/lib/admin/` har samme
+  "bare-indirekte-testet"-mønster som `listModerationQueue()` og
+  `listActiveRequests()` hadde — ingen konkret mistanke ennå, bare et
+  mønster verdt å sjekke systematisk.
 
 Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
 bevisst latt åpne for menneskelig gjennomgang:

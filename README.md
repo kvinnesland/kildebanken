@@ -41,7 +41,11 @@ npm run dev
   Avvik fra `SPEC-V1.md` 19 er en feil i koden. Endre spec-en først.
 - **Ingen brukervendt streng i kildekoden.** Alt går via
   `src/i18n/get-messages.ts` og nøklene i `src/i18n/messages/*.json`. CI skal
-  kjøre `npm run i18n:check` (FR-012) før bygg.
+  kjøre `npm run i18n:check` (FR-012) før bygg. Dette gjelder også
+  `Country.name_key`/`sender_name_key` (`SPEC-V1.md` 3.3) — et nytt land kan
+  derfor ALDRI opprettes fullt selvbetjent fra administrasjonsgrensesnittet
+  alene, siden en genuint ny nøkkel må legges til i en egen kodeendring før
+  byggetidssjekken slipper den gjennom.
 - **Ingen komponentfil refererer til `tokens/primitives.css` direkte** — bare
   `tokens/semantic.css` (DESIGN.md 1). Håndhevet av
   `npm run design:check-tokens` (`src/styles/check-tokens.ts`).

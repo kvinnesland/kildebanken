@@ -12,7 +12,7 @@ import {
 } from "@/db/integration/fixtures";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
 import type { CurrentSession } from "@/lib/auth/session";
-import { listActiveRequests, publishRequest, rejectRequest, requestChanges } from "./requests";
+import { listActiveRequests, listModerationQueue, publishRequest, rejectRequest, requestChanges } from "./requests";
 
 // publishRequest()/rejectRequest()/requestChanges() kaller
 // requireModeratorForCountry() internt, som leser getCurrentSession() (en
@@ -396,5 +396,95 @@ describe("listActiveRequests mot ekte Postgres", () => {
     );
 
     expect(result.map((r) => r.id)).not.toContain(submitted.id);
+  });
+});
+
+// listModerationQueue() manglet, i likhet med listActiveRequests() før
+// forrige økt, egne DIREKTE tester — den ble frem til nå bare testet
+// INDIREKTE via at publishRequest()/rejectRequest()/requestChanges() selv
+// fungerer, aldri en test som kaller listModerationQueue() selv og
+// sjekker landfiltrering/innhold. Samme mønster som beskrevet for
+// listActiveRequests() over.
+describe("listModerationQueue mot ekte Postgres", () => {
+  afterEach(async () => {
+    await db.delete(requests).where(eq(requests.title, "Testforespørsel til moderering"));
+  });
+
+  it("en moderator tildelt SAMME land ser en innsendt forespørsel for det landet", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalistWithProfile(TEST_COUNTRY_CODE);
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    const submitted = await createSubmittedRequest(journalist.id);
+
+    const result = await listModerationQueue(
+      makeSession({ userId: moderator.id, role: "moderator", countryCode: TEST_COUNTRY_CODE })
+    );
+
+    expect(result.map((r) => r.id)).toContain(submitted.id);
+  });
+
+  it("en moderator tildelt et ANNET land ser IKKE forespørselen", async () => {
+    await ensureTestCountry();
+    await ensureSecondTestCountry();
+    const journalist = await createActiveJournalistWithProfile(TEST_COUNTRY_CODE);
+    const moderator = await createModerator(TEST_COUNTRY_CODE_2);
+    const submitted = await createSubmittedRequest(journalist.id);
+
+    const result = await listModerationQueue(
+      makeSession({ userId: moderator.id, role: "moderator", countryCode: TEST_COUNTRY_CODE_2 })
+    );
+
+    expect(result.map((r) => r.id)).not.toContain(submitted.id);
+  });
+
+  it("en administrator ser innsendte forespørsler UANSETT land", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalistWithProfile(TEST_COUNTRY_CODE);
+    const submitted = await createSubmittedRequest(journalist.id);
+
+    const result = await listModerationQueue(makeSession({ role: "admin", countryCode: TEST_COUNTRY_CODE_2 }));
+
+    expect(result.map((r) => r.id)).toContain(submitted.id);
+  });
+
+  it("inkluderer ALDRI en forespørsel som allerede er behandlet (f.eks. publisert)", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalistWithProfile(TEST_COUNTRY_CODE);
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    const published = await createSubmittedRequest(journalist.id, {
+      status: "published",
+      publishedAt: new Date(),
+    });
+
+    const result = await listModerationQueue(
+      makeSession({ userId: moderator.id, role: "moderator", countryCode: TEST_COUNTRY_CODE })
+    );
+
+    expect(result.map((r) => r.id)).not.toContain(published.id);
+  });
+
+  it("en moderator uten noe tildelt land ser en tom liste, ikke ALLE land (aldri feilåpen)", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalistWithProfile(TEST_COUNTRY_CODE);
+    await createSubmittedRequest(journalist.id);
+
+    const [unassignedModerator] = await db
+      .insert(users)
+      .values({
+        email: uniqueTestEmail("moderator-unassigned"),
+        role: "moderator",
+        status: "active",
+        countryCode: TEST_COUNTRY_CODE,
+        locale: "nb-NO",
+        emailVerifiedAt: new Date(),
+      })
+      .returning({ id: users.id });
+    if (!unassignedModerator) throw new Error("Klarte ikke opprette test-moderator");
+
+    const result = await listModerationQueue(
+      makeSession({ userId: unassignedModerator.id, role: "moderator", countryCode: TEST_COUNTRY_CODE })
+    );
+
+    expect(result).toEqual([]);
   });
 });
