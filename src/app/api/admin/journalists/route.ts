@@ -12,11 +12,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "errors.not_authenticated" }, { status: 401 });
   }
 
-  const statusParam = new URL(request.url).searchParams.get("status");
+  const { searchParams } = new URL(request.url);
+  const statusParam = searchParams.get("status");
   const statusFilter = (STATUS_VALUES as readonly string[]).includes(statusParam ?? "")
     ? (statusParam as (typeof STATUS_VALUES)[number])
     : undefined;
+  const emailQuery = searchParams.get("email") ?? undefined;
 
-  const journalists = await listJournalists(session, statusFilter);
+  const journalists = await listJournalists(session, statusFilter, emailQuery);
   return NextResponse.json({ journalists });
 }

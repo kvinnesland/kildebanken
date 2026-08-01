@@ -1,6 +1,6 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, count, eq, ilike, inArray, notInArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { auditLogs, journalistProfiles, users } from "@/db/schema";
+import { auditLogs, journalistProfiles, requests, users } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { requireModeratorForCountry, getAssignedCountryCodes } from "@/lib/auth/authorize";
 import type { CurrentSession } from "@/lib/auth/session";
@@ -142,6 +142,7 @@ export async function rejectJournalist(
 export interface JournalistListItem {
   userId: string;
   email: string;
+  status: "pending_email_verification" | "active" | "suspended" | "deleted";
   fullName: string;
   jobTitle: string;
   organizationName: string;
@@ -149,16 +150,28 @@ export interface JournalistListItem {
   countryCode: string;
   verificationStatus: "pending_review" | "approved" | "rejected";
   createdAt: Date;
+  // SPEC-V1.md 16.2: "se tidligere forespørsler" — antall forespørsler
+  // journalisten faktisk har SENDT INN. Ekskluderer "draft" (aldri sendt
+  // inn — bare et upublisert utkast ingen moderator noensinne så) og
+  // "deleted" (slettet FØR publisering, DELETE /requests/:id — samme
+  // "aldri egentlig en behandlet forespørsel"-begrunnelse som draft).
+  pastRequestCount: number;
 }
 
 /**
  * Filtrert på moderatorens tildelte land (SPEC-V1.md 4) — administrator ser
  * alle. En moderator uten landtildeling ser en tom liste, ikke alle
  * journalister — feil retning å lekke mot ved en konfigurasjonsfeil.
+ *
+ * `emailQuery` (natt til 2026-08-01, se NATTLOGG.md) — 16.2s "søk" for
+ * "Journalister" fantes ikke i det hele tatt før dette; delvis,
+ * versalufølsomt (`ilike`), samme mønster som `searchUsersByEmail()` i
+ * `moderation/users.ts`.
  */
 export async function listJournalists(
   session: CurrentSession,
-  statusFilter?: "pending_review" | "approved" | "rejected"
+  statusFilter?: "pending_review" | "approved" | "rejected",
+  emailQuery?: string
 ): Promise<JournalistListItem[]> {
   const assigned = await getAssignedCountryCodes(session);
   if (assigned !== "all" && assigned.length === 0) return [];
@@ -166,11 +179,14 @@ export async function listJournalists(
   const conditions = [eq(users.role, "journalist")];
   if (assigned !== "all") conditions.push(inArray(users.countryCode, assigned));
   if (statusFilter) conditions.push(eq(journalistProfiles.verificationStatus, statusFilter));
+  const trimmedEmailQuery = emailQuery?.trim().toLowerCase();
+  if (trimmedEmailQuery) conditions.push(ilike(users.email, `%${trimmedEmailQuery}%`));
 
   const rows = await db
     .select({
       userId: users.id,
       email: users.email,
+      status: users.status,
       fullName: journalistProfiles.fullName,
       jobTitle: journalistProfiles.jobTitle,
       organizationName: journalistProfiles.organizationName,
@@ -183,5 +199,19 @@ export async function listJournalists(
     .innerJoin(journalistProfiles, eq(journalistProfiles.userId, users.id))
     .where(and(...conditions));
 
-  return rows;
+  if (rows.length === 0) return [];
+
+  // Én gruppert spørring for ALLE journalistene i listen, ikke N+1 (samme
+  // begrunnelse som listDigests() sin statustelling).
+  const journalistIds = rows.map((r) => r.userId);
+  const requestCounts = await db
+    .select({ journalistId: requests.journalistId, value: count() })
+    .from(requests)
+    .where(
+      and(inArray(requests.journalistId, journalistIds), notInArray(requests.status, ["draft", "deleted"]))
+    )
+    .groupBy(requests.journalistId);
+  const countByJournalist = new Map(requestCounts.map((r) => [r.journalistId, r.value]));
+
+  return rows.map((r) => ({ ...r, pastRequestCount: countByJournalist.get(r.userId) ?? 0 }));
 }

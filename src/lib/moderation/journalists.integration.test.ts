@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { journalistProfiles, moderatorCountries, sessions, users } from "@/db/schema";
+import { journalistProfiles, moderatorCountries, requests, sessions, users } from "@/db/schema";
 import {
   ensureSecondTestCountry,
   ensureTestCountry,
@@ -10,7 +10,20 @@ import {
   uniqueTestEmail,
 } from "@/db/integration/fixtures";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
-import { approveJournalist, rejectJournalist } from "./journalists";
+import type { CurrentSession } from "@/lib/auth/session";
+import { approveJournalist, listJournalists, rejectJournalist } from "./journalists";
+
+function makeSession(overrides: Partial<CurrentSession> = {}): CurrentSession {
+  return {
+    sessionId: "session-id",
+    userId: "user-id",
+    role: "moderator",
+    countryCode: TEST_COUNTRY_CODE,
+    locale: "nb-NO",
+    email: "test@example.invalid",
+    ...overrides,
+  };
+}
 
 // Samme mønster som moderation/requests.integration.test.ts: mocker
 // next/headers for å simulere en innlogget bruker via en EKTE
@@ -212,5 +225,122 @@ describe("approveJournalist/rejectJournalist mot ekte Postgres", () => {
       .from(journalistProfiles)
       .where(eq(journalistProfiles.userId, journalist.id));
     expect(profile?.verificationStatus).toBe("rejected");
+  });
+});
+
+describe("listJournalists mot ekte Postgres (SPEC-V1.md 16.2)", () => {
+  it("returnerer ALLE statuser når ingen statusFilter er gitt, med status og pastRequestCount", async () => {
+    await ensureTestCountry();
+    const journalist = await createPendingJournalist(TEST_COUNTRY_CODE);
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    await db.insert(requests).values([
+      { journalistId: journalist.id, countryCode: TEST_COUNTRY_CODE, contentLanguage: "nb-NO", status: "published" },
+      { journalistId: journalist.id, countryCode: TEST_COUNTRY_CODE, contentLanguage: "nb-NO", status: "closed" },
+      // Utkast og en før-publisering-slettet rad skal IKKE telles med.
+      { journalistId: journalist.id, countryCode: TEST_COUNTRY_CODE, contentLanguage: "nb-NO", status: "draft" },
+      { journalistId: journalist.id, countryCode: TEST_COUNTRY_CODE, contentLanguage: "nb-NO", status: "deleted" },
+    ]);
+
+    const result = await listJournalists(
+      makeSession({ userId: moderator.id, role: "moderator", countryCode: TEST_COUNTRY_CODE })
+    );
+
+    const match = result.find((j) => j.userId === journalist.id);
+    expect(match).toMatchObject({
+      status: "active",
+      verificationStatus: "pending_review",
+      pastRequestCount: 2,
+    });
+  });
+
+  it("emailQuery: delvis, versalufølsomt treff — inkluderer treffet og EKSKLUDERER en annen journalist", async () => {
+    await ensureTestCountry();
+    const target = await createPendingJournalist(TEST_COUNTRY_CODE);
+    const other = await createPendingJournalist(TEST_COUNTRY_CODE);
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+
+    // Utsnitt av den tilfeldige UUID-delen, ikke det faste
+    // "pending-journalist-"-prefikset — se NATTLOGG.md (samme lærdom som
+    // moderation/users.integration.test.ts sin searchUsersByEmail()-test:
+    // et generisk prefiks ville matchet rader fra mange tidligere netters
+    // kjøringer i denne delte, aldri nullstilte databasen).
+    const uniquePart = target.email.slice(19, 27).toUpperCase();
+    const result = await listJournalists(
+      makeSession({ userId: moderator.id, role: "moderator", countryCode: TEST_COUNTRY_CODE }),
+      undefined,
+      uniquePart
+    );
+
+    expect(result.some((j) => j.userId === target.id)).toBe(true);
+    expect(result.some((j) => j.userId === other.id)).toBe(false);
+  });
+
+  it("statusFilter og emailQuery kombineres (OG, ikke ELLER)", async () => {
+    await ensureTestCountry();
+    const pending = await createPendingJournalist(TEST_COUNTRY_CODE);
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    const uniquePart = pending.email.slice(19, 27);
+
+    const withWrongStatusFilter = await listJournalists(
+      makeSession({ userId: moderator.id, role: "moderator", countryCode: TEST_COUNTRY_CODE }),
+      "approved",
+      uniquePart
+    );
+    // Fortsatt "pending_review" — statusFilter "approved" skal IKKE gi
+    // treff, selv om e-postsøket alene ville matchet.
+    expect(withWrongStatusFilter.some((j) => j.userId === pending.id)).toBe(false);
+
+    const withMatchingStatusFilter = await listJournalists(
+      makeSession({ userId: moderator.id, role: "moderator", countryCode: TEST_COUNTRY_CODE }),
+      "pending_review",
+      uniquePart
+    );
+    expect(withMatchingStatusFilter.some((j) => j.userId === pending.id)).toBe(true);
+  });
+
+  it("filtrerer på moderatorens tildelte land, ikke andre lands journalister", async () => {
+    await ensureTestCountry();
+    await ensureSecondTestCountry();
+    const ownJournalist = await createPendingJournalist(TEST_COUNTRY_CODE);
+    const otherJournalist = await createPendingJournalist(TEST_COUNTRY_CODE_2);
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+
+    const result = await listJournalists(
+      makeSession({ userId: moderator.id, role: "moderator", countryCode: TEST_COUNTRY_CODE })
+    );
+
+    expect(result.some((j) => j.userId === ownJournalist.id)).toBe(true);
+    expect(result.some((j) => j.userId === otherJournalist.id)).toBe(false);
+  });
+
+  it("gir en administrator ALLE lands journalister (19.4)", async () => {
+    await ensureTestCountry();
+    await ensureSecondTestCountry();
+    const otherJournalist = await createPendingJournalist(TEST_COUNTRY_CODE_2);
+
+    const result = await listJournalists(makeSession({ role: "admin" }));
+
+    expect(result.some((j) => j.userId === otherJournalist.id)).toBe(true);
+  });
+
+  it("returnerer en tom liste for en moderator uten tildelte land", async () => {
+    await ensureTestCountry();
+    const [unassignedModerator] = await db
+      .insert(users)
+      .values({
+        email: uniqueTestEmail("unassigned-moderator"),
+        role: "moderator",
+        status: "active",
+        countryCode: TEST_COUNTRY_CODE,
+        locale: "nb-NO",
+        emailVerifiedAt: new Date(),
+      })
+      .returning({ id: users.id });
+
+    const result = await listJournalists(
+      makeSession({ userId: unassignedModerator!.id, role: "moderator", countryCode: TEST_COUNTRY_CODE })
+    );
+
+    expect(result).toEqual([]);
   });
 });

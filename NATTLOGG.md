@@ -10316,3 +10316,92 @@ To av de tre opprinnelig helt manglende admin-seksjonene er nå bygget
 
 Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
 bevisst latt åpne for menneskelig gjennomgang.
+
+## Økt (fortsettelse): utvidet admin-siden "Journalister" (SPEC-V1.md 16.2) — søk, suspender/opphev, tidligere forespørsler
+
+Valgte "Journalister"-utvidelsen fremfor "Land" denne runden — "Land" er
+eksplisitt flagget som mest sensitivt og bør bygges med egen forsiktighet
+i en fersk økt, mens denne utvidelsen kunne gjenbruke MYE eksisterende,
+allerede testet kode.
+
+**Oppdaget underveis**: `listJournalists(session, statusFilter?)` fantes
+allerede og var mer komplett enn antatt — den støtter allerede å liste
+journalister i ALLE statuser (ikke bare `pending_review`), bare uten
+noe UI som brukte den slik. `suspendUser()`/`unsuspendUser()` i
+`moderation/users.ts` er allerede rolleuavhengige (virker på enhver
+`users`-rad, ikke bare mottakere) — samme API-ruter bygget for
+"Mottakere" forrige runde (`/api/admin/users/:id/suspend`,
+`.../unsuspend`) kunne gjenbrukes direkte, uten noen ny rute.
+
+**Utvidet** (ikke erstattet) `listJournalists()`:
+- Ny, valgfri tredje parameter `emailQuery` (delvis, versalufølsomt søk
+  via `ilike`, samme mønster som `searchUsersByEmail()`) — bakoverkompatibel
+  posisjonsparameter, de to eksisterende kallstedene (`admin/journalists/
+  page.tsx`, `GET /admin/journalists`-ruten) er urørt.
+- `JournalistListItem` har nå `status` (kontostatus — nødvendig for å vite
+  om suspender/opphev skal være slått på, fantes ikke i det hele tatt før)
+  og `pastRequestCount` (SPEC-V1.md 16.2: "se tidligere forespørsler") —
+  telles gruppert i ÉN spørring for hele listen (ikke N+1), ekskluderer
+  `draft` (aldri sendt inn) og `deleted` (slettet FØR publisering) —
+  begge er "aldri egentlig en behandlet forespørsel"-tilfeller, ikke en
+  reell "tidligere forespørsel" en moderator trenger å se.
+- `GET /admin/journalists` fikk et nytt `?email=`-søkeparameter,
+  videresendt til `listJournalists()`.
+
+**UI**: la til en NY seksjon nederst på den EKSISTERENDE
+`admin/journalists/page.tsx` (den opprinnelige køen over
+ubehandlede søknader står uendret øverst) — et søk på tvers av ALLE
+journalister uansett status, med `JournalistSearchForm.tsx` (samme
+`?email=`-URL-mønster som `admin/recipients`) og `JournalistSearchRow.tsx`
+(viser søknadsgrunnlag, kontostatus, godkjenningsstatus og antall
+tidligere forespørsler, med suspender — ETT bekreftelsestrinn med
+obligatorisk begrunnelse, samme mønster som `RecipientRow.tsx` — og
+opphev suspensjon — ETT klikk, ingen begrunnelse, samme asymmetri som
+allerede eksisterer i `unsuspendUser()` selv, ikke noe nytt introdusert
+her). Nye i18n-nøkler i begge locales (`admin.journalists.search_*`,
+`.status.*`, `.verification_status.*`, `.suspend*`, `.unsuspend*`,
+`.past_requests_label` med ekte ICU-plural).
+
+**Testdekning**: 6 nye integrasjonstester i
+`journalists.integration.test.ts` (ingen `listJournalists()`-tester
+fantes FØR i det hele tatt, til tross for at funksjonen selv var
+implementert — en reell, allerede eksisterende dekningsmangel): alle
+statuser + status/pastRequestCount uten filter, e-postsøk inkluderer
+treffet og EKSKLUDERER en annen journalist eksplisitt (første forsøk på
+denne testen beviste bare at søkeordet fantes i en UFILTRERT liste også
+— styrket til en ekte negativ påstand etter at den empiriske
+verifiseringen avslørte svakheten), statusFilter+emailQuery kombinert
+med OG-logikk, landfiltrering for moderator, alle-land for administrator,
+tom liste for moderator uten tildelt land. 7 nye komponenttester i
+`JournalistSearchRow.test.tsx` (visning, "opphev suspensjon" deaktivert
+for en ikke-suspendert konto, krever begrunnelse for suspensjon,
+feilmelding ved mislykket suspensjon/oppheving, suksessmelding for begge)
+og 1 i `JournalistSearchForm.test.tsx`.
+
+**Empirisk verifisering**: `git stash push` på `journalists.ts` +
+ruten → bekreftet at NØYAKTIG de 2 nye testene som faktisk tester ny
+atferd feiler (pastRequestCount/status, og — etter styrkingen —
+e-postsøkets EKSKLUDERING av en annen journalist) → `git stash pop` →
+alle 13 tester består. For `JournalistSearchRow.tsx`: fjernet
+midlertidig feilhåndteringen OG unsuspend-knappens deaktiveringslogikk
+→ bekreftet nøyaktig 2 av 7 tester feiler → gjenopprettet, alle 7 består.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**417
+tester**, +8), `i18n:check` (**434 nøkler**, +13), `design:check-tokens`
+(OK, **48 komponent-CSS-filer**, +2, ingen rå verdier), `next build`
+(grønn), `test:integration` mot ekte lokal Postgres (**292 tester**, +6).
+
+### Neste økt
+
+Alle tre opprinnelig helt manglende admin-seksjonene fra 16.2 er nå
+enten bygget eller utvidet, unntatt:
+- **Land** (kun administrator): opprette/redigere landkonfigurasjon,
+  status, moderator-tildeling, publisere juridiske dokumentversjoner.
+  Fortsatt den siste, mest sensitive gjenstående — bygg denne med egen
+  forsiktighet i en fersk økt (endrer juridisk-dokument-status og
+  landkonfigurasjon som faktiske brukere stoler på).
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang.
