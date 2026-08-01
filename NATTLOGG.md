@@ -11401,3 +11401,89 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 18: kritisk gjennomlesing av registrerings-/profilmodulene — ingen nye funn, flere mistenkelige tilfeller avkreftet
+
+Siden både SPEC-V1.md seksjon 21 og DESIGN.md seksjon 9 nå er grundig
+gjennomgått (forrige to økter), gikk tilbake til den etablerte
+"kritisk lesing"-metoden fra tidligere i natt (samme sjekkliste:
+sjekk-så-skriv-mønstre, asymmetriske vakter, tause klientfeil,
+klient-/server-grensedrift) mot moduler som ALDRI eksplisitt er nevnt i
+en tidligere økts kritisk-lesing-runde: `src/lib/registration/
+recipient.ts` og `journalist.ts`, `src/lib/me/change-country.ts`,
+`src/lib/journalists/journalist-profile.ts`, og `src/lib/me/profile.ts`
+(pluss ruten sin).
+
+**Ingen nye bugs funnet** — men flere reelle, i utgangspunktet
+mistenkelige observasjoner ble undersøkt grundig og AVKREFTET:
+
+1. `registerRecipient()`/`applyAsJournalist()` skriver `users` →
+   `emailSubscriptions`/`journalistProfiles` → `consentRecords` →
+   `requestMagicLink()` som FIRE separate, ikke-transaksjonelle kall.
+   Så umiddelbart mistenkelig ut: hva om `requestMagicLink()` feiler
+   (Brevo nede) ETTER at brukerraden alt er committet? Undersøkt grundig:
+   `requestMagicLink()` er selv HELT frikoblet fra registreringshistorikk
+   — den sjekker bare at kontoen finnes og ikke er suspendert/slettet,
+   uavhengig av `emailVerifiedAt`. En bruker "sittende fast" etter en
+   feilet e-postsending kan derfor ALLTID be om en ny lenke via den
+   ordinære innloggingssiden (`POST /auth/request-link`), som fyrer
+   AKKURAT samme "confirm_email"/"journalist_application_received"-mal
+   på nytt. Ingen permanent låsing — bare et par utestede kroker der noen
+   morgendag med god grunn kunne teste at nettopp DETTE gjenopprettings-
+   sporet fungerer.
+2. `updateMyProfile()` (`me/profile.ts`) sjekker ALDRI
+   `displayName.length` mot noen øvre grense — bare at feltet ikke er
+   tomt. Så ut som en reell regresjon av SAMME bug som ble rettet
+   tidligere i natt (task #57/#59, 200 vs. 80). Undersøkt: håndhevelsen
+   ligger korrekt ETT NIVÅ HØYERE, i selve API-ruten (`PATCH /me` sin
+   `patchSchema = z.object({ displayName: z.string().max(80)... })`) —
+   med en kommentar som EKSPLISITT refererer til den tidligere fiksen.
+   Kryssjekket `POST /subscribe` sin rute også (`z.string().max(80)`,
+   samme grense). Ingen drift.
+3. `ResponseForm.tsx` sin egen `LIMITS`-konstant (2000/4000/500/80)
+   dupliserer tallene fra `RESPONSE_FIELD_LIMITS`
+   (`src/lib/responses/validate.ts`) i stedet for å importere dem —
+   samme klasse latent risiko som forårsaket den tidligere
+   displayName-bugen (to separate steder som MÅ holdes synkronisert
+   manuelt). Verdiene stemmer i dag (ingen aktiv bug), men er en
+   fremtidig driftrisiko. `RequestEditForm.tsx` sin tilsvarende `LIMITS`
+   stemmer også nøyaktig med `FIELD_LIMITS` fra `requests/validate.ts`.
+   Bekreftet at `submitResponse()` faktisk kaller
+   `validateResponseSubmission()` (ingen bypass-rute funnet).
+
+**Vurdering**: ingen av disse tre er en AKTIV bug akkurat nå — alle tre
+er enten allerede korrekt håndtert (1, 2) eller en ren fremtidig
+driftrisiko uten noe konkret å rette i dag (3, siden en refaktorering
+til import fra det delte modulet er en smakssak/forsiktig opprydding,
+ikke en feilretting, og ville økt endringsflaten uten en reell feil å
+vise til). Ingen kodeendring denne runden.
+
+`change-country.ts` og `journalist-profile.ts` er også lest grundig —
+begge korrekte, ingen sjekk-så-skriv-hull funnet (begge er
+enkeltbruker-nøkkelert, ingen tverrbruker-kappløp mulig).
+
+### Verifisert før commit (denne runden)
+
+Ingen kodeendring — `git status` viser ingen diff. Ren gjennomlesing,
+nevnt eksplisitt i NATTLOGG likevel (samme begrunnelse som økt 7s
+tilsvarende "lest kritisk, ingenting å rette"-oppføring).
+
+### Neste økt
+
+Følgende moduler er IKKE eksplisitt kritisk lest ennå med denne nattens
+sjekkliste: `src/lib/subscriptions/` (unsubscribe.ts, email-events.ts —
+delvis dekket via webhook-ruta tidligere, men ikke selve
+bibliotekfunksjonene i isolasjon), `src/lib/reports/reports.ts`,
+`src/lib/security/rate-limit.ts`, `src/lib/countries/countries.ts`. Kan
+være verdt en rask sveip i en fremtidig økt, men ingen konkret mistanke
+driver det.
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.
