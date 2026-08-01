@@ -124,6 +124,13 @@ export const TOKEN_PAIRS: readonly TokenPair[] = [
   { name: "primærknapp-tekst, hover", foreground: "color-accent-text", background: "color-accent-hover", category: "text" },
   { name: "sekundærknapp-tekst på flate", foreground: "color-text", background: "color-surface", category: "text" },
   { name: "faretruende-knapp-tekst på fare-bakgrunn", foreground: "color-on-danger", background: "color-danger", category: "text" },
+  // Oppdaget under en systematisk kryssjekk (økt 14, se NATTLOGG.md):
+  // --color-surface-hover brukes i Button.module.css (sekundær-/
+  // spøkelsesknapp, [data-hovered]) og Select.module.css
+  // ([data-focused]/[data-hovered]-alternativ) — begge steder beholder
+  // `color: var(--color-text)` fra grunnregelen, bare bakgrunnen endres på
+  // hover. Samme (forgrunn, bakgrunn)-par begge steder, aldri testet før.
+  { name: "tekst på flate ved hover/fokus (knapp-hover, Select-alternativ)", foreground: "color-text", background: "color-surface-hover", category: "text" },
 
   // Skjemafelt (TextField/Select/Checkbox).
   { name: "feiltekst på flate", foreground: "color-danger-text", background: "color-surface", category: "text" },

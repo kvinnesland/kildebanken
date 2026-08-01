@@ -11076,3 +11076,77 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 14: DESIGN.md 9-gjennomgang — fant et hull i den kuraterte kontrastlisten selv
+
+Fulgte opp forrige økts eget "husk å sjekke"-notat (CI-varselet er
+bekreftet synlig — `i18n:check` kjører som et normalt CI-steg, og
+`console.warn` går til stderr, som GitHub Actions viser i loggen uten å
+feile jobben, siden exit-koden fortsatt er 0. Ingen kodeendring
+nødvendig der). Gikk deretter videre til DESIGN.md sitt eget
+"9. Akseptansekriterier"-avsnitt, som — i likhet med SPEC-V1.md seksjon
+21 forrige økt — aldri hadde fått en egen, dedikert gjennomgang.
+
+Kriterium 8 ("ingen forespørsel til en ekstern vert ved sidelast"):
+bekreftet — ingen eksterne CDN-er, fonter, script-tagger eller
+analytics-biblioteker noe sted i `src/`.
+
+Kriterium 3 ("kontrasttesten dekker ALLE brukte tokenpar i lyst og
+mørkt tema") viste seg IKKE å holde helt: `contrast-pairs.ts` sin egen
+kommentar sier eksplisitt at `TOKEN_PAIRS`-listen er "manuelt kuratert,
+ikke automatisk ekstrahert" — en systematisk kryssjekk (grep etter
+`color`/`background`-egenskaper mot alle 53 komponent-CSS-filene, mot
+hvert semantiske tokennavn faktisk brukt i `TOKEN_PAIRS`) avdekket at
+`--color-surface-hover` (brukt i BÅDE `Button.module.css` sin
+sekundær-/spøkelsesknapp-hover OG `Select.module.css` sitt
+fokusert/hovret alternativ — begge steder beholder `color: var(
+--color-text)` fra grunnregelen) ALDRI hadde vært med i listen. Et
+reelt, ikke bare teoretisk hull: nettopp den typen glemt oppdatering
+filens egen kommentar advarer mot ("Oppdater denne listen når et nytt
+fargepar tas i bruk").
+
+**Rettet**: lagt til paret (`color-text` / `color-surface-hover`,
+kategori "text", 4.5:1-krav) i `TOKEN_PAIRS`. Kjørte testen —
+BESTÅR i begge temaer (ratio god margin over kravet), altså ikke en
+faktisk WCAG-brist, bare et udekket testtilfelle inntil nå.
+
+**Empirisk verifisering**: satte `--color-surface-hover` i lyst tema
+midlertidig lik `--color-text` sin primitiv (`--gray-900`) — garantert
+1:1-forhold → bekreftet at NØYAKTIG denne nye testen feiler (`expected
+1 to be greater than or equal to 4.5`), og ingen av de 38 andre → gjenopprettet
+fra sikkerhetskopi, alle 39 tester består.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run`
+(**444 tester**, +2 — det nye paret i begge temaer), `i18n:check`
+(**507 nøkler**, uendret), `design:check-tokens` (OK, **53
+komponent-CSS-filer**, uendret), `next build` (grønn),
+`test:integration` mot ekte lokal Postgres (**309 tester**, uendret —
+ingen databasepåvirkende endring).
+
+### Neste økt
+
+DESIGN.md 9 er nå gjennomgått i sin helhet. Kriterium 1 (fullstendig
+temabytte uten å røre komponentkode) og 6 (samme testtema slår gjennom
+i e-postmaler) er strukturelt sikret av selve tre-lags-arkitekturen
+(1. Tre lag) og av at e-postmalene bruker de samme fargefunksjonene
+(`src/lib/email/colors.ts`, allerede testet), men INGEN av dem er
+faktisk blitt PRØVD (et reelt testtema er aldri konstruert og kjørt
+gjennom hele kjeden). Kriterium 4/5 (tastatur/skjermleser/360px uten
+horisontal scroll) krever reell nettleserverifisering — samme klasse
+begrensning som all annen UI-verifisering i dette miljøet (se tidligere
+økters `next build && next start`-oppdagelse for `next dev`s CSP/eval-
+problem). Ingen av disse er hastesaker eller kjente brudd, bare
+ubekreftede påstander — verdt å huske på, ikke noe å bygge nå uten et
+klarere signal.
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.
