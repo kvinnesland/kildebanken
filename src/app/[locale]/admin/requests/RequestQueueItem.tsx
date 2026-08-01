@@ -33,20 +33,25 @@ export function RequestQueueItem({
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("view");
   const [text, setText] = useState("");
+  const [errorKey, setErrorKey] = useState<string | null>(null);
 
   async function handlePublish() {
     setMode("busy");
+    setErrorKey(null);
     const response = await fetch(`/api/admin/requests/${request.id}/publish`, { method: "POST" });
     if (response.ok) {
       setMode("published");
       router.refresh();
     } else {
+      const data: { error?: string } = await response.json().catch(() => ({}));
+      setErrorKey(data.error ?? "errors.generic");
       setMode("view");
     }
   }
 
   async function handleReject() {
     setMode("busy");
+    setErrorKey(null);
     const response = await fetch(`/api/admin/requests/${request.id}/reject`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -56,12 +61,15 @@ export function RequestQueueItem({
       setMode("rejected");
       router.refresh();
     } else {
+      const data: { error?: string } = await response.json().catch(() => ({}));
+      setErrorKey(data.error ?? "errors.generic");
       setMode("rejecting");
     }
   }
 
   async function handleRequestChanges() {
     setMode("busy");
+    setErrorKey(null);
     const response = await fetch(`/api/admin/requests/${request.id}/request-changes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -71,6 +79,8 @@ export function RequestQueueItem({
       setMode("changes_requested");
       router.refresh();
     } else {
+      const data: { error?: string } = await response.json().catch(() => ({}));
+      setErrorKey(data.error ?? "errors.generic");
       setMode("requesting_changes");
     }
   }
@@ -95,6 +105,8 @@ export function RequestQueueItem({
         <p className={styles.description}>{request.description}</p>
         <p className={styles.meta}>{request.targetPersonDescription}</p>
       </div>
+
+      {errorKey ? <p className={styles.formError}>{t(errorKey)}</p> : null}
 
       {mode === "rejecting" || mode === "requesting_changes" ? (
         <div className={styles.textForm}>

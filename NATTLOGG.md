@@ -8929,3 +8929,101 @@ spec-spørsmålene (`runExpireRequests()` manglende varsling; 18.1 vs
 16.2/FR-051 motsigelse om hvem som kan lese et svars innhold), og
 "24.3"-referanseopprydding i spec-en (lav prioritet, ren dokumentasjon).
 forrige runde er fortsatt utestående, ikke noe hastverk med dem.
+
+## Økt (fortsettelse): kritisk gjennomlesing av /admin — fant en reell taus-feil-bug
+
+Startet kandidat (a) fra forrige runde: kritisk gjennomlesing av
+admin-dashbordet (`/admin`, bygget i task #21, men aldri gjenstand for
+samme kritisk-lesing-runde som `/me`-laget). Leste `layout.tsx`,
+`page.tsx` (dashbord + `CountrySelector.tsx`), `journalists/page.tsx` +
+`JournalistQueueItem.tsx`, `requests/page.tsx` + `RequestQueueItem.tsx` i
+sin helhet.
+
+**Funn 1 (lav alvorlighet, ingen fiks)**: dashbordets `?country=`-parameter
+for administrator (`CountrySelector.tsx`) valideres ikke mot faktiske
+landkoder før den brukes i `getDashboardStatsForCountry()`. Sjekket om
+dette er en privilegie-eskalering for MODERATOR — nei: `getDashboardCountries()`
+kaller `getAssignedCountryCodes(session)` først, og for en moderator
+(`assigned !== "all"`) IGNORERES `selectedCountryCode` fullstendig og
+egne tildelte land brukes uansett. For administrator (`assigned === "all"`)
+er en ugyldig landkode ufarlig: Drizzle sine parametriserte spørringer
+hindrer injeksjon, og en ikke-eksisterende kode gir bare et kort med
+alle nullverdier og selve koden som tittel (siden `nameKeyByCountry`
+blir tom). Ingen reell sikkerhets- eller krasjrisiko — vurdert og bevisst
+IKKE fikset, siden det ikke er en reell feil, bare en ufarlig kant.
+
+**Funn 2 (reell bug, fikset)**: `JournalistQueueItem.tsx` og
+`RequestQueueItem.tsx` (klientkomponentene bak godkjenn/avvis/publiser/
+be-om-endringer-knappene) hadde INGEN feilhåndtering i det hele tatt —
+ved en mislykket `fetch()` (ikke-2xx-respons) satte de bare tilstanden
+tilbake til forrige modus, uten å vise noe som helst til administratoren.
+Dette er spesielt alvorlig fordi de spesifikke feilkodene
+`errors.journalist_not_pending_review` og `errors.request_not_editable`
+finnes NETTOPP for scenarioet der to moderatorer behandler samme
+søknad/forespørsel samtidig — selve TOCTOU-sikkerhetsfiksen fra
+task #48/#49 tidligere i natt returnerer disse eksplisitt, med egne,
+allerede-eksisterende, godt formulerte nb-NO-tekster ("Denne søknaden er
+allerede behandlet.", "Denne forespørselen kan ikke redigeres nå.") — men
+klienten viste dem ALDRI. En administrator som trykket "Godkjenn" på en
+søknad en kollega nettopp hadde avvist, ville bare se knappen gå tilbake
+til normal tilstand, uten forklaring, og trolig prøve igjen eller anta en
+feil i grensesnittet. Alle 6 andre interaktive komponenter i kodebasen
+(`ProfileForm`, `ConfirmDeletionClient`, `ReportForm`, `ChangeCountryForm`,
+`SubscribeForm`, `JournalistApplyForm`, `LoginForm`, `ResponseForm`) viser
+konsekvent en `errorKey`-basert feilmelding ved mislykket innsending —
+disse to admin-komponentene var det eneste unntaket.
+
+**Fiksen**: la til `errorKey`-tilstand i begge komponenter. Alle fire
+handlere (`handleApprove`, `handleReject` i JournalistQueueItem;
+`handlePublish`, `handleReject`, `handleRequestChanges` i
+RequestQueueItem) nullstiller `errorKey` ved forsøk, og setter den til
+`data.error ?? "errors.generic"` (samme `.json().catch(() => ({}))`-mønster
+som resten av kodebasen) ved en ikke-OK-respons. La til en
+`<p className={styles.formError}>{t(errorKey)}</p>`-visning rett under
+hovedinnholdet i hver `<li>`, og la til `.formError`-CSS-klassen i begge
+CSS-modulene (kopiert ordrett fra `ReportForm.module.css`s etablerte
+styling — samme semantiske tokens, ingen nye rå verdier).
+
+**Testdekning**: ingen testfil eksisterte for noen av disse to
+komponentene, eller for noe i `/admin`-laget i det hele tatt, fra før.
+La til `JournalistQueueItem.test.tsx` (3 tester: feilmelding ved mislykket
+godkjenning, feilmelding ved mislykket avvisning, bekreftelse ved
+vellykket godkjenning) og `RequestQueueItem.test.tsx` (4 tester: feilmelding
+ved mislykket publisering/avvisning/endringsforespørsel, bekreftelse ved
+vellykket publisering).
+
+**Empirisk verifisering**: `git stash push` på begge `.tsx`-filene
+(CSS-filene la jeg bevisst utenfor stashen, siden fraværet av
+`.formError`-klassen alene ikke ville gitt en synlig testfeil — klassen
+brukes jo betinget av `errorKey`, som ikke fantes i den gamle koden i det
+hele tatt) → kjørte begge testfilene → bekreftet at nøyaktig 5 av 7 nye
+tester feilet (alle feilmelding-testene, med tydelig timeout i
+`findByText` siden elementet aldri ble rendret; de 2
+suksess-bekreftelse-testene besto uendret, siden de ikke er avhengige av
+feilhåndteringen) → `git stash pop` for å gjenopprette fiksen → bekreftet
+alle 7 tester består.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**383
+tester**, +7), `i18n:check` (389 nøkler, uendret — alle brukte feilnøkler
+fantes allerede), `design:check-tokens` (OK, 40 komponent-CSS-filer),
+`next build` (grønn), `test:integration` mot ekte lokal Postgres (262
+tester, uendret — ingen server-side kontrakt endret, kun klientens
+håndtering av allerede-eksisterende feilresponser).
+
+### Neste økt
+
+Fullførte gjennomlesingen av `/admin/journalists` og `/admin/requests`
+sine klientkomponenter samt selve dashbordet (`page.tsx`,
+`CountrySelector.tsx`, `layout.tsx`) — ingen flere funn der utover de to
+over. IKKE ennå lest kritisk: `src/lib/admin/dashboard.ts` og
+`src/lib/admin/countries.ts` sin fulle logikk utover det som ble sett i
+forbifarten her (så langt ingen mistanke om feil, men heller ikke en full
+linje-for-linje-gjennomgang). Neste kandidat: enten fullføre den
+gjenværende `src/lib/admin/`-modulen, eller gå videre til kandidat (b) fra
+forrige runde — selve digest-tick-logikken
+(`src/lib/jobs/digest.ts`/`tick.ts`), som ingen har lest kritisk siden de
+opprinnelige integrasjonstestene i task #17. Ellers uendret: de to åpne
+spec-spørsmålene og "24.3"-referanseopprydding er fortsatt utestående for
+morgengjennomgang, ikke noe hastverk med dem.

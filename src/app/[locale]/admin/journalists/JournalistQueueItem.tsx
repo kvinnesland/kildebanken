@@ -32,20 +32,25 @@ export function JournalistQueueItem({
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("view");
   const [reason, setReason] = useState("");
+  const [errorKey, setErrorKey] = useState<string | null>(null);
 
   async function handleApprove() {
     setMode("busy");
+    setErrorKey(null);
     const response = await fetch(`/api/admin/journalists/${journalist.userId}/approve`, { method: "POST" });
     if (response.ok) {
       setMode("approved");
       router.refresh();
     } else {
+      const data: { error?: string } = await response.json().catch(() => ({}));
+      setErrorKey(data.error ?? "errors.generic");
       setMode("view");
     }
   }
 
   async function handleReject() {
     setMode("busy");
+    setErrorKey(null);
     const response = await fetch(`/api/admin/journalists/${journalist.userId}/reject`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -55,6 +60,8 @@ export function JournalistQueueItem({
       setMode("rejected");
       router.refresh();
     } else {
+      const data: { error?: string } = await response.json().catch(() => ({}));
+      setErrorKey(data.error ?? "errors.generic");
       setMode("rejecting");
     }
   }
@@ -76,6 +83,8 @@ export function JournalistQueueItem({
         <span className={styles.meta}>{journalist.organizationUrl}</span>
         <span className={styles.meta}>{journalist.appliedLabel}</span>
       </div>
+
+      {errorKey ? <p className={styles.formError}>{t(errorKey)}</p> : null}
 
       {mode === "rejecting" ? (
         <div className={styles.rejectForm}>
