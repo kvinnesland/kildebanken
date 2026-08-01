@@ -9417,3 +9417,63 @@ sletter persondata) er dekket? Vurder dette som lav prioritet med mindre
 et nytt konkret mistankepunkt dukker opp. Ellers uendret: de to åpne
 spec-spørsmålene og "24.3"-referanseopprydding er fortsatt utestående for
 morgengjennomgang, ikke noe hastverk med dem.
+
+## Økt (fortsettelse): kritisk gjennomlesing av journalist-siden — nok en taus-feil-bug
+
+Skiftet spor til et nytt, ennå ukritisk-lest område (samme mangel som
+`/me`/`/admin` hadde før i natt): journalistens egne sider under
+`/journalist`. Leste `layout.tsx`, `requests/page.tsx` +
+`NewRequestButton.tsx`, og `requests/[id]/CloseRequestAction.tsx` i sin
+helhet, med samme sjekkliste som avdekket de tause admin-feilene
+tidligere (task #61).
+
+**Funn**: `NewRequestButton.tsx` («Ny forespørsel»-knappen på
+journalistens forespørselsliste) viste INGEN feilmelding ved en mislykket
+`POST /requests` — bare en kommentar som forsvarte dette med "ingen
+skjemadata å miste". Begrunnelsen var svak: `createDraft()` håndhever
+FR-020s grense på 20 utkast per journalist per døgn (SPEC-V1.md 18), en
+REELT nåbar feilvei (ikke bare teoretisk), og brukeren fortjener å vite
+HVORFOR knappen tilsynelatende ikke gjorde noe, uavhengig av om det
+finnes skjemadata å bevare. `CloseRequestAction.tsx` (samme mappe) viser
+allerede korrekt en feilmelding ved mislykket lukking — inkonsekvensen
+var derfor lokal til denne ene komponenten, ikke et gjennomgående mønster
+i journalist-laget.
+
+**Fiksen**: la til `errorKey`-tilstand, nullstilt ved hvert forsøk og satt
+til `data.error ?? "errors.generic"` ved en ikke-OK-respons eller kastet
+feil. La til en liten, dedikert `NewRequestButton.module.css` (ingen
+CSS-modul eksisterte for denne komponenten fra før) med et
+`.error`-element under knappen, samme semantiske tokens som resten av
+kodebasen (`--color-danger`, `--font-ui`, `--text-sm`).
+
+**Testdekning**: ingen testfil eksisterte for denne komponenten i det
+hele tatt. La til tre tester: suksess (navigerer til det nye utkastet),
+feilmelding ved `errors.rate_limited` (det konkrete, nåbare FR-020-
+tilfellet), og feilmelding ved en nettverksfeil (kastet unntak).
+
+**Empirisk verifisering**: `git stash push -- NewRequestButton.tsx` for å
+midlertidig gjenopprette den gamle, tause versjonen → kjørte testfilen →
+bekreftet at nøyaktig 2 av 3 tester feiler (begge feilmelding-testene,
+tydelig `Unable to find an element with the text...`; suksess-testen
+består uendret) → `git stash pop` for å gjenopprette fiksen → bekreftet
+alle 3 tester består.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**386
+tester**, +3), `i18n:check` (389 nøkler, uendret — begge brukte
+feilnøkler fantes allerede), `design:check-tokens` (OK, **41**
+komponent-CSS-filer, +1 ny modul), `next build` (grønn), `test:integration`
+mot ekte lokal Postgres (267 tester, uendret — ingen server-side kontrakt
+endret, kun klientens håndtering av en allerede-eksisterende
+feilrespons).
+
+### Neste økt
+
+Fortsett den kritiske gjennomlesingen av `/journalist`-laget: gjenstår
+`RequestEditForm.tsx`, `requests/[id]/page.tsx`,
+`requests/[id]/responses/page.tsx`, og `responses/[id]/
+ResponseDetailPanel.tsx` — ingen av disse er lest kritisk med denne
+nattens sjekkliste ennå. Ellers uendret: de to åpne spec-spørsmålene og
+"24.3"-referanseopprydding er fortsatt utestående for morgengjennomgang,
+ikke noe hastverk med dem.
