@@ -8662,3 +8662,52 @@ gjennomlesing som lib-laget i natt), eller `src/lib/journalist-inbox/` sine
 underliggende ruter. Ellers uendret: to åpne spørsmål
 (`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek, OG-bilde,
 Sentry/Brevo.
+
+## Fortsettelse av økt 7 — runde gjennom API-rute-laget (én liten inkonsistens rettet, ellers rent)
+
+Gikk gjennom et representativt utvalg av `src/app/api/` (registrering,
+`me/`, `requests/`, `responses/`, `journalist-inbox`-rutene,
+admin/moderering, kontaktforespørsler) med samme kritiske teknikk som
+resten av natten. Sjekket spesifikt: CSRF (allerede sentralt håndhevet i
+`middleware.ts` for ALLE `/api`-ruter via Origin-verifisering, med egen,
+grundig testdekning — ikke duplisert per rute, og dermed ikke sårbart for
+"glemte det i én rute"), om `session.userId` alltid sendes til
+lib-funksjonen (ikke en klientstyrt ID), om eierskaps-/rollesjekker skjer
+enten i ruten ELLER inne i lib-funksjonen (begge mønstre brukes bevisst —
+noen ruter sjekker rolle selv OG stoler på lib-funksjonens interne sjekk
+som et redundant, ufarlig dobbeltlag; andre stoler HELT på at
+lib-funksjonen henter økten selv via `next/headers`, som med
+`publishRequest()`/`rejectRequest()`/`requestChanges()` — begge er trygge,
+bare stilistisk ulike), og at nye feilkoder fra denne nattens TOCTOU-fikser
+(f.eks. `errors.request_not_editable`) faller ned i en fornuftig
+standard-statuskode (422) i rutenes egne `statusFor()`-hjelpere. Ingen
+sikkerhetsproblemer funnet.
+
+**Én reell, om enn liten, inkonsistens funnet og rettet**: `PATCH /me`
+sin Zod-skjema tillot `displayName` opptil 200 tegn, mens BÅDE
+`POST /subscribe` OG `POST /requests/:id/responses` (en analog,
+per-svar-variant av samme konsept) uavhengig av hverandre begrenser til 80
+tegn — og `responses/validate.ts` sin egen test bekrefter eksplisitt at
+81 tegn skal AVVISES for det beslektede feltet. Ingen spec-bestemt grense
+finnes (verken 80 eller 200 er "riktig" i seg selv), men å redigere et felt
+til en LENGDE opprettelsesveien for SAMME kolonne (`users.display_name`)
+ville avvist, er en reell uoverensstemmelse — rettet til 80 for
+konsistens. Ingen eksisterende test forutsatte 200-grensen.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**368
+tester**, uendret — bekrefter at ingen test forutsatte 200-tegns-grensen),
+`i18n:check` (**387 nøkler**, uendret), `design:check-tokens` (**40**
+komponent-CSS-filer, uendret), `rm -rf .next && next build` (grønn),
+`test:integration` mot ekte lokal Postgres (**262 tester**, uendret).
+
+### Neste økt
+
+API-rute-laget er nå gjennomgått bredt uten funn av betydning (kun én liten
+grensekonsistens rettet). Kandidater ikke ennå dekket med denne teknikken:
+Server Components/sider under `src/app/[locale]/` (skjemaer, sesjonsbruk i
+selve siderenderingen, ikke bare API-lagene bak dem), eller
+`src/components/`-biblioteket for øvrig. Ellers uendret: to åpne spørsmål
+(`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek, OG-bilde,
+Sentry/Brevo.

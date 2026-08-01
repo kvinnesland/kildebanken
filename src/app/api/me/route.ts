@@ -24,7 +24,14 @@ export async function GET() {
 }
 
 const patchSchema = z.object({
-  displayName: z.string().max(200).nullable().optional(),
+  // 80 tegn, samme grense som POST /subscribe og
+  // POST /requests/:id/responses (begge samme `users.display_name`-felt,
+  // hhv. ved registrering og senere redigering — se
+  // responses/validate.ts sin tilsvarende grense for
+  // `displayNameSnapshot`). Sto tidligere som 200 her, en reell
+  // uoverensstemmelse mellom opprettelses- og redigeringsveien for
+  // SAMME felt (rettet, se NATTLOGG.md).
+  displayName: z.string().max(80).nullable().optional(),
   locale: z.string().min(2).optional(),
   timezone: z.string().nullable().optional(),
 });
