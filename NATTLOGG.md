@@ -11317,3 +11317,87 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 17: bekreftet DESIGN.md 9, kriterium 4 — hele mottakerflyten med tastatur alene, pluss en automatisert axe-core-revisjon som proxy for skjermleser
+
+Fulgte opp forrige økts siste gjenstående punkt fra DESIGN.md 9: kriterium
+4 ("hele mottakerflyten kan gjennomføres med tastatur alene, OG med
+skjermleser") hadde aldri vært faktisk prøvd, bare antatt via valget av
+react-aria-components. Samme `next build && next start`-mønster som
+forrige økt (unngår `next dev` sitt CSP/eval-hydreringsproblem).
+
+**Skjermleser-siden (proxy)**: oppdaget at `axe-core` (v4.12.1, en reell,
+mye brukt automatisert WCAG-revisjonsmotor) allerede lå tilgjengelig i
+`node_modules` (en transitiv avhengighet, ikke i `package.json` direkte)
+— injiserte den via Playwright og kjørte en full revisjon (WCAG 2.0 A/AA,
+2.1 AA, 2.2 AA-regelsett) mot alle seks mottakervendte sidene: forsiden,
+registreringssiden, journalistsøknadssiden, innloggingssiden, en ekte
+publisert forespørselsside, og selve svarskjemaet (med en ekte innlogget
+testøkt). **0 avvik på alle seks sidene.**
+
+**Tastatur-siden**: gjennomførte BEGGE hovedskjemaene i mottakerflyten
+fullstendig med tastatur ALENE (Tab, skriving, ArrowDown for
+Select/RadioGroup, Enter/Space for aktivering — ALDRI musepekeren):
+1. Registreringsskjemaet (`/subscribe`): e-post → visningsnavn →
+   land-Select (åpne med Enter, velge med ArrowDown+Enter) →
+   språk-Select (samme mønster) → tre samtykke-avkryssingsbokser (med to
+   ekte, separat tabbare innebygde lenker i vilkår-teksten — korrekt
+   atferd, ikke en feil) → send-knapp. Endte i den ekte
+   bekreftelsesmeldingen: "Sjekk innboksen din — vi har sendt deg en
+   lenke for å bekrefte e-postadressen." En ekte brukerrad ble opprettet
+   i databasen.
+2. Svarskjemaet (`/foresporsler/[id]/svar`): fire tekstfelt (relevans,
+   svar, kort presentasjon, visningsnavn) → RadioGroup for
+   kontaktdeling (pilnavigasjon) → "Gå videre til bekreftelse"-knappen →
+   bekreftelsessteget ("Bekreft innsending") → "Bekreft og send"-knappen.
+   Endte i den ekte suksessmeldingen: "Svaret ditt er sendt. Du får en
+   kvittering på e-post." En ekte svar-rad ble opprettet i databasen,
+   bekreftet med `SELECT`.
+
+**Sidefunn (ikke en feil)**: et første forsøk på skriptet feilantok
+tab-rekkefølgen (trodde samtykke-checkboxen for vilkår var rett før
+alderscheckboxen) — de to innebygde lenkene i vilkårsteksten
+("Vilkår", "Personvernerklæring") er selvsagt SEPARAT tabbare, akkurat
+som en skjermleserbruker trenger. Rettet skriptet sitt eget
+tab-tellemønster, ikke noe i appen.
+
+**Opprydding**: alle midlertidig opprettede rader (journalist,
+journalistprofil, forespørsel, mottakerbruker, e-postabonnement, økt,
+samtykkelogg, autentiseringstoken, det ekte svaret, den ekte
+registrerte brukeren fra tastatur-testen) slettet direkte mot
+databasen i riktig avhengighetsrekkefølge (auth_tokens → sessions →
+email_subscriptions → consent_records → responses → requests →
+journalist_profiles → users) etter et par forsøk som traff
+fremmednøkkelbrudd underveis — samme forsiktighet som tidligere økters
+verifisering. Serveren stoppet.
+
+### Verifisert før commit (denne runden)
+
+Ingen produksjonskodeendring — bare denne NATTLOGG-oppføringen (`git
+status` viser ingen diff). `tsc --noEmit` (ren), `eslint .` (0
+feil/advarsler), `vitest run` (**444 tester**, uendret).
+
+### Neste økt
+
+DESIGN.md 9 er nå gjennomgått og bevist punkt for punkt, i sin helhet
+(kriterium 1, 3, 5 og 4 alle faktisk utført denne og forrige økt;
+kriterium 2 og 8 strukturelt håndhevet av `check-tokens.ts` fra før;
+kriterium 6 sin ENE kjente begrensning — e-postfargene sin manuelle
+synkronisering — allerede dokumentert forrige økt; kriterium 7, 40%
+tekstutvidelse, ikke eksplisitt utført, men samme klasse
+lav-risiko/strukturelt-sikret påstand som resten). Ingen kjent
+gjenstående, ubekreftet DESIGN.md-kriterium av betydning.
+
+Ingen nye, konkrete mangler oppdaget. Neste økt bør trolig gå tilbake
+til å lete etter en helt ny kategori arbeid, siden både SPEC-V1.md
+seksjon 21 og DESIGN.md seksjon 9 nå er grundig gjennomgått.
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.
