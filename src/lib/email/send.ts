@@ -31,13 +31,19 @@ import type { RenderedEmail } from "./templates/simple-cta-email";
 //
 // Brevo-kallet bruker rå `fetch` mot v3/smtp/email (dokumentert, stabilt
 // API), IKKE Brevo sitt Node-SDK — unngår en avhengighet for tre HTTP-kall.
-// Selve endepunktet, feltnavnene og responsformen er IKKE verifisert mot en
-// ekte konto i denne økten (ingen nettverkstilgang til Brevo/API-nøkkel
-// tilgjengelig) — samme forbehold som webhook-normaliseringen i
-// src/app/api/webhooks/email-events/route.ts. Bekreft mot en ekte
-// testsending før dette kobles til produksjon. Malnavnene under er de
-// eksakte navnene fra SPEC-V1.md 15 og må ikke endres uten å oppdatere
-// spec-en samtidig.
+// Endepunktet, autentiseringsheaderen (`api-key`), request-feltnavnene
+// (`sender`, `to`, `subject`, `htmlContent`, `textContent`, `headers`,
+// inkludert `List-Unsubscribe`/`List-Unsubscribe-Post`s eksakte verdiform)
+// og responsfeltet (`messageId`) er bekreftet mot Brevos offentlige
+// dokumentasjon (økt 12, se NATTLOGG.md — samme metode som webhook-
+// verifiseringen i src/app/api/webhooks/email-events/route.ts:
+// developers.brevo.com avviser WebFetch med 403, men uavhengige kilder via
+// WebSearch stemte overens på alle punkter). INGEN avvik funnet her, ulikt
+// webhook-siden. Fortsatt ingen ekte testsending gjort (ingen API-nøkkel
+// tilgjengelig i dette miljøet) — anbefales likevel før produksjon, som en
+// siste bekreftelse mot en faktisk konto. Malnavnene under er de eksakte
+// navnene fra SPEC-V1.md 15 og må ikke endres uten å oppdatere spec-en
+// samtidig.
 const BREVO_SEND_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
 
 interface BrevoEmailPayload {
@@ -51,13 +57,14 @@ interface BrevoEmailPayload {
 
 /**
  * Returnerer Brevo sin egen `messageId` fra svarkroppen (`{"messageId":
- * "<...>"}` i deres dokumenterte v3/smtp/email-respons) — brukes til å koble
- * en senere webhook-hendelse (bounce/klage/levert) tilbake til nøyaktig
- * denne utsendelsen, se `DigestDelivery.provider_message_id` (SPEC-V1.md
- * 19.10) og `src/lib/subscriptions/email-events.ts`. `null` ved manglende
- * eller ikke-parsbart felt — samme forbehold som resten av denne filen
- * (Brevo sitt eksakte svarformat er IKKE bekreftet mot en ekte konto denne
- * økten), og en `null` her skal aldri stoppe selve sendingen.
+ * "<...>"}` i deres dokumenterte v3/smtp/email-respons, bekreftet — se
+ * filkommentaren øverst) — brukes til å koble en senere webhook-hendelse
+ * (bounce/klage/levert) tilbake til nøyaktig denne utsendelsen, se
+ * `DigestDelivery.provider_message_id` (SPEC-V1.md 19.10) og
+ * `src/lib/subscriptions/email-events.ts`. `null` ved manglende eller
+ * ikke-parsbart felt — en defensiv fallback for et uventet svar, ikke et
+ * tegn på at feltnavnet selv er usikkert, og en `null` her skal aldri
+ * stoppe selve sendingen.
  */
 function extractBrevoMessageId(rawBody: string): string | null {
   try {

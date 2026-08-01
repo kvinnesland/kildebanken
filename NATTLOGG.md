@@ -10907,3 +10907,69 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 12: fullførte forrige økts eget gjenstående punkt — verifiserte send.ts sin Brevo-antagelse også, ingen bug denne gangen
+
+Samme metode som forrige økt (webhook-siden): `WebSearch` mot uavhengige
+kilder, siden `developers.brevo.com` selv avviser `WebFetch` med 403.
+Denne gangen gjaldt det `src/lib/email/send.ts` sin antagelse om selve
+UTSENDINGEN (`POST v3/smtp/email`), ikke mottak av webhook-hendelser.
+
+**Bekreftet, INGEN avvik funnet**: endepunktet
+(`https://api.brevo.com/v3/smtp/email`), autentiseringsheaderen
+(`api-key`), request-feltnavnene (`sender`, `to`, `subject`,
+`htmlContent`, `textContent`, `headers`) og responsfeltet (`messageId`)
+stemmer alle nøyaktig med koden sin eksisterende antagelse. Også
+`List-Unsubscribe`/`List-Unsubscribe-Post`s eksakte verdiform (FR-038)
+ble bekreftet ord for ord mot et reelt dokumentert eksempel — inkludert
+`"List-Unsubscribe-Post": "List-Unsubscribe=One-Click"`, identisk med
+det koden allerede sender.
+
+Siden `sendBulkEmail()` bruker DET SAMME `v3/smtp/email`-endepunktet som
+`sendTransactionalEmail()` (bevisst, ikke Brevos separate batch-/
+kampanje-API — se filens egen kommentar), var det ingen egen
+batch-endepunkt-antagelse å verifisere i tillegg.
+
+**Ingen kodeendring** — bare oppdaterte de to kommentarene i
+`send.ts` som tidligere sa "IKKE verifisert mot en ekte konto denne
+økten" til å reflektere det som nå faktisk er bekreftet, samme mønster
+som `route.ts`s kommentaroppdatering forrige økt. Ingen nye tester
+nødvendig (eksisterende `send.test.ts` sin mockede `messageId`-
+uttrekkstest dekket allerede selve logikken, den var aldri i tvil — det
+var BARE det ekte feltnavnet/formatet som var uverifisert, og det er nå
+bekreftet riktig, ikke endret).
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run`
+(**439 tester**, uendret, inkludert `send.test.ts` sine 26 tester
+urørt), `i18n:check` (**507 nøkler**, uendret), `design:check-tokens`
+(OK, **53 komponent-CSS-filer**, uendret), `next build` (grønn). Ingen
+kodelogikk endret, så ingen empirisk knekk/gjenopprett-runde denne
+gangen — bare kommentarer. `test:integration` ikke kjørt på nytt (ingen
+databasepåvirkende endring).
+
+### Neste økt
+
+Begge de to lenge selvflaggede "ikke bekreftet mot ekte Brevo-
+dokumentasjon"-forbeholdene i kodebasen (webhook-mottak forrige økt,
+utsending denne økten) er nå verifisert. Ingen kjent gjenstående
+selvflagget usikkerhet av denne typen.
+
+Ingen nye, konkrete mangler oppdaget denne runden. Neste økt kan med
+fordel gjøre et friskt, bredt søk etter neste kategori arbeid — for
+eksempel en ny gjennomgang av SPEC-V1.md seksjon 21 (ikke-funksjonelle
+krav: ytelse, tilgjengelighet, i18n, analyse) mot faktisk kode, siden
+denne seksjonen ikke har vært gjenstand for et eget, dedikert
+gjennomgangsøkt tidligere (i motsetning til seksjon 19/20/22/23 som alle
+har vært grundig diffet mot koden i tidligere økter).
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.
