@@ -9542,3 +9542,70 @@ sitt `ResponseForm.tsx` — allerede nevnt testet tidligere i natt, men
 ikke eksplisitt sjekket for DENNE spesifikke bug-klassen). Ellers
 uendret: de to åpne spec-spørsmålene og "24.3"-referanseopprydding er
 fortsatt utestående for morgengjennomgang, ikke noe hastverk med dem.
+
+## Økt (fortsettelse): ResponseForm.tsx allerede ren — men fant en femte taus-feil-bug i ContactRequestActions.tsx
+
+Sjekket `ResponseForm.tsx` (`/foresporsler/[id]/svar`) mot denne nattens
+taus-feil-sjekkliste: allerede korrekt — viser `errorKey` konsekvent,
+kaller `focusFirstInvalidField()` riktig, ingen auto-fyring. Ingen funn
+der, som mistenkt i forrige runde.
+
+Utvidet søket til et NYTT, ennå ukritisk-lest respondent-vendt område:
+`/contact-requests/[id]` (siden en respondent bruker til å godkjenne
+eller avslå en journalists forespørsel om å dele e-postadressen sin,
+14.1-14.3). Fant nøyaktig samme mønster en femte gang:
+`ContactRequestActions.tsx`s `respond()` satte bare `status` tilbake til
+`"idle"` ved en mislykket godkjenning/avslag, uten NOEN feilindikasjon —
+og dette er, i likhet med `ResponseDetailPanel`-funnet, en REELT nåbar
+feilvei, ikke bare teoretisk: `respondToContactRequest()` sjekker
+`expiresAt` direkte (task #44s fiks), så en kontaktforespørsel siden
+viste som `pending` kan ha rukket å utløpe i tidsrommet mellom siden ble
+rendret og respondenten faktisk trykket en knapp.
+
+**Fiksen**: la til `errorKey`-tilstand, samme `.json().catch(() =>
+({}))`-mønster som resten av kodebasen, vist over knapperaden (IKKE inni
+`.actions`-diven, som er en flex-RAD for de to knappene — en feilmelding
+der ville havnet side om side med knappene i stedet for over dem; flyttet
+derfor komponentens rot til et fragment med feilteksten og
+knapperad-diven som to separate barn, som `.main`s egen
+`flex-direction: column` allerede stabler riktig). La til
+`.formError`-klassen i `page.module.css` (samme semantiske tokens som
+alle de andre feilmeldings-klassene i natt, ingen ny CSS-modul trengtes).
+
+**Testdekning**: ingen testfil eksisterte for denne komponenten i det
+hele tatt. La til tre tester: suksess (godkjenning), feilmelding ved
+mislykket godkjenning (`errors.contact_request_not_pending`), feilmelding
+ved mislykket avslag.
+
+**Empirisk verifisering**: `git stash push` på komponentfilen → kjørte
+testfilen → bekreftet at nøyaktig 2 av 3 tester feiler (begge
+feilmelding-testene; suksess-testen består uendret) → `git stash pop` →
+bekreftet alle 3 tester består.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**391
+tester**, +3), `i18n:check` (389 nøkler, uendret — `errors.
+contact_request_not_pending` fantes allerede), `design:check-tokens` (OK,
+41 komponent-CSS-filer, uendret — ny klasse i en eksisterende modul, ikke
+en ny fil), `next build` (grønn), `test:integration` mot ekte lokal
+Postgres (267 tester, uendret — ingen server-side kontrakt endret).
+
+### Neste økt
+
+Fem tause-feil-/asymmetri-funn totalt denne natten på tvers av `/me`,
+`/admin`, `/journalist` og nå `/contact-requests` (task #58, #61, #67,
+#69, #70) — konsekvent samme mønster, konsekvent samme fiks. `ResponseForm.tsx`
+bekreftet ren. Gjenstående respondent-vendte områder ikke eksplisitt
+sjekket med DENNE sjekklisten: `/unsubscribe/[token]`,
+`/digest-access/[token]` (begge trolig for enkle til å ha egne
+klientkomponenter — verdt en rask sjekk uansett), og selve
+`/foresporsler/[id]`-detaljsiden (rapporter-knappen der bruker
+`ReportForm.tsx`, allerede bekreftet ren tidligere i natt). Vurder om
+mønsteret nå er praktisk uttømt for klientkomponenter — resten av natten
+kan med fordel vende tilbake til bredere spec-/kode-hull-jakt (jamfør
+fremdriftslisten i standardinstruksen: registreringsruter, digest-
+mottakerlogikk osv., som alle allerede er bygget og fungerende per
+tidligere økter, men verdt en ny sjekk om noe er glemt). Ellers uendret:
+de to åpne spec-spørsmålene og "24.3"-referanseopprydding er fortsatt
+utestående for morgengjennomgang, ikke noe hastverk med dem.
