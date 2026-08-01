@@ -9609,3 +9609,50 @@ mottakerlogikk osv., som alle allerede er bygget og fungerende per
 tidligere økter, men verdt en ny sjekk om noe er glemt). Ellers uendret:
 de to åpne spec-spørsmålene og "24.3"-referanseopprydding er fortsatt
 utestående for morgengjennomgang, ikke noe hastverk med dem.
+
+## Økt (fortsettelse): rask sjekk av /unsubscribe og /digest-access + fullstendig ruteliste-diff — begge rene
+
+Sjekket de to gjenstående respondent-vendte "verdt en rask sjekk"-
+punktene fra forrige runde: `/unsubscribe/[token]` og
+`/digest-access/[token]` har INGEN klientkomponent i det hele tatt (rene
+Route Handlers, ingen `.tsx`-fil) — taus-feil-mønsteret er strukturelt
+umulig der. Bekrefter at klientkomponent-sveipen nå er reelt uttømt på
+tvers av HELE `src/app/[locale]/`, ikke bare de fem stedene med faktiske
+funn.
+
+Pivoterte deretter til bredere spec-/kode-hull-jakt, per forrige rundes
+egen anbefaling: diffet SPEC-V1.md seksjon 20 sin fullstendige ruteliste
+mot samtlige faktiske `route.ts`-filer i `src/app/api/` (listet begge
+sider, sammenlignet linje for linje). **Resultat: fullstendig samsvar.**
+Hver eneste rute i spec-listen er implementert, og den ENE ruten som
+finnes i koden men ikke i spec-listen (`GET /health`) er bevisst utenfor
+seksjon 20s omfang — den er allerede korrekt dokumentert i
+INFRASTRUCTURE.md 8.1 som et rent drifts-/oppetidsendepunkt ("Brukes av
+deploy-laget og oppetidsovervåkingen"), ikke en produkt-API-rute. Ingen
+funn, ingen endring nødvendig.
+
+### Verifisert før commit (denne runden)
+
+Ingen kodeendring — ren gjennomlesing/diff uten funn. Nevnt eksplisitt av
+samme grunn som tidligere "ingen funn"-oppføringer i natt: NATTLOGG skal
+vise hva som ER dekket, ikke bare hva som ble rettet.
+
+### Neste økt
+
+To uavhengige sjekklister er nå begge kjørt til uttømming: (1)
+taus-feil-/asymmetri-mønsteret i klientkomponenter (fem funn, #58/#61/#67/
+#69/#70, dekket hele `src/app/[locale]/`), og (2) sjekk-så-skriv-races på
+unike databasekolonner (fire funn, #55/#64 (delvis)/#040abb2s to funn,
+dekket alle 11 unike deklarasjoner i schema.ts), pluss en tredje,
+beslektet klasse (fremmednøkler uten CASCADE, ett funn, #66). Pluss nå en
+fjerde, ren "spec-vs-kode fullstendighet"-sjekk (seksjon 20s ruteliste,
+ingen funn). Gjenstående kandidater for en ny økt, i synkende
+prioritetsrekkefølge: (a) en tilsvarende fullstendighets-diff av
+SPEC-V1.md seksjon 15 (e-postmaltabellen) mot de faktiske
+`src/lib/email/templates/`-filene og deres faktiske sendersteder — er
+ALLE rader i tabellen faktisk koblet til en reell `sendTransactionalEmail`
+/`sendBulkEmail`-kalling, ikke bare bygget som en mal ingen kaller? (b)
+en tilsvarende diff av seksjon 22s 40 FR-krav (sist gjort i task #27,
+verdt en ny, fersk gjennomgang gitt alt som er rettet siden). Ellers
+uendret: de to åpne spec-spørsmålene og "24.3"-referanseopprydding er
+fortsatt utestående for morgengjennomgang, ikke noe hastverk med dem.
