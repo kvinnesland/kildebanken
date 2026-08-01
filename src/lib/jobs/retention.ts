@@ -111,6 +111,17 @@ async function purgeOldResponses(
 
     if (!dryRun && candidates.length > 0) {
       const ids = candidates.map((c) => c.id);
+      // ContactRequest.responseId (schema.ts, 19.8) er bevisst NULLABLE og
+      // uten CASCADE, nettopp fordi en kontaktforespørsel har sin EGEN,
+      // uavhengige 12-måneders-retensjonstid (purgeOldContactRequests
+      // under) — den kan fortsatt være innenfor sin frist selv om SVARETS
+      // frist (12 måneder etter at forespørselen lukket) allerede er
+      // passert, siden createContactRequest()/respondToContactRequest() ikke
+      // sjekker forespørselens status i det hele tatt. Uten å nulle
+      // koblingen her ville DELETE-en krasjet med en fremmednøkkelkonflikt
+      // for enhver slik rad — samme frikobling som withdrawResponse() (
+      // src/lib/responses/responses.ts) allerede gjør ved trekking.
+      await dbase.update(contactRequests).set({ responseId: null }).where(inArray(contactRequests.responseId, ids));
       await dbase.delete(responses).where(inArray(responses.id, ids));
     }
 

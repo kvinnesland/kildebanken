@@ -9333,3 +9333,87 @@ sporet og enten bekreftet trygge eller rettet — ingen kjente gjenstående
 i DENNE spesifikke bug-klassen. Ellers uendret: de to åpne
 spec-spørsmålene og "24.3"-referanseopprydding er fortsatt utestående for
 morgengjennomgang, ikke noe hastverk med dem.
+
+## Økt (fortsettelse): fremmednøkkel-sveip fant en femte krasjbug — purgeOldResponses() i retention.ts
+
+Fulgte opp forrige rundes egen anbefaling: samme systematiske teknikk
+(list opp alle fremmednøkler UTEN CASCADE i `schema.ts`, spor hvert
+skrivested som sletter en refererende rad), denne gangen anvendt på
+`db.delete(...)`-kall i stedet for unike indekser.
+
+**Funn**: `purgeOldResponses()` (`src/lib/jobs/retention.ts`) sletter
+`responses`-rader 12 måneder etter at den underliggende forespørselen
+lukket, UTEN å først håndtere `contactRequests.responseId` — en nullbar
+fremmednøkkel (schema.ts, 19.8) uten CASCADE. Selve schema-kommentaren på
+det feltet sier eksplisitt at en kontaktforespørsel "skal overleve" en
+slik sletting, siden den har sin EGEN, uavhengige 12-måneders-frist
+(`purgeOldContactRequests`, målt fra `updatedAt`) — men koden
+implementerte aldri den overlevelsen. Siden `createContactRequest()`/
+`respondToContactRequest()` (`src/lib/contact-requests/
+contact-requests.ts`) aldri sjekker den underliggende forespørselens
+status, kan en kontaktforespørsel opprettes og avgjøres LENGE etter at
+forespørselen lukket — dermed kan en kontaktforespørsel fortsatt være
+godt innenfor SIN frist selv om svarets frist (12 måneder etter
+lukking) allerede er passert. `withdrawResponse()`
+(`src/lib/responses/responses.ts`) gjør nettopp denne frikoblingen
+korrekt allerede (rettet tidligere i natt) — `purgeOldResponses()` var
+det ENESTE andre stedet som sletter en `responses`-rad, og det gjorde
+det ikke.
+
+**Alvorlighet**: retention-jobben kjører som standard i `dry run`
+(`RETENTION_DRY_RUN` må eksplisitt settes til `"false"`), så dette har
+IKKE aktivt slettet noe i produksjon ennå — men er en reell, latent
+krasj-bug som ville rammet responskategorien i det øyeblikket dry-run
+slås av, nøyaktig den situasjonen brukerens egen instruks ("bygg denne
+FORSIKTIG med egne tester") ba om å unngå.
+
+**Fiksen**: `purgeOldResponses()` nuller nå
+`contactRequests.responseId` for alle kandidat-ID-ene FØR selve
+`DELETE`-en av `responses` — identisk mønster som
+`withdrawResponse()` allerede bruker.
+
+**Testdekning**: la til en ny beskrivelsesblokk i
+`retention.integration.test.ts`: en lukket forespørsel 13 måneder
+tilbake med et innsendt svar, OG en kontaktforespørsel knyttet til det
+svaret som ble avgjort (godkjent) for bare 1 måned siden — altså godt
+innenfor sin egen frist. Bekrefter at en ekte kjøring sletter svaret UTEN
+å krasje, og at kontaktforespørselen overlever med `responseId` nullet.
+
+**Empirisk verifisering**: `git stash push -- retention.ts` for å
+midlertidig fjerne fiksen → kjørte testen → bekreftet EKSAKT den
+forventede fremmednøkkelfeilen fanget i `errors[]`:
+`"update or delete on table "responses" violates foreign key constraint
+"contact_requests_response_id_responses_id_fk"..."` → `git stash pop` for
+å gjenopprette fiksen → bekreftet alle 11 tester i filen består.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (383
+tester, uendret), `i18n:check` (389 nøkler, uendret), `design:check-tokens`
+(OK, 40 komponent-CSS-filer), `next build` (grønn), `test:integration` mot
+ekte lokal Postgres (**267 tester**, +1). Merknad: én kjøring av HELE
+integrasjonssuiten viste én forbigående, urelatert feil i
+`tick.integration.test.ts` (digest-tick-testens `errors` ikke tom) —
+bekreftet IKKE reproduserbar (besto i isolasjon, og besto igjen i to
+påfølgende fulle kjøringer). Årsaken var etterlatt tilstand fra denne
+øktens egne manuelle, gjentatte kjøringer av
+`retention.integration.test.ts` mot samme delte sandkasse-database under
+den empiriske verifiseringen (inkludert en kjøring som bevisst krasjet
+mot den gamle koden) — ikke en reell regresjon fra selve fiksen.
+
+Postgres-tjenesten var også nede ved starten av denne runden (samme som
+forrige runde) — startet på nytt med `service postgresql start` før noe
+kunne kjøre.
+
+### Neste økt
+
+Fremmednøkkel-sveipen dekket nå de mest åpenbare kandidatene
+(retention.ts, tick.ts, responses.ts) — ingen flere krasj-mønstre funnet
+utover denne ene. Verdt å vurdere: er det verdt å gjøre EN fullstendig,
+formell sveip av alle 20+ fremmednøklene i schema.ts mot ALLE
+slette-/oppdateringssteder (ikke bare de i jobb-filene), eller er
+avkastningen synkende nå som de mest sannsynlige stedene (jobber som
+sletter persondata) er dekket? Vurder dette som lav prioritet med mindre
+et nytt konkret mistankepunkt dukker opp. Ellers uendret: de to åpne
+spec-spørsmålene og "24.3"-referanseopprydding er fortsatt utestående for
+morgengjennomgang, ikke noe hastverk med dem.

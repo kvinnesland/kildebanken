@@ -141,6 +141,110 @@ describe("runRetention mot ekte Postgres (17.4)", () => {
     });
   });
 
+  describe("innsendte svar — overlever ikke en NYLIG avgjort kontaktforespørsel som fortsatt refererer det (FK-rekkefølge)", () => {
+    // createContactRequest()/respondToContactRequest() sjekker aldri den
+    // underliggende forespørselens status — en kontaktforespørsel kan derfor
+    // opprettes og avgjøres LENGE etter at forespørselen selv lukket.
+    // ContactRequest.responseId (schema.ts, 19.8) er nullable og uten
+    // CASCADE nettopp fordi kontaktforespørselen har sin EGEN, uavhengige
+    // 12-måneders-frist (se "kontaktforespørsler"-blokken under) — den kan
+    // fortsatt være innenfor sin frist selv om SVARETS frist (12 måneder
+    // etter at forespørselen lukket) allerede er passert. Uten å nulle
+    // koblingen før DELETE ville dette krasjet på en fremmednøkkelkonflikt.
+    let journalistId: string;
+    let requestId: string;
+    let responseId: string;
+    let contactRequestId: string;
+
+    beforeAll(async () => {
+      const journalist = await createActiveJournalist();
+      journalistId = journalist.id;
+
+      const now = new Date();
+      const thirteenMonthsAgo = new Date(now);
+      thirteenMonthsAgo.setUTCMonth(thirteenMonthsAgo.getUTCMonth() - 13);
+      const oneMonthAgo = new Date(now);
+      oneMonthAgo.setUTCMonth(oneMonthAgo.getUTCMonth() - 1);
+
+      const [request] = await db
+        .insert(requests)
+        .values({
+          journalistId,
+          countryCode: TEST_COUNTRY_CODE,
+          contentLanguage: "nb-NO",
+          title: "Retensjonstest — svar med sen kontaktforespørsel",
+          summary: "En testforespørsel for retensjon.",
+          description: "Full beskrivelse.",
+          targetPersonDescription: "Hvem som helst.",
+          responseDeadline: new Date(now.getTime() + 1000),
+          status: "closed",
+          allowsAnonymousParticipation: true,
+          mayBeRecorded: false,
+          mayInvolvePhotoVideo: false,
+          publishedAt: new Date(thirteenMonthsAgo.getTime() - 1000),
+          closedAt: thirteenMonthsAgo,
+        })
+        .returning({ id: requests.id });
+      if (!request) throw new Error("Klarte ikke opprette testforespørsel");
+      requestId = request.id;
+
+      const respondent = await createActiveRecipient();
+      const [response] = await db
+        .insert(responses)
+        .values({
+          requestId,
+          respondentId: respondent.id,
+          relevanceStatement: "Relevant.",
+          answerText: "Svar.",
+          contactSharing: "none",
+          lifecycleStatus: "submitted",
+        })
+        .returning({ id: responses.id });
+      if (!response) throw new Error("Klarte ikke opprette testsvar");
+      responseId = response.id;
+
+      // Avgjort for BARE én måned siden — godt innenfor SIN egen frist, selv
+      // om svaret den peker på allerede er forbi SIN.
+      const [contactRequest] = await db
+        .insert(contactRequests)
+        .values({
+          responseId,
+          journalistId,
+          message: "En kontaktforespørsel opprettet lenge etter at forespørselen lukket.",
+          requestedContactMethod: "e-post",
+          status: "approved",
+          expiresAt: new Date(oneMonthAgo.getTime() + 14 * 24 * 60 * 60 * 1000),
+          updatedAt: oneMonthAgo,
+        })
+        .returning({ id: contactRequests.id });
+      if (!contactRequest) throw new Error("Klarte ikke opprette test-kontaktforespørsel");
+      contactRequestId = contactRequest.id;
+    });
+
+    afterAll(async () => {
+      await db.delete(contactRequests).where(eq(contactRequests.id, contactRequestId));
+      await db.delete(responses).where(eq(responses.id, responseId));
+      await db.delete(requests).where(eq(requests.id, requestId));
+    });
+
+    it("ekte kjøring: sletter svaret uten å krasje, og lar den nylig avgjorte kontaktforespørselen overleve (med responseId nullet)", async () => {
+      setDryRun("false");
+      const summary = await runRetention(db);
+      const category = summary.results.find((r) => r.category === "responses");
+      expect(category?.errors).toEqual([]);
+
+      const [responseGone] = await db.select({ id: responses.id }).from(responses).where(eq(responses.id, responseId));
+      expect(responseGone).toBeUndefined();
+
+      const [contactRequestRow] = await db
+        .select({ id: contactRequests.id, responseId: contactRequests.responseId })
+        .from(contactRequests)
+        .where(eq(contactRequests.id, contactRequestId));
+      expect(contactRequestRow).toBeDefined();
+      expect(contactRequestRow?.responseId).toBeNull();
+    });
+  });
+
   describe("kontaktforespørsler — 12 måneder etter avslutning", () => {
     let journalistId: string;
     let oldContactRequestId: string;
