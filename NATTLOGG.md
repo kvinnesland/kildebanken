@@ -10758,3 +10758,76 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt (fortsettelse): fullførte det systematiske søket etter "bare-indirekte-testet"-mønsteret — fant og rettet ett siste, reelt tilfelle
+
+Gjennomførte forrige økts egen "Neste økt"-oppgave: grep'et alle
+`export async function list*`/`search*` i `src/lib` (ikke bare
+`moderation/`/`admin/`, men systemet under ett), og sjekket hver mot sin
+egen testfil.
+
+**Resultat**: `listJournalists()`, `listAllCountries()`,
+`listLegalDocumentsForCountry()`, `searchUsersByEmail()`, `listDigests()`,
+`listResponsesForRequest()`, `listMineResponses()` og
+`listActiveCountries()` hadde alle allerede direkte tester fra tidligere
+økter. ÉN reell gjenstående mangel: `listMineRequests()` i
+`src/lib/requests/requests.ts` — brukt av BÅDE
+`GET /api/requests/mine` og journalistens egen "mine
+forespørsler"-side (`journalist/requests/page.tsx`), men aldri testet
+direkte. Den eneste eksisterende referansen i en testfil
+(`status-badge.test.ts`) tester en helt annen ting (statusmerket
+selv) og bare NEVNER `listMineRequests()` sin forutsetning i en
+kommentar, uten å faktisk kalle funksjonen.
+
+**Fiks**: 4 nye integrasjonstester i `requests.integration.test.ts`
+(egne forespørsler vises, en ANNEN journalists forespørsler vises ALDRI,
+`deleted`-status ekskluderes, alle andre statuser som `submitted`/
+`published` inkluderes).
+
+**Empirisk verifisering**: fjernet midlertidig `ne(requests.status,
+"deleted")`-betingelsen fra `listMineRequests()` → bekreftet at
+NØYAKTIG 1 av de 13 testene i filen feiler (testen som beviser at
+`deleted` ekskluderes — akkurat den testen som skal fange denne
+klassen feil) → gjenopprettet fra sikkerhetskopi, alle 13 tester
+består igjen.
+
+Med dette er det systematiske søket ferdig: ALLE `list*()`/`search*()`-
+funksjoner i `src/lib` har nå direkte integrasjonstester, ikke bare
+indirekte dekning via UI-et eller via andre funksjoners egne tester.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run`
+(**439 tester**, uendret), `i18n:check` (**507 nøkler**, uendret),
+`design:check-tokens` (OK, **53 komponent-CSS-filer**, uendret),
+`next build` (grønn), `test:integration` mot ekte lokal Postgres, to
+påfølgende ganger (**308 tester** hver gang, +4 fra
+`listMineRequests()`).
+
+### Neste økt
+
+Ingen kjent gjenstående punkt fra forrige økts "Neste økt"-liste — det
+systematiske `list*()`/`search*()`-søket er fullført uten flere funn.
+
+Ingen nye, konkrete mangler oppdaget denne runden utover det som
+allerede er rettet.
+
+Påminnelse til NESTE økt (bekreftet i DENNE runden, for å spare den
+runden et bomtokt): den stående cron-promptens punkt (2) og (3) —
+mottakerlogikk i digest-tick og retention-jobben — er BEGGE allerede
+fullt implementert og testet (`runDigestTick()`/`runRetention()` i
+`src/lib/jobs/tick.ts`/`retention.ts`, med egne unit- OG
+integrasjonstestfiler). Den opprinnelige promptens punktliste gjenspeiler
+ikke lenger reell status — se README.md/NATTLOGG.md sin egen,
+gjentatte påminnelse om at NATTLOGG.md sin "Neste økt" er sannheten for
+hva som gjenstår, ikke selve cron-teksten.
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

@@ -12,7 +12,7 @@ import {
   uniqueTestEmail,
 } from "@/db/integration/fixtures";
 import { submitResponse } from "@/lib/responses/responses";
-import { closeRequest, createDraft, getPublicRequest, updateDraft } from "./requests";
+import { closeRequest, createDraft, getPublicRequest, listMineRequests, updateDraft } from "./requests";
 
 describe("getPublicRequest mot ekte Postgres", () => {
   let journalistId: string;
@@ -332,5 +332,83 @@ describe("updateDraft() — slug-genereringen tåler SAMTIDIGE lagringer med sam
         await db.delete(requests).where(eq(requests.id, id));
       }
     }
+  });
+});
+
+// listMineRequests() manglet egne, direkte tester — brukes av
+// GET /api/requests/mine og journalist/requests/page.tsx (journalistens
+// egen "mine forespørsler"-liste), men ble frem til nå bare berørt
+// INDIREKTE av status-badge.test.ts (en komponenttest for en helt annen
+// ting). Samme mønster som listModerationQueue()/listActiveRequests()
+// hadde tidligere denne økten.
+describe("listMineRequests mot ekte Postgres", () => {
+  afterEach(async () => {
+    await db.delete(requests).where(eq(requests.title, "Testforespørsel for listMineRequests"));
+  });
+
+  async function createOwnRequest(journalistId: string, overrides: Partial<typeof requests.$inferInsert> = {}) {
+    const [row] = await db
+      .insert(requests)
+      .values({
+        journalistId,
+        countryCode: TEST_COUNTRY_CODE,
+        contentLanguage: "nb-NO",
+        title: "Testforespørsel for listMineRequests",
+        summary: "Sammendrag.",
+        description: "Beskrivelse.",
+        targetPersonDescription: "Hvem som helst.",
+        status: "draft",
+        allowsAnonymousParticipation: true,
+        mayBeRecorded: false,
+        mayInvolvePhotoVideo: false,
+        ...overrides,
+      })
+      .returning();
+    if (!row) throw new Error("Klarte ikke opprette testforespørsel");
+    return row;
+  }
+
+  it("ser sine egne forespørsler", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+    const own = await createOwnRequest(journalist.id);
+
+    const result = await listMineRequests(journalist.id);
+
+    expect(result.map((r) => r.id)).toContain(own.id);
+  });
+
+  it("ser ALDRI en annen journalists forespørsler", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+    const otherJournalist = await createActiveJournalist();
+    const own = await createOwnRequest(journalist.id);
+
+    const result = await listMineRequests(otherJournalist.id);
+
+    expect(result.map((r) => r.id)).not.toContain(own.id);
+  });
+
+  it("ekskluderer 'deleted'-status (status-badge.ts sin egen forutsetning om at listMineRequests() aldri viser den)", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+    const deleted = await createOwnRequest(journalist.id, { status: "deleted" });
+
+    const result = await listMineRequests(journalist.id);
+
+    expect(result.map((r) => r.id)).not.toContain(deleted.id);
+  });
+
+  it("inkluderer alle andre statuser (f.eks. 'submitted' og 'published')", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+    const submitted = await createOwnRequest(journalist.id, { status: "submitted" });
+    const published = await createOwnRequest(journalist.id, { status: "published", publishedAt: new Date() });
+
+    const result = await listMineRequests(journalist.id);
+
+    expect(result.map((r) => r.id)).toEqual(
+      expect.arrayContaining([submitted.id, published.id])
+    );
   });
 });
