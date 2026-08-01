@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { emailSubscriptions, suppressions } from "@/db/schema";
-import { hashToken } from "@/lib/auth/tokens";
-import { createActiveRecipient } from "@/db/integration/fixtures";
+import { digestDeliveries, digests, emailSubscriptions, suppressions } from "@/db/schema";
+import { generateToken, hashToken } from "@/lib/auth/tokens";
+import { createActiveRecipient, TEST_COUNTRY_CODE } from "@/db/integration/fixtures";
 import { POST } from "./route";
 
 // Ingen next/headers-/økt-avhengighet — ruten bruker delt hemmelighet via
@@ -15,7 +15,11 @@ import { POST } from "./route";
 
 const WEBHOOK_URL = "https://kildebanken.example/api/webhooks/email-events";
 
-async function createSubscribedRecipient(): Promise<{ email: string; subscriptionId: string }> {
+async function createSubscribedRecipient(): Promise<{
+  userId: string;
+  email: string;
+  subscriptionId: string;
+}> {
   const recipient = await createActiveRecipient();
   const [subscription] = await db
     .insert(emailSubscriptions)
@@ -26,7 +30,7 @@ async function createSubscribedRecipient(): Promise<{ email: string; subscriptio
     })
     .returning({ id: emailSubscriptions.id });
   if (!subscription) throw new Error("Kunne ikke opprette test-abonnement");
-  return { email: recipient.email, subscriptionId: subscription.id };
+  return { userId: recipient.id, email: recipient.email, subscriptionId: subscription.id };
 }
 
 function postRequest(
@@ -154,6 +158,50 @@ describe("POST /webhooks/email-events mot ekte Postgres (SPEC-V1.md 10.1/10.3, F
       .from(emailSubscriptions)
       .where(eq(emailSubscriptions.id, sub.subscriptionId));
     expect(row?.status).toBe("bounced");
+  });
+
+  it("videresender \"message-id\" fra nyttelasten som providerMessageId, og oppdaterer den SPESIFIKKE DigestDelivery-en (19.10, 16.2)", async () => {
+    vi.stubEnv("EMAIL_WEBHOOK_SECRET", "riktig-hemmelighet");
+    const sub = await createSubscribedRecipient();
+    const [digest] = await db
+      .insert(digests)
+      .values({
+        countryCode: TEST_COUNTRY_CODE,
+        scheduledFor: new Date(Date.now() + Math.floor(Math.random() * 1_000 * 86_400_000))
+          .toISOString()
+          .slice(0, 10),
+        requestIds: [],
+        status: "sent",
+      })
+      .returning({ id: digests.id });
+    if (!digest) throw new Error("Kunne ikke opprette test-digest");
+    const providerMessageId = `<route-test-${generateToken()}@relay.brevo.com>`;
+    const [delivery] = await db
+      .insert(digestDeliveries)
+      .values({
+        digestId: digest.id,
+        userId: sub.userId,
+        locale: "nb-NO",
+        accessTokenHash: hashToken(generateToken()),
+        status: "sent",
+        providerMessageId,
+      })
+      .returning({ id: digestDeliveries.id });
+    if (!delivery) throw new Error("Kunne ikke opprette test-DigestDelivery");
+
+    const response = await POST(
+      postRequest(
+        { email: sub.email, event: "hard_bounce", "message-id": providerMessageId },
+        { secret: "riktig-hemmelighet" }
+      )
+    );
+
+    expect(response.status).toBe(200);
+    const [deliveryRow] = await db
+      .select()
+      .from(digestDeliveries)
+      .where(eq(digestDeliveries.id, delivery.id));
+    expect(deliveryRow?.status).toBe("bounced");
   });
 
   it("returnerer 200 uten noen handling for en ukjent/irrelevant hendelsestype (f.eks. 'opened')", async () => {

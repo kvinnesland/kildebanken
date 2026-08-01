@@ -19,6 +19,7 @@ import {
 } from "@/db/integration/fixtures";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
 import type { CurrentSession } from "@/lib/auth/session";
+import * as emailSend from "@/lib/email/send";
 
 // listDigests()/retryFailedDigestDeliveries() kaller
 // getAssignedCountryCodes()/requireModeratorForCountry() internt, som leser
@@ -258,6 +259,16 @@ describe("retryFailedDigestDeliveries mot ekte Postgres (SPEC-V1.md 16.2, FR-050
     await ensureTestCountry();
     vi.stubEnv("BREVO_API_KEY", "");
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // 19.10/16.2: gjensendingen skal lagre Brevo sin messageId på nøyaktig
+    // samme måte som førstegangsutsendelsen i tick.ts — var tidligere aldri
+    // lagret noe sted, se NATTLOGG.md. Kaller den ekte (stub-)funksjonen
+    // gjennom (bevarer [email:stub:bulk]-logg-antagelsen under), men
+    // overstyrer selve returverdien for å bevise at DEN faktisk lagres.
+    const realSendBulkEmail = emailSend.sendBulkEmail;
+    vi.spyOn(emailSend, "sendBulkEmail").mockImplementation(async (input) => {
+      await realSendBulkEmail(input);
+      return "<retry-brevo-id@relay.brevo.com>";
+    });
     const [digest] = await db
       .insert(digests)
       .values({
@@ -330,6 +341,7 @@ describe("retryFailedDigestDeliveries mot ekte Postgres (SPEC-V1.md 16.2, FR-050
       .where(eq(digestDeliveries.userId, failedRecipient[0]!.id));
     expect(retriedDelivery?.status).toBe("sent");
     expect(retriedDelivery?.errorMessage).toBeNull();
+    expect(retriedDelivery?.providerMessageId).toBe("<retry-brevo-id@relay.brevo.com>");
 
     const [untouchedDelivery] = await db
       .select()

@@ -9914,3 +9914,145 @@ spec-spørsmålene (`runExpireRequests()` manglende varsling; 18.1 vs
 403→404-presiseringen fra FR-023 bør utvides til de fire andre
 moderator-scopede filene) og "24.3"-referanseopprydding, som alle
 fortsatt er utestående, ikke noe hastverk med dem.
+
+## Økt: administrasjonsgrensesnittets dekningshull (16.2) — funn og et reelt hull rettet
+
+Fortsatte med en helt ny vinkel denne runden: leste `SPEC-V1.md` 16.2
+("Funksjoner") ordrett opp mot den FAKTISKE admin-katalogen
+(`src/app/[locale]/admin/`), i stedet for å lese modul for modul som de
+tre tidligere brede teknikkene (tause klientfeil, sjekk-så-skriv-races,
+HTTP-status-presisjon).
+
+**Funn 1 (stort, udiskutabelt hull i UI — dokumentert, IKKE bygget denne
+runden)**: 16.2 lister fem admin-funksjonsområder. Kun to av dem har noe
+UI i det hele tatt:
+- **Journalister**: har en side, men BARE modereringskøen (godkjenn/avvis)
+  — mangler søk, se søknadsgrunnlag i detalj, suspender, opphev
+  suspensjon, se tidligere forespørsler.
+- **Forespørsler**: har en side som dekker køen (godkjenn/avvis/returner/
+  lukk) — dette området er reelt dekket.
+- **Mottakere**: INGEN side. `moderation/users.ts` (`suspendUser()`,
+  `unsuspendUser()`, `suppressUserEmail()`) og API-rutene
+  (`/admin/users/:id/suspend` osv.) finnes og er testet — men ingen søk på
+  e-post, ingen visning av kontostatus/samtykkehistorikk, ingen sletting
+  fra UI.
+- **Utsendelser**: INGEN side. `digests/digests.ts` (`listDigests()`,
+  `retryFailedDigestDeliveries()`) og API-rutene finnes og er testet —
+  ingen visning av siste digester, sendt-antall, bounces/klager, ingen
+  "kjør på nytt"-knapp.
+- **Land**: INGEN side. `admin/countries.ts` og `admin/legal-documents.ts`
+  (opprette/redigere land, sette status, tildele moderatorer, publisere
+  juridiske dokumenter) finnes og er testet — ingen UI for noe av dette.
+
+Grepet bekreftet null treff på "suspend"/"unsuspend" i HELE
+`src/app/**/*.tsx` — bekrefter at disse handlingene er helt uten
+inngangspunkt for en ekte administrator i dag, til tross for at
+lib-/rute-laget er ferdig og grundig testet. Dette er en betydelig,
+udiskutabel avstand mellom spec og kode (ikke en tolkningstvist som de
+tre tidligere åpne spørsmålene) — men å bygge tre-fire nye
+administrasjonssider er en vesentlig større og annerledes type oppgave
+enn resten av nattens feilrettinger, og ble derfor KUN dokumentert denne
+runden, ikke bygget. Anbefaling til morgengjennomgang: prioriter
+"Utsendelser" først om dette tas videre — `listDigests()`/
+`retryFailedDigestDeliveries()` og deres ruter er allerede ferdig
+testet, så den siden er ren UI-kobling uten ny forretningslogikk.
+"Mottakere" trenger trolig en ny `searchUsersByEmail()`-lib-funksjon
+først (finnes ikke i dag). "Land" er den mest sensitive (endrer
+juridisk-dokument-status/landkonfigurasjon) og bør bygges sist, med egen
+forsiktighet.
+
+**Funn 2 (reelt, rettet denne runden): `DigestDelivery.provider_message_id`
+og `bounced`/`complained`-statusene var ALDRI satt noe sted i kodebasen.**
+Dette ble oppdaget mens jeg vurderte hva "Utsendelser"-siden over faktisk
+ville vise: 16.2 sier eksplisitt "bounces, klager" per digest, og
+19.10 definerer nettopp `DigestDelivery.status` med `bounced`/`complained`
+og et `provider_message_id`-felt for å gjøre det mulig. Sporet hele
+kjeden:
+
+- `sendViaBrevo()` (send.ts) kastet bort HELE Brevo-svarkroppen — leste
+  aldri `messageId`-feltet i responsen.
+- `sendBulkEmail()` returnerte `void` — ingen kaller (`tick.ts`,
+  `retryFailedDigestDeliveries()`) hadde noe å lagre uansett.
+- `processEmailEvent()` (webhook-mottakeren) oppdaterte KUN den globale
+  `emailSubscriptions`/`suppressions`-tilstanden — rørte aldri
+  `digestDeliveries` i det hele tatt.
+- Webhook-ruten videresendte aldri noen meldings-ID fra Brevo-nyttelasten.
+
+Resultat: `provider_message_id` var alltid `null`, og
+`bounced`/`complained` kunne ALDRI settes på en `DigestDelivery` — de to
+tallene 16.2 eksplisitt krever ("bounces, klager" per digest) var
+strukturelt umulig å beregne, uansett om UI-en over noen gang bygges.
+Dette er ikke en tolkningstvist — spec-en (19.10) definerer feltet og
+statusene presist, og koden brukte dem aldri.
+
+**Fiksen (additiv, rører ikke eksisterende abonnements-/sperrelisteatferd)**:
+- `sendViaBrevo()` leser nå svarkroppen og trekker ut `messageId`
+  (`extractBrevoMessageId()`, defensivt — samme "ikke bekreftet mot ekte
+  Brevo-dokumentasjon"-forbehold som resten av filen), returnerer
+  `string | null`.
+- `sendBulkEmail()` returnerer nå `Promise<string | null>` (var `void`).
+  `sendTransactionalEmail()` forkaster bevisst verdien — transaksjonell
+  e-post har ingen tilsvarende per-utsendelse-tabell å lagre den i.
+- `tick.ts` og `digests.ts` (`retryFailedDigestDeliveries()`) lagrer nå
+  denne IDen i `digestDeliveries.providerMessageId` ved statusovergangen
+  til `"sent"`.
+- `processEmailEvent()` tar nå en valgfri `providerMessageId` og
+  oppdaterer — UAVHENGIG av (og i TILLEGG til) den eksisterende globale
+  håndteringen — den SPESIFIKKE `DigestDelivery`-raden med samme ID til
+  `bounced`/`complained`/`delivered`. Et bomskudd (ingen rad med den
+  IDen — f.eks. en transaksjonell e-post) feiler ikke, bare ingen
+  handling.
+- Webhook-ruten trekker nå ut `message-id` fra nyttelasten (valgfritt
+  felt, samme "ikke bekreftet mot ekte dokumentasjon"-forbehold som
+  `normalizeEvent()`) og sender den videre.
+
+**Testdekning**: nye tester i `send.test.ts` (messageId trekkes ut
+korrekt / `null` ved manglende felt eller uparsbar kropp / `null` i
+stubb-modus), `email-events.integration.test.ts` (fire nye tester: hard
+bounce/klage/levert setter DEN SPESIFIKKE DigestDelivery-en, og en
+ukjent ID feiler stille uten å røre noe), en ny test i
+`tick.integration.test.ts` og en utvidet test i
+`digests.integration.test.ts` (begge mocker `sendBulkEmail` til å
+returnere en kjent ID og bekrefter den lagres), og en ny
+ende-til-ende-test i webhook-rutens `route.integration.test.ts` (ekte
+POST med `message-id` i kroppen oppdaterer riktig rad).
+
+**Empirisk verifisering**: `git stash push` på hver av de fem berørte
+kildefilene (send.ts; email-events.ts + route.ts sammen; tick.ts +
+digests.ts sammen) → bekreftet at NØYAKTIG de nye testene feiler mot den
+gamle koden i alle tre kjøringer (ingen andre regresjoner) →
+`git stash pop` → bekreftet alle tester består igjen.
+
+**Miljømerknad**: Postgres-tjenesten (og selve datakatalogen) hadde
+overlevd fra en tidligere økt (samme `kildebanken`-databasebruker fantes
+allerede, med et ukjent passord) — satte et nytt lokalt passord og
+opprettet en `.env` for denne økten (gitignored, ingen ekte hemmeligheter).
+Selve skjemaet manglet derimot `rate_limit_hits`-tabellen (en migrasjon
+som tydeligvis aldri var kjørt mot NETTOPP denne vedvarende
+datakatalogen) — kjørte `npx tsx src/db/migrate.ts`, som løste det. Ikke
+en kodefeil, ren miljø-drift.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**396
+tester**, +3), `i18n:check` (389 nøkler, uendret), `design:check-tokens`
+(OK, 41 komponent-CSS-filer, uendret), `next build` (grønn),
+`test:integration` mot ekte lokal Postgres (**275 tester**, +6, etter at
+migrasjonen over ble kjørt).
+
+### Neste økt
+
+To spor står åpne, i prioritert rekkefølge:
+
+1. **Admin-UI-hullet (Funn 1 over)**: hvis morgengjennomgangen bestemmer
+   at dette skal bygges, start med "Utsendelser" (ren UI over allerede
+   testet lib/rute-lag), deretter en ny `searchUsersByEmail()` for
+   "Mottakere", og la "Land" vente til sist (mest sensitivt).
+2. De tre tidligere åpne spec-spørsmålene og "24.3"-referanseopprydding
+   er fortsatt utestående for morgengjennomgang, uendret fra forrige
+   økt.
+
+Ellers: kodebasen er grønn. `provider_message_id`-fiksen over er
+selvstendig verifiserbar og trygg å bygge videre på (f.eks. når/hvis
+"Utsendelser"-siden bygges, vil bounce-/klage-tallene den skal vise nå
+faktisk kunne beregnes korrekt).

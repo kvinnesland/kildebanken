@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { emailSubscriptions, suppressions, users } from "@/db/schema";
+import { digestDeliveries, emailSubscriptions, suppressions, users } from "@/db/schema";
 import { hashToken } from "@/lib/auth/tokens";
 import { shouldEscalateToHardBounce } from "./bounce-policy";
 
@@ -9,6 +9,10 @@ export type EmailEventType = "delivered" | "soft_bounce" | "hard_bounce" | "comp
 export interface ProcessEmailEventInput {
   email: string;
   event: EmailEventType;
+  // Satt av webhook-ruten når Brevo-nyttelasten inneholder en meldings-ID
+  // (kun digest-utsendelser har en tilsvarende DigestDelivery-rad å koble
+  // den til — transaksjonell e-post lagrer ingen ID, se send.ts).
+  providerMessageId?: string;
 }
 
 export interface ProcessEmailEventResult {
@@ -34,6 +38,15 @@ export interface ProcessEmailEventResult {
 export async function processEmailEvent(
   input: ProcessEmailEventInput
 ): Promise<ProcessEmailEventResult> {
+  // 16.2 ("se ... bounces, klager" per digest) / 19.10: uavhengig av (og i
+  // TILLEGG til) den globale abonnements-/sperrelistehåndteringen under —
+  // kobler hendelsen til den SPESIFIKKE DigestDelivery-raden e-posten kom
+  // fra, ikke bare brukerens abonnement generelt. Kjøres uansett om et
+  // abonnement finnes for adressen, siden dette er et eget datapunkt.
+  if (input.providerMessageId) {
+    await updateDigestDeliveryStatus(input.providerMessageId, input.event);
+  }
+
   const [subscription] = await db
     .select({
       id: emailSubscriptions.id,
@@ -99,4 +112,25 @@ async function applyHardBounce(subscriptionId: string, email: string): Promise<v
     .insert(suppressions)
     .values({ emailHash: hashToken(email), reason: "hard_bounce" })
     .onConflictDoNothing();
+}
+
+/**
+ * Oppdaterer `DigestDelivery.status` for raden som ble sendt med denne
+ * `provider_message_id`-en — en transaksjonell e-post har ingen slik rad
+ * (send.ts lagrer aldri en ID for den), så en manglende treff her er
+ * forventet og ikke en feil. `soft_bounce`/`hard_bounce` mappes begge til
+ * `bounced` — datamodellen (19.10) skiller ikke mellom dem på
+ * DigestDelivery-nivå, bare på selve abonnementet (10.3, over).
+ */
+async function updateDigestDeliveryStatus(
+  providerMessageId: string,
+  event: EmailEventType
+): Promise<void> {
+  const status =
+    event === "delivered" ? "delivered" : event === "complaint" ? "complained" : "bounced";
+
+  await db
+    .update(digestDeliveries)
+    .set({ status, updatedAt: new Date() })
+    .where(eq(digestDeliveries.providerMessageId, providerMessageId));
 }

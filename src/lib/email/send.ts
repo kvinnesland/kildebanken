@@ -49,7 +49,30 @@ interface BrevoEmailPayload {
   headers?: Record<string, string>;
 }
 
-async function sendViaBrevo(apiKey: string, payload: BrevoEmailPayload): Promise<void> {
+/**
+ * Returnerer Brevo sin egen `messageId` fra svarkroppen (`{"messageId":
+ * "<...>"}` i deres dokumenterte v3/smtp/email-respons) — brukes til å koble
+ * en senere webhook-hendelse (bounce/klage/levert) tilbake til nøyaktig
+ * denne utsendelsen, se `DigestDelivery.provider_message_id` (SPEC-V1.md
+ * 19.10) og `src/lib/subscriptions/email-events.ts`. `null` ved manglende
+ * eller ikke-parsbart felt — samme forbehold som resten av denne filen
+ * (Brevo sitt eksakte svarformat er IKKE bekreftet mot en ekte konto denne
+ * økten), og en `null` her skal aldri stoppe selve sendingen.
+ */
+function extractBrevoMessageId(rawBody: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(rawBody);
+    if (parsed && typeof parsed === "object" && "messageId" in parsed) {
+      const messageId = (parsed as { messageId: unknown }).messageId;
+      if (typeof messageId === "string") return messageId;
+    }
+  } catch {
+    // Ikke-parsbar kropp — behandles som "ingen ID", ikke en feil.
+  }
+  return null;
+}
+
+async function sendViaBrevo(apiKey: string, payload: BrevoEmailPayload): Promise<string | null> {
   const response = await fetch(BREVO_SEND_ENDPOINT, {
     method: "POST",
     headers: {
@@ -60,10 +83,11 @@ async function sendViaBrevo(apiKey: string, payload: BrevoEmailPayload): Promise
     body: JSON.stringify(payload),
   });
 
+  const body = await response.text().catch(() => "");
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
     throw new Error(`Brevo-sending feilet (${response.status}): ${body}`);
   }
+  return extractBrevoMessageId(body);
 }
 
 export type TransactionalTemplate =
@@ -278,6 +302,9 @@ export async function sendTransactionalEmail(
     throw new Error("sendTransactionalEmail: BREVO_SENDER_TRANSACTIONAL er ikke satt i miljøet.");
   }
 
+  // Transaksjonell e-post har ingen tabell for per-utsendelse-status (bare
+  // digest-utsendelser har DigestDelivery) — meldings-IDen fra Brevo har
+  // derfor ingen sted å lagres her, og forkastes med hensikt.
   await sendViaBrevo(apiKey, {
     sender: { email: senderEmail },
     to: [{ email: input.to.email }],
@@ -314,8 +341,13 @@ export interface SendBulkEmailInput {
  * `BREVO_SENDER_BULK` (eget avsenderdomene, INFRASTRUCTURE.md 6.3) og i
  * `List-Unsubscribe`/`List-Unsubscribe-Post`-headerne (FR-038), ikke i et
  * annet API-produkt.
+ *
+ * Returnerer Brevo sin `messageId` (eller `null` i stubb-modus/ved manglende
+ * felt) — kalleren (src/lib/jobs/tick.ts, src/lib/digests/digests.ts) lagrer
+ * denne på den tilhørende `DigestDelivery`-raden, se `extractBrevoMessageId()`
+ * over for hvorfor dette er nødvendig for 16.2s "bounces, klager"-visning.
  */
-export async function sendBulkEmail(input: SendBulkEmailInput): Promise<void> {
+export async function sendBulkEmail(input: SendBulkEmailInput): Promise<string | null> {
   const apiKey = process.env.BREVO_API_KEY;
 
   if (!apiKey) {
@@ -323,7 +355,7 @@ export async function sendBulkEmail(input: SendBulkEmailInput): Promise<void> {
       `[email:stub:bulk] "${input.subject}" → ${input.to.email} (${input.to.locale}) ` +
         `[List-Unsubscribe: ${input.listUnsubscribeUrl}]`
     );
-    return;
+    return null;
   }
 
   const senderEmail = process.env.BREVO_SENDER_BULK;
@@ -331,7 +363,7 @@ export async function sendBulkEmail(input: SendBulkEmailInput): Promise<void> {
     throw new Error("sendBulkEmail: BREVO_SENDER_BULK er ikke satt i miljøet.");
   }
 
-  await sendViaBrevo(apiKey, {
+  return sendViaBrevo(apiKey, {
     sender: { email: senderEmail },
     to: [{ email: input.to.email }],
     subject: input.subject,

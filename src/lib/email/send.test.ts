@@ -406,4 +406,61 @@ describe("sendBulkEmail", () => {
     ).rejects.toThrow(/BREVO_SENDER_BULK/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("returnerer null i stubb-modus (ingen BREVO_API_KEY)", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await sendBulkEmail({
+      to: { email: "recipient@example.com", locale: "nb-NO" },
+      subject: "Dagens digest",
+      html: "<p>hei</p>",
+      text: "hei",
+      listUnsubscribeUrl: "https://tjenesten.no/api/unsubscribe/tok-1",
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it("returnerer Brevo sin messageId fra svarkroppen, for senere kobling til DigestDelivery (19.10)", async () => {
+    vi.stubEnv("BREVO_API_KEY", "test-key-123");
+    vi.stubEnv("BREVO_SENDER_BULK", "utsendelse@epost.tjenesten.no");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 201,
+        text: () => Promise.resolve('{"messageId":"<brevo-msg-123@relay.brevo.com>"}'),
+      })
+    );
+
+    const result = await sendBulkEmail({
+      to: { email: "recipient@example.com", locale: "nb-NO" },
+      subject: "Dagens digest",
+      html: "<p>hei</p>",
+      text: "hei",
+      listUnsubscribeUrl: "https://tjenesten.no/api/unsubscribe/tok-1",
+    });
+
+    expect(result).toBe("<brevo-msg-123@relay.brevo.com>");
+  });
+
+  it("returnerer null (ikke en feil) når svarkroppen mangler messageId eller ikke er parsbar JSON", async () => {
+    vi.stubEnv("BREVO_API_KEY", "test-key-123");
+    vi.stubEnv("BREVO_SENDER_BULK", "utsendelse@epost.tjenesten.no");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 201, text: () => Promise.resolve("") })
+    );
+
+    const result = await sendBulkEmail({
+      to: { email: "recipient@example.com", locale: "nb-NO" },
+      subject: "Dagens digest",
+      html: "<p>hei</p>",
+      text: "hei",
+      listUnsubscribeUrl: "https://tjenesten.no/api/unsubscribe/tok-1",
+    });
+
+    expect(result).toBeNull();
+  });
 });

@@ -313,7 +313,7 @@ async function sendDigestToRecipients(
 
       const personalized = insertPerRecipientTokens(rendered, accessToken, unsubscribeToken);
 
-      await sendBulkEmail({
+      const providerMessageId = await sendBulkEmail({
         to: { email: recipient.email, locale },
         subject: personalized.subject,
         html: personalized.html,
@@ -323,7 +323,14 @@ async function sendDigestToRecipients(
         listUnsubscribeUrl: `${SITE_ORIGIN}/api/unsubscribe/${unsubscribeToken}`,
       });
 
-      await dbase.update(digestDeliveries).set({ status: "sent" }).where(eq(digestDeliveries.id, deliveryId));
+      // provider_message_id (SPEC-V1.md 19.10) — lar en senere webhook-
+      // hendelse (bounce/klage/levert) kobles tilbake til NØYAKTIG denne
+      // leveransen, se src/lib/subscriptions/email-events.ts. Var tidligere
+      // aldri lagret noe sted i kodebasen, se NATTLOGG.md.
+      await dbase
+        .update(digestDeliveries)
+        .set({ status: "sent", providerMessageId })
+        .where(eq(digestDeliveries.id, deliveryId));
       sentCount += 1;
     } catch (err) {
       const message = (err as Error).message;

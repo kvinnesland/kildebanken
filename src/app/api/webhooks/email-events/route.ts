@@ -18,6 +18,11 @@ function isAuthorized(request: Request): boolean {
 const bodySchema = z.object({
   email: z.string().email(),
   event: z.string(),
+  // Brevo sitt feltnavn for meldings-ID i webhook-nyttelasten — samme
+  // forbehold som normalizeEvent() under (ikke bekreftet mot ekte
+  // dokumentasjon denne økten). Valgfritt: mangler den, hopper vi bare over
+  // DigestDelivery-koblingen (processEmailEvent) og gjør resten som før.
+  "message-id": z.string().optional(),
 });
 
 /**
@@ -70,6 +75,7 @@ export async function POST(request: Request) {
   await processEmailEvent({
     email: parsed.data.email.toLowerCase().trim(),
     event: normalizedEvent,
+    providerMessageId: parsed.data["message-id"],
   });
 
   return NextResponse.json({ ok: true });

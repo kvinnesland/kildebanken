@@ -139,7 +139,7 @@ export async function retryFailedDigestDeliveries(digestId: string): Promise<Ret
 
       const personalized = insertPerRecipientTokens(rendered, accessToken, unsubscribeToken);
 
-      await sendBulkEmail({
+      const providerMessageId = await sendBulkEmail({
         to: { email: delivery.email, locale },
         subject: personalized.subject,
         html: personalized.html,
@@ -148,9 +148,12 @@ export async function retryFailedDigestDeliveries(digestId: string): Promise<Ret
         listUnsubscribeUrl: `${SITE_ORIGIN}/api/unsubscribe/${unsubscribeToken}`,
       });
 
+      // provider_message_id, samme begrunnelse som førstegangsutsendelsen i
+      // tick.ts — uten den kan ikke en senere bounce/klage på DENNE
+      // gjensendingen kobles til riktig DigestDelivery-rad.
       await db
         .update(digestDeliveries)
-        .set({ status: "sent" })
+        .set({ status: "sent", providerMessageId })
         .where(eq(digestDeliveries.id, delivery.deliveryId));
       retriedCount += 1;
     } catch (err) {

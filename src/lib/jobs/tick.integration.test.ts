@@ -688,6 +688,31 @@ describe("runDigestTick mot ekte Postgres (FR-030 til FR-038, SPEC-V1.md 10, 23 
     }
   });
 
+  it("19.10/16.2: lagrer Brevo sin messageId på DigestDelivery-raden, for senere bounce-/klage-oppslag via webhook", async () => {
+    // Var tidligere aldri lagret noe sted (se NATTLOGG.md) — sendBulkEmail()
+    // returnerte void, og providerMessageId forble alltid null selv ved en
+    // ekte, vellykket Brevo-sending.
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(emailSend, "sendBulkEmail").mockResolvedValue("<ekte-brevo-id@relay.brevo.com>");
+    const code = await createIsolatedActiveCountry();
+    try {
+      const journalist = await createIsolatedJournalist(code);
+      await createPublishedRequestForDigest(journalist.id, code);
+      const recipient = await createIsolatedRecipient(code);
+
+      await runDigestTick(db);
+
+      const [deliveryRow] = await db
+        .select()
+        .from(digestDeliveries)
+        .where(eq(digestDeliveries.userId, recipient.id));
+      expect(deliveryRow?.status).toBe("sent");
+      expect(deliveryRow?.providerMessageId).toBe("<ekte-brevo-id@relay.brevo.com>");
+    } finally {
+      await cleanupCountry(code);
+    }
+  });
+
   it("FR-034: er idempotent — et andre tikk samme dag oppretter IKKE en ny digest", async () => {
     vi.stubEnv("BREVO_API_KEY", "");
     vi.spyOn(console, "warn").mockImplementation(() => {});
