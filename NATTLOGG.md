@@ -8863,3 +8863,69 @@ mønster som `ReportForm.tsx` (`useRef<HTMLFormElement>`,
 `focusFirstInvalidField(formRef)` når validering feiler ved innsending).
 Ellers uendret: de to åpne spec-spørsmålene og "24.3"-opprydding fra
 forrige runde er fortsatt utestående, ikke noe hastverk med dem.
+
+## Økt (fortsettelse): DESIGN.md 6.1 lagt til i ChangeCountryForm.tsx
+
+Fullførte task #60, identifisert i forrige runde. `ChangeCountryForm.tsx`
+(`/me/bytt-land`) hadde `isInvalid`-tilstand på begge Select-feltene og
+Checkbox-en (styrt av en `attempted`-boolsk, satt til `true` ved
+innsendingsforsøk), men kalte aldri `focusFirstInvalidField()` — i strid
+med DESIGN.md 6.1s "Skjemaer med feil flytter fokus til første feilende
+felt", som de 6 andre skjemaene i kodebasen (`ReportForm`, `LoginForm`,
+`SubscribeForm`, `ResponseForm`, `JournalistApplyForm`, m.fl.) allerede
+overholder korrekt.
+
+**Root cause**: komponenten brukte `<div className={styles.form}>` +
+`<Button onPress={handleSubmit}>`, ikke et faktisk `<form>`-element —
+`focusFirstInvalidField(formRef)` krever en `formRef` som peker på et
+ekte `<form>` for å kunne gjøre `formRef.current?.querySelector('[aria-invalid="true"]')`.
+
+**Fiksen**: restrukturerte til samme mønster som `ReportForm.tsx`:
+`useRef<HTMLFormElement>(null)`, elementet er nå
+`<form ref={formRef} className={styles.form} onSubmit={handleSubmit} noValidate>`,
+`handleSubmit` tar imot `(event: FormEvent)` og kaller
+`event.preventDefault()` først, og kaller `focusFirstInvalidField(formRef)`
+når `!formValid` før den returnerer tidlig. Knappen er nå
+`<Button type="submit">` i stedet for `onPress={handleSubmit}` (selve
+form-elementets `onSubmit` trigger nå innsendingen, som i `ReportForm`).
+Ren omstrukturering av selve DOM-formen — ingen endring i valideringslogikk,
+felt-rekkefølge eller API-kontrakt.
+
+**Testdekning**: ingen testfil eksisterte for denne komponenten i det hele
+tatt. La til `ChangeCountryForm.test.tsx` med to tester: én som bekrefter
+at fokus faktisk flytter til Checkbox-en (det eneste feltet som mangler,
+siden land/språk forhåndsvelges til brukerens nåværende verdier) ved et
+mislykket innsendingsforsøk, og én som bekrefter selve lagre-flyten
+(avkrysning + innsending → suksessmelding).
+
+**Empirisk verifisering**: `git stash push -- ChangeCountryForm.tsx` for å
+midlertidig gjenopprette den gamle `<div>`+`onPress`-versjonen → kjørte
+testfilen → bekreftet at fokus-testen feiler (timeout i `waitFor`, siden
+knappen selv beholder fokus — ingen felt fikk det), mens lagre-flyt-testen
+fortsatt består (den er uavhengig av selve DOM-strukturen) → `git stash
+pop` for å gjenopprette fiksen → bekreftet begge tester består.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**376
+tester**, +2), `i18n:check` (389 nøkler, uendret), `design:check-tokens`
+(OK, 40 komponent-CSS-filer), `next build` (grønn), `test:integration` mot
+ekte lokal Postgres (262 tester, uendret — `POST /me/change-country`s
+kontrakt er urørt, kun klientsidens DOM-struktur endret).
+
+### Neste økt
+
+Alle tidligere identifiserte, konkrete oppgaver fra denne nattens kritiske
+gjennomlesing er nå fullført (task #1-60). Neste steg: fortsette den
+kritiske gjennomlesingen til et nytt område av kodebasen som ikke er
+dekket ennå — kandidater å vurdere: (a) admin-dashbordets sider/komponenter
+under `/admin` (bygget i task #21, men ikke gjenstand for samme
+kritisk-lesing-runde som `/me`-laget har fått i natt), (b) selve
+digest-tick-logikken (`src/lib/jobs/digest.ts`/`tick.ts`) for asymmetriske
+vakt-mønstre eller uprøvde spec-scenarioer, siden dette er kjernefunksjonalitet
+ingen har lest kritisk siden de opprinnelige integrasjonstestene i task #17
+ble skrevet. Ellers uendret, fortsatt åpent for morgengjennomgang: de to
+spec-spørsmålene (`runExpireRequests()` manglende varsling; 18.1 vs
+16.2/FR-051 motsigelse om hvem som kan lese et svars innhold), og
+"24.3"-referanseopprydding i spec-en (lav prioritet, ren dokumentasjon).
+forrige runde er fortsatt utestående, ikke noe hastverk med dem.

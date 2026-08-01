@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { createTranslator } from "@/i18n/get-messages";
 import type { SupportedLocale } from "@/i18n/config";
 import { Select, type SelectOption } from "@/components/Select";
 import { Checkbox } from "@/components/Checkbox";
 import { Button } from "@/components/Button";
+import { focusFirstInvalidField } from "@/lib/forms/focus-first-invalid";
 import styles from "./ChangeCountryForm.module.css";
 
 interface CountryOption {
@@ -51,6 +52,7 @@ export function ChangeCountryForm({
   const [status, setStatus] = useState<Status>("loading_countries");
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [attempted, setAttempted] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const [countryCode, setCountryCode] = useState<string | null>(null);
   const [newLocale, setNewLocale] = useState<string | null>(null);
@@ -102,9 +104,13 @@ export function ChangeCountryForm({
   const selectedCountry = countries.find((c) => c.code === countryCode) ?? null;
   const formValid = countryCode !== null && newLocale !== null && consentTerms;
 
-  async function handleSubmit() {
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
     setAttempted(true);
-    if (!formValid) return;
+    if (!formValid) {
+      focusFirstInvalidField(formRef);
+      return;
+    }
 
     setStatus("submitting");
     setErrorKey(null);
@@ -138,7 +144,7 @@ export function ChangeCountryForm({
   }));
 
   return (
-    <div className={styles.form}>
+    <form ref={formRef} className={styles.form} onSubmit={handleSubmit} noValidate>
       {errorKey ? <p className={styles.formError}>{t(errorKey)}</p> : null}
 
       <Select
@@ -192,9 +198,9 @@ export function ChangeCountryForm({
         <p className={styles.hint}>{t("recipient.register.select_country_first")}</p>
       )}
 
-      <Button onPress={handleSubmit} isDisabled={status === "submitting"}>
+      <Button type="submit" isDisabled={status === "submitting"}>
         {status === "submitting" ? t("me.change_country.submitting") : t("me.change_country.submit")}
       </Button>
-    </div>
+    </form>
   );
 }
