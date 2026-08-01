@@ -9656,3 +9656,63 @@ en tilsvarende diff av seksjon 22s 40 FR-krav (sist gjort i task #27,
 verdt en ny, fersk gjennomgang gitt alt som er rettet siden). Ellers
 uendret: de to åpne spec-spørsmålene og "24.3"-referanseopprydding er
 fortsatt utestående for morgengjennomgang, ikke noe hastverk med dem.
+
+## Økt (fortsettelse): seksjon 15 (e-postmaler) og et utvalg av seksjon 22s FR-krav — begge rene
+
+Fulgte opp forrige rundes kandidat (a): diffet SPEC-V1.md seksjon 15s
+23-rads e-postmaltabell mot de 23 faktiske malfilene i
+`src/lib/email/templates/` (ekskludert `simple-cta-email.ts`, som er en
+delt layout-hjelper alle 23 andre malene importerer, ikke en egen mal —
+bekreftet ved å grepe importer, ikke gjettet). Sporet deretter HVER av de
+23 malene i `send.ts`s `TransactionalTemplate`-union til et faktisk
+kallsted: 17 via direkte streng-literal-grep, 3 til (`request_approved_
+published`/`changes_requested`/`request_rejected`) via ett felles,
+parametrisert kallsted i `moderation/requests.ts` (bekreftet at alle tre
+faktisk brukes, fra `publishRequest()`/`requestChanges()`/
+`rejectRequest()` hver for seg), og de 3 siste
+(`confirm_email`/`magic_link`/`journalist_application_received`) via
+dynamisk mal-valg i `auth/magic-link.ts` basert på rolle og
+`emailVerifiedAt`. **Fullstendig samsvar — alle 23 maler har en reell,
+nåbar avsender. Ingen bygget-men-aldri-kalt mal funnet.**
+
+Gjorde deretter noen målrettede stikkprøver i seksjon 22s 40 FR-krav
+(fremfor en full på-nytt-gjennomgang av alle 40, som task #27 allerede
+gjorde grundig) — plukket krav med en spesifikk, lett-å-bryte-uten-å-
+merke-det påstand:
+
+- **FR-025** ("settes ... i SAMME TRANSAKSJON som publisering"): bekreftet
+  at `publishRequest()` setter `status`, `publishedAt`, `moderatedBy` og
+  `moderatedAt` i ÉN enkelt `UPDATE`-setning (iboende atomisk) — ingen
+  separat "gjør offentlig"-steg finnes i det hele tatt, siden
+  `getPublicRequest()` bare leser basert på selve statusverdien. Kravet
+  er strukturelt umulig å bryte slik koden er bygget.
+- **FR-009** ("skal ikke tilby en locale ... der vilkår eller
+  personvernerklæring mangler"): bekreftet allerede korrekt implementert
+  (`listActiveCountries()`/`filterLocalesWithRequiredDocuments()`,
+  `src/lib/countries/countries.ts`) — dette var faktisk en tidligere
+  økts EGEN rettelse (kommentaren i koden viser til NATTLOGG, økt 7),
+  ikke en ny funn, men verdt å bekrefte at fiksen fortsatt står.
+
+Ingen nye funn i denne runden. Diminishing returns-signal: tre uavhengige
+brede spec-vs-kode-sveiper (klientkomponent-taus-feil, unike-indeks-
+races, og nå e-postmal-fullstendighet) samt flere målrettede FR-
+stikkprøver er nå alle kjørt uten nye funn — kodebasen ser ut til å være
+i genuint god stand etter en natt med systematisk jakt. Anbefaler at
+neste økt enten (a) gjør en fullstendig, fersk gjennomgang av alle 40
+FR-krav én etter én (ikke bare stikkprøver) for å være grundig, eller (b)
+aksepterer at brede sveiper har uttømt sin avkastning for nå og i stedet
+venter på (eller foreslår) noe konkret fra morgengjennomgangen.
+
+### Verifisert før commit (denne runden)
+
+Ingen kodeendring — ren gjennomlesing/diff/stikkprøver uten funn.
+
+### Neste økt
+
+Se avveiningen over. Ellers uendret: de to åpne spec-spørsmålene
+(`runExpireRequests()` manglende varsling; 18.1 vs 16.2/FR-051
+motsigelse om hvem som kan lese et svars innhold) og
+"24.3"-referanseopprydding i spec-en er fortsatt utestående for
+morgengjennomgang, ikke noe hastverk med dem. Kodebasen er i en solid,
+grønn tilstand: alle tester består, ingen kjente uhåndterte krasjer,
+ingen kjente tause feilveier i klientkomponenter.
