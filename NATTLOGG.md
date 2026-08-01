@@ -9110,3 +9110,57 @@ gitt kveldens funnmønster: er det flere sjekk-så-skriv-steder som mangler
 `isUniqueViolation`/`onConflictDoNothing`/en betinget WHERE-klausul? Ellers
 uendret: de to åpne spec-spørsmålene og "24.3"-referanseopprydding er
 fortsatt utestående for morgengjennomgang, ikke noe hastverk med dem.
+
+## Økt (fortsettelse): kritisk gjennomlesing av digest-/tick-logikken — ren, ingen funn
+
+Fulgte opp kandidat (b) fra forrige runde. Leste `src/lib/jobs/tick.ts`
+(alle seks jobbfunksjoner: `runDigestTick` + `sendDigestToRecipients`,
+`runExpireRequests`, `runExpireContactRequests`, `runDeadlineReminders`,
+`runStaleRequestReminders`, `runPurgeUnverified`) i sin helhet, samt
+`src/lib/digests/digests.ts` (`listDigests`, `retryFailedDigestDeliveries`)
+og `src/lib/email/digest.ts` (`renderDigestContent`,
+`insertPerRecipientTokens`) linje for linje, med spesielt fokus på nettopp
+sjekk-så-skriv-mønsteret som `countries.ts`-funnet over avdekket.
+
+**Konklusjon: ingen nye funn.** Denne delen av kodebasen er allerede godt
+gjennomarbeidet av tidligere økter:
+
+- `runDigestTick()`s `INSERT INTO digests` bruker allerede
+  `.onConflictDoNothing()` mot den unike indeksen på
+  `(countryCode, scheduledFor)`, med riktig `if (!createdDigest) continue`
+  -sjekk — nøyaktig det etablerte, korrekte mønsteret.
+- `sendDigestToRecipients()`s `INSERT INTO digest_deliveries` (unik indeks
+  på `(digestId, userId)`) trenger ikke samme fangst: funksjonen kalles kun
+  ÉN gang per (land, dag) — garantert av `onConflictDoNothing()`-sjekken
+  over — og itererer mottakere sekvensielt i samme kall, så det finnes
+  ikke noe kappløpsvindu å treffe i utgangspunktet.
+- `runDeadlineReminders()`/`runStaleRequestReminders()`s
+  sjekk-så-send-så-merk-mønster er en BEVISST akseptert, allerede
+  dokumentert avveining (task #43) — ikke en oversett feil.
+- `runPurgeUnverified()`s sletterekkefølge er allerede rettet (task #54).
+- `retryFailedDigestDeliveries()`s dobbeltleverings-race er allerede
+  rettet (task #50) — bruker samme "status i WHERE-betingelsen"-mønster
+  som `approveJournalist()`/`publishRequest()`.
+- `/api/digest-access/[token]/route.ts` bruker allerede den rettede
+  `isSafeRelativePath()` (task #55) korrekt.
+- `renderDigestContent()` kjører `escapeHtml()` konsekvent på ALT
+  interpolert innhold (tittel, sammendrag, organisasjonsnavn, geografisk
+  merknad) — ingen XSS-hull funnet.
+
+Ingen kodeendring denne runden — ren gjennomlesing uten funn. Nevner det
+eksplisitt likevel (fremfor å hoppe over en NATTLOGG-oppføring) siden
+"lest kritisk, ingenting å rette" er et like nyttig morgenreferansepunkt
+som et faktisk funn, gitt at NATTLOGG selv skal fungere som kartet over
+hva som er dekket i natt.
+
+### Neste økt
+
+Digest-/tick-laget er nå kritisk gjennomlest uten funn. Gjenstående
+kandidater for videre kritisk lesing: `src/lib/requests/` og
+`src/lib/responses/` (kjernedomenelogikken for selve
+forespørsel/svar-flyten) er ikke eksplisitt bekreftet gjennomgått med
+DENNE nattens spesifikke sjekklister (sjekk-så-skriv-mønstre,
+asymmetriske vakter, tause klientfeil) — kun task #17-28s bredere
+spec-/testdekning-runder tidligere på kvelden. Ellers uendret: de to åpne
+spec-spørsmålene og "24.3"-referanseopprydding er fortsatt utestående for
+morgengjennomgang, ikke noe hastverk med dem.
