@@ -16,7 +16,14 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
   }, [error]);
 
   return (
-    <html>
+    // lang="en": Next.js sin egen innebygde <NextError>-komponent under
+    // rendrer alltid engelsk tekst, uansett locale — SPEC-V1.md 21.2 krever
+    // korrekt lang-attributt på DOKUMENTNIVÅ nettopp for at en skjermleser
+    // ikke skal lese innhold med feil uttaleregler (samme begrunnelse som
+    // request-innholdets element-nivå lang, se
+    // foresporsler/[id]/[slug]/page.tsx) — her er "feil språk" det samme som
+    // "helt uten lang", siden det ikke finnes noen locale å slå opp.
+    <html lang="en">
       <body>
         <NextError statusCode={0} />
       </body>

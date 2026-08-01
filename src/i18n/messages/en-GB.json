@@ -463,6 +463,8 @@
   "contact_request.status.expired": "Expired",
   "contact_request.status.cancelled": "Cancelled",
 
+  "me.confirm_deletion.warning": "Are you sure you want to delete your account? This cannot be undone.",
+  "me.confirm_deletion.confirm_button": "Yes, permanently delete my account",
   "me.confirm_deletion.pending": "Confirming deletion of your account…",
   "me.confirm_deletion.success": "Your account has been deleted.",
   "me.confirm_deletion.error": "This link is invalid or has expired. Request a new deletion from your account page if you still want to delete your account.",

@@ -10973,3 +10973,106 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 13: første dedikerte gjennomgang av SPEC-V1.md seksjon 21 (ikke-funksjonelle krav) — fant og rettet to reelle gap
+
+Fulgte forrige økts eget forslag: seksjon 21 (ytelse, tilgjengelighet,
+i18n, øvrig, analyse) hadde aldri fått sin egen gjennomgangsøkt, i
+motsetning til 19/20/22/23. Gikk gjennom alle fem underseksjoner
+systematisk.
+
+**21.5 (Analyse)**: bekreftet at forbudet ("ingen åpningssporing, ingen
+tredjepartssporing... `DigestDelivery` har verken `opened_at` eller
+`clicked_at`") er korrekt håndhevet — ingen slike kolonner finnes i
+schema.ts, ingen tredjeparts analytics-bibliotek noe sted i `src/`.
+Selve rapporterings-UI-et for de 8 listede aggregerte målene er IKKE
+bygget, men dette er verken et akseptansekriterium for lansering
+(seksjon 23) eller listet i "Kuttet fra v1" (seksjon 25) — vurdert som
+et fremtidig, ikke-hastende byggebehov, ikke en bug å rette
+autonomt uten et klarere signal om at det trengs nå.
+
+**21.1 (Ytelse)**: arkitektonisk allerede riktig (digest-jobben kjører
+via en planlagt Netlify-funksjon, atskilt fra webtrafikk per
+konstruksjon) — selve gjennomstrømningstallet (10 000 mottakere på 30
+minutter) er en ekte lasttest-påstand som ikke lar seg verifisere i
+dette miljøet uten en ekte Brevo-konto og reell trafikk; ikke noe å
+"rette" i kode uten å finne opp et falskt benchmark.
+
+**21.2 (Tilgjengelighet) — reelt funn**: `src/app/global-error.tsx`
+(Next.js sin reserveside for feil i selve root-laget, over
+`[locale]`-segmentet) manglet HELT `lang`-attributt på sitt `<html>`.
+Bevisst unntatt fra i18n-systemet fra før (ingen locale å slå opp der
+roten selv har krasjet — riktig unntak), MEN aldri gitt noen
+FALLBACK-verdi i det hele tatt. Siden Next sin egen innebygde
+`<NextError>`-komponent alltid rendrer engelsk tekst uansett locale,
+er riktig verdi `lang="en"` (ikke plattformens `nb-NO` — det ville vært
+like galt den andre veien, med norsk uttale av engelsk tekst). Rettet.
+1 ny test (`document.documentElement` sin `lang`-attributt — bekreftet
+at attributter faktisk settes på jsdom sitt EKTE rotdokument, ikke et
+nøstet element, til tross for en kjent, akseptert
+"html kan ikke være barn av en div"-advarsel testing-library gir).
+Empirisk verifisert: fjernet `lang="en"` midlertidig → bekreftet at
+nøyaktig den nye testen feiler → gjenopprettet, begge tester består.
+
+**21.3 (Internasjonalisering) — reelt funn, mer alvorlig**:
+21.3s eget akseptansekriterium ("ett fullstendig oversatt tilleggsspråk
+skal finnes i test") holdt IKKE — en Python-diff av nøklene i
+`nb-NO.json` mot `en-GB.json` avdekket at `en-GB` manglet TO nøkler
+(`me.confirm_deletion.warning`, `.confirm_button` — introdusert av en
+tidligere økts konto-slette-bekreftelsesknapp, økt 58, men aldri lagt
+til i en-GB). `i18n:check` fanger IKKE denne klassen feil i det hele
+tatt — scriptet sjekker bare at nøkler BRUKT I KODEN finnes i
+STANDARDSPRÅKET (nb-NO), aldri om et ANNET aktivt språk har full
+dekning. Konsekvensen er reell, ikke bare teoretisk: en ekte en-GB-bruker
+som prøver å slette kontoen sin ville sett NORSK tekst midt i en ellers
+engelsk side (3.4s fallback-kjede), uten noen advarsel noe sted i
+verktøykjeden.
+
+**Rettet i to lag**:
+1. La til de to manglende nøklene i `en-GB.json` (full paritet
+   bekreftet: 0 manglende, 0 ekstra nøkler mot nb-NO).
+2. Bygget selve VERKTØYET som skulle fanget dette: ny
+   `findLocaleGaps()`-funksjon i `check-keys.ts` som sammenligner et
+   HVILKET SOM HELST aktivt språk (fra `SUPPORTED_LOCALES`) mot
+   standardspråket og skriver en ADVARSEL (ikke feil — akkurat slik
+   21.3 selv sier: "manglende oversettelse i andre språk gir advarsel
+   og fallback", til forskjell fra FR-012s bygg-feilende sjekk mot
+   nøkler brukt i koden). 2 nye enhetstester. Empirisk verifisert: fjernet
+   én nøkkel fra `en-GB.json` midlertidig, bekreftet at
+   `npx tsx src/i18n/check-keys.ts` skriver en tydelig advarsel MEN
+   avslutter med kode 0 (feiler ikke bygget) → gjenopprettet, ingen
+   advarsel igjen.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run`
+(**442 tester**, +3), `i18n:check` (**507 nøkler**, uendret — selve
+nøkkeltallet endret seg ikke, bare parkobling mellom språkene ble
+rettet), `design:check-tokens` (OK, **53 komponent-CSS-filer**,
+uendret), `next build` (grønn), `test:integration` mot ekte lokal
+Postgres (**309 tester**, uendret — ingen databasepåvirkende endring
+denne runden).
+
+### Neste økt
+
+Seksjon 21 er nå gjennomgått i sin helhet. To reelle funn rettet
+(global-error.tsx sin manglende lang, en-GB sitt reelle
+oversettelsesgap). Ett bevisst IKKE bygget: 21.5s rapporterings-UI for
+aggregerte mål (ikke et lanseringskriterium, ikke hastende).
+
+Mulig neste steg: nå som `findLocaleGaps()`-advarselen finnes, kan det
+være verdt å faktisk KJØRE `i18n:check` som en del av CI-loggen
+(allerede kjørt i `.github/workflows/ci.yml` per README.md) og
+dobbeltsjekke at en fremtidig advarsel faktisk blir SETT av noen — en
+advarsel som aldri leses er ikke mye bedre enn ingen advarsel. Ingen
+kjent handling nødvendig nå, bare noe å huske på.
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.
