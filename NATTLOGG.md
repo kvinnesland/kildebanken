@@ -10831,3 +10831,79 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 11 (fortsettelse): faktisk verifiserte Brevo-webhook-antagelsen mot ekte dokumentasjon — fant og rettet én reell bug
+
+Ingen nye punkter sto igjen i forrige økts "Neste økt", så gikk på jakt
+etter selvflagget usikkerhet i kodebasen: grep'et etter `TODO`/`FIXME` i
+`src/`. Fant to. `retention.ts` sin TODO (hardkodede
+retensjonsperioder i stedet for per-land-konfigurasjon) er bevisst utsatt
+til et land nummer to faktisk finnes (ingen reell variasjon å konfigurere
+ennå) — urørt. Den andre, i
+`src/app/api/webhooks/email-events/route.ts`, sa at Brevo sitt eksakte
+feltnavn-/verdiformat for webhook-nyttelasten ALDRI var bekreftet mot
+ekte dokumentasjon, "ingen API-nøkkel/nettverkstilgang til Brevo
+tilgjengelig" — men denne økten HAR faktisk utgående nettverkstilgang via
+miljøets proxy. `developers.brevo.com` selv avviste `WebFetch` med 403
+(sannsynligvis bot-beskyttelse), men `WebSearch` mot flere uavhengige
+kilder (tredjeparts integrasjonsguider, en reell GitHub-saksrapport fra
+Symfony sin mailer-komponent) ga samstemte, verifiserbare svar.
+
+**Bekreftet**: feltnavnene `email`, `event` og `message-id` (med
+bindestrek) stemmer nøyaktig med koden sin antagelse.
+Hendelsestype-verdiene er camelCase (`hardBounce`, `softBounce`), ikke
+snake_case — men `normalizeEvent()` sin egen normalisering (lowercase +
+fjern ikke-bokstaver) dekker allerede begge formene, så dette utgjorde
+ingen praktisk forskjell. `message-id` kan mangle på enkelte
+hendelsestyper (bekreftet via Symfony-saksrapporten) — allerede håndtert
+riktig som valgfritt felt.
+
+**Én reell bug avdekket**: Brevos faktiske verdi for en permanent ugyldig
+adresse er `invalid`, IKKE `invalid_email` som `normalizeEvent()` sin
+switch-setning sjekket mot. `invalid_email`-grenen traff derfor ALDRI —
+en slik hendelse falt gjennom til `default: return null`, og webhook-en
+gjorde stille ingenting i stedet for å sette adressen til `bounced` og
+sperre den, slik SPEC-V1.md 10.3 krever for en permanent leveringsfeil
+("Hard bounce: adressen settes til bounced og får ingen flere
+utsendelser" — en permanent ugyldig adresse er semantisk det samme
+utfallet). **Rettet**: lagt til `case "invalid":` i samme gren som
+`hard_bounce` (beholdt `invalid_email` også, ufarlig i tillegg). Oppdatert
+kommentarene i `route.ts` til å reflektere det som nå faktisk er
+bekreftet, i stedet for å fortsatt hevde det er ukjent.
+
+**Testdekning**: 1 ny integrasjonstest som sender `event: "invalid"` og
+bekrefter at abonnementet settes til `bounced` — akkurat den ekte
+Brevo-verdien, ikke den oppspikrede (og feilaktige) `invalid_email`.
+
+**Empirisk verifisering**: fjernet midlertidig `case "invalid":` (beholdt
+`invalid_email`) → bekreftet at NØYAKTIG den nye testen feiler
+(`expected 'active' to be 'bounced'`) → gjenopprettet fra sikkerhetskopi,
+alle 13 tester i filen består.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run`
+(**439 tester**, uendret), `i18n:check` (**507 nøkler**, uendret),
+`design:check-tokens` (OK, **53 komponent-CSS-filer**, uendret),
+`next build` (grønn), `test:integration` mot ekte lokal Postgres, to
+påfølgende ganger (**309 tester** hver gang, +1).
+
+### Neste økt
+
+`src/lib/email/send.ts` sin egen antagelse om Brevo sitt SVARFORMAT ved
+faktisk utsending (`messageId`, camelCase, uten bindestrek — et ANNET
+felt enn webhook-ens `message-id`) ble IKKE eksplisitt verifisert denne
+runden, bare webhook-siden. Kan være verdt et tilsvarende
+`WebSearch`-sjekk i en fremtidig økt, samme metode som her (developers.
+brevo.com selv 403'er `WebFetch`, men uavhengige kilder via `WebSearch`
+ga gode nok svar denne gangen).
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

@@ -18,20 +18,28 @@ function isAuthorized(request: Request): boolean {
 const bodySchema = z.object({
   email: z.string().email(),
   event: z.string(),
-  // Brevo sitt feltnavn for meldings-ID i webhook-nyttelasten — samme
-  // forbehold som normalizeEvent() under (ikke bekreftet mot ekte
-  // dokumentasjon denne økten). Valgfritt: mangler den, hopper vi bare over
+  // Brevo sitt feltnavn for meldings-ID i webhook-nyttelasten — bekreftet
+  // (økt 11, se NATTLOGG.md) mot Brevos offentlige dokumentasjon: feltet
+  // heter faktisk "message-id" med bindestrek. Kan likevel mangle på enkelte
+  // hendelsestyper (bekreftet via en reell feilrapport mot en annen klient),
+  // derfor fortsatt valgfritt: mangler den, hopper vi bare over
   // DigestDelivery-koblingen (processEmailEvent) og gjør resten som før.
   "message-id": z.string().optional(),
 });
 
 /**
- * Brevo sitt eget feltnavn for hendelsestype/verdiene er IKKE bekreftet mot
- * faktisk dokumentasjon i denne økten (ingen API-nøkkel/nettverkstilgang
- * til Brevo tilgjengelig) — normaliseringen under dekker de mest sannsynlige
- * stavemåtene (både snake_case og camelCase) defensivt. MÅ verifiseres mot
- * ekte Brevo-webhook-nyttelast før produksjon, se TODO i
- * src/lib/email/send.ts for samme forbehold om selve Brevo-integrasjonen.
+ * Bekreftet (økt 11, se NATTLOGG.md) mot Brevos offentlige dokumentasjon og
+ * flere uavhengige tredjeparts-integrasjonsguider: feltnavnene `email`,
+ * `event` og `message-id` stemmer med antagelsen under, og selve
+ * hendelsestype-verdiene er camelCase (`hardBounce`, `softBounce`), ikke
+ * snake_case — normaliseringen under (lowercase + fjern ikke-bokstaver)
+ * dekker begge formene uansett, så det utgjorde ingen forskjell i praksis.
+ * DERIMOT avdekket verifiseringen en reell feil: Brevos faktiske verdi for
+ * en permanent ugyldig adresse er `invalid`, ikke `invalid_email` som stod
+ * her før — `invalid_email`-grenen traff derfor ALDRI, og en slik hendelse
+ * ble stille forkastet (default → null) i stedet for å sette adressen til
+ * `bounced` som SPEC-V1.md 10.3 krever for en permanent leveringsfeil.
+ * Rettet.
  */
 function normalizeEvent(rawEvent: string): EmailEventType | null {
   const normalized = rawEvent.toLowerCase().replace(/[^a-z]/g, "_");
@@ -44,6 +52,7 @@ function normalizeEvent(rawEvent: string): EmailEventType | null {
     case "hard_bounce":
     case "hardbounce":
     case "blocked":
+    case "invalid":
     case "invalid_email":
       return "hard_bounce";
     case "spam":

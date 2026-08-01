@@ -160,6 +160,26 @@ describe("POST /webhooks/email-events mot ekte Postgres (SPEC-V1.md 10.1/10.3, F
     expect(row?.status).toBe("bounced");
   });
 
+  it("behandler Brevos faktiske 'invalid'-hendelse (permanent ugyldig adresse) som hard_bounce, ikke bare 'invalid_email'", async () => {
+    // Bekreftet mot Brevos offentlige dokumentasjon (økt 11, se
+    // NATTLOGG.md): den faktiske hendelsesverdien er "invalid", ikke
+    // "invalid_email" som normalizeEvent() sjekket mot før denne rettingen
+    // — denne testen beviser at retten faktisk fanger den ekte verdien.
+    vi.stubEnv("EMAIL_WEBHOOK_SECRET", "riktig-hemmelighet");
+    const sub = await createSubscribedRecipient();
+
+    const response = await POST(
+      postRequest({ email: sub.email, event: "invalid" }, { secret: "riktig-hemmelighet" })
+    );
+
+    expect(response.status).toBe(200);
+    const [row] = await db
+      .select()
+      .from(emailSubscriptions)
+      .where(eq(emailSubscriptions.id, sub.subscriptionId));
+    expect(row?.status).toBe("bounced");
+  });
+
   it("videresender \"message-id\" fra nyttelasten som providerMessageId, og oppdaterer den SPESIFIKKE DigestDelivery-en (19.10, 16.2)", async () => {
     vi.stubEnv("EMAIL_WEBHOOK_SECRET", "riktig-hemmelighet");
     const sub = await createSubscribedRecipient();
