@@ -8605,3 +8605,60 @@ verifisert mot ekte konto), eller en runde gjennom API-rute-lagene i
 `src/app/api/` selv. Ellers uendret: to åpne spørsmål
 (`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek, OG-bilde,
 Sentry/Brevo.
+
+## Fortsettelse av økt 7 — dekket et testhull i webhook-ruten (ingen kodefeil funnet)
+
+Gikk til `api/webhooks/email-events/route.ts` som varslet. `isAuthorized()`
+(delt hemmelighet, feiler LUKKET uten konfigurert hemmelighet — trygg
+standard, samme prinsipp som `RETENTION_DRY_RUN`) og `normalizeEvent()`
+(defensiv snake_case/camelCase-normalisering) ble lest kritisk — ingen
+logikkfeil funnet. Vurderte og bevisst IKKE endret: (1) hemmeligheten
+godtas via søkeparameter, som generelt frarådes (kan havne i loggfiler) —
+men dette er trolig den ENESTE praktiske måten Brevo sitt eget
+webhook-oppsett faktisk støtter (ingen egen tilgang til å bekrefte
+dette), så en endring her uten faktisk Brevo-dokumentasjon ville vært en
+gjetning; (2) `provided === configuredSecret` er en RÅ strengsammenligning,
+ikke en tidskonstant sammenligning (teoretisk CWE-208-klasse) — vurdert som
+et for lavt-alvorlighetsnivå til å rettferdiggjøre kompleksitet, gitt at
+nettverksstøy uansett dominerer over en så liten timing-forskjell i
+praksis over HTTP.
+
+**Reelt hull funnet**: INGEN testfil eksisterte for denne ruten — det
+eneste stedet i hele `src/app/api/`-treet der en rute inneholder egen,
+ikke-triviell logikk (autentisering + hendelsesnormalisering) UTEN noen
+underliggende lib-funksjon som allerede er testet for den logikken (til
+forskjell fra resten av rutene i kodebasen, som er tynne adaptere over
+allerede grundig testede lib-funksjoner — derfor testes ruter generelt
+ikke direkte i dette prosjektet). La til en full integrasjonstestfil (11
+tester): 401 ved manglende/feil/manglende hemmelighet (både søkeparameter
+og header), 400 ved ugyldig kropp/e-post/ikke-parsbar JSON, 200 og faktisk
+kall til `processEmailEvent()` for en kjent hendelse (bekreftet via
+databasetilstand — sperring av adressen), samme for en camelCase-variant
+("HardBounce"), og 200-uten-handling for en ukjent/irrelevant hendelse
+("opened").
+
+**Verifisert empirisk**: ødela midlertidig `isAuthorized()` (returnerte
+alltid `true`) og bekreftet at nettopp de to 401-testene som tester feil/
+manglende hemmelighet feilet som forventet (`expected 200 to be 401`),
+gjenopprettet den ekte filen fra en sikkerhetskopi og bekreftet alle 11
+tester består igjen.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**368
+tester**, uendret), `i18n:check` (**387 nøkler**, uendret),
+`design:check-tokens` (**40** komponent-CSS-filer, uendret), `rm -rf .next
+&& next build` (grønn), `test:integration` mot ekte lokal Postgres (**262
+tester**, +11 — bekreftet at 2 av de nye testene feiler mot en midlertidig
+ødelagt `isAuthorized()`, består mot den ekte, urørte ruten).
+
+### Neste økt
+
+Ingen kodefeil funnet i selve webhook-ruten denne runden, kun et
+testdekningshull tettet. Neste kandidat for kritisk lesing: en runde
+gjennom resten av API-rute-lagene i `src/app/api/` (CSRF-sjekk,
+inputvalidering, feilhåndtering — ingen av dem har fått samme kritiske
+gjennomlesing som lib-laget i natt), eller `src/lib/journalist-inbox/` sine
+underliggende ruter. Ellers uendret: to åpne spørsmål
+(`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek, OG-bilde,
+Sentry/Brevo.
