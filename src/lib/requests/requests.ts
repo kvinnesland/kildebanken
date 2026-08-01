@@ -10,6 +10,7 @@ import {
   responses,
   users,
 } from "@/db/schema";
+import { isUniqueViolation } from "@/db/errors";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { zonedWallTimeToUtc } from "@/lib/datetime/timezone";
 import { checkRateLimit } from "@/lib/security/rate-limit";
@@ -157,25 +158,62 @@ export async function updateDraft(
 
   let slug = existing.slug;
   const effectiveTitle = patch.title ?? existing.title;
-  if (!slug && effectiveTitle) {
-    slug = await generateUniqueSlug(effectiveTitle);
+  const generatingNewSlug = !slug && !!effectiveTitle;
+  if (generatingNewSlug) {
+    slug = await generateUniqueSlug(effectiveTitle!);
   }
 
   const { responseDeadlineLocal: _omit, ...rest } = patch;
 
-  await db
-    .update(requests)
-    .set({ ...rest, responseDeadline: resolvedDeadline, slug, updatedAt: new Date() })
-    .where(eq(requests.id, requestId));
+  // Sjekk-så-skriv på en unik kolonne (requests_slug_idx) — samme bug-klasse
+  // som createCountry() i src/lib/admin/countries.ts (se NATTLOGG.md): to
+  // journalister som lagrer et utkast med samme/lignende tittel omtrent
+  // samtidig kunne begge få samme kandidat fra generateUniqueSlug() før noen
+  // av dem rakk å skrive. I motsetning til createCountry() er "avvis med en
+  // feilmelding" upassende her — brukeren har ikke gjort noe galt, de skrev
+  // bare en tittel — så i stedet for å returnere errors.already_exists,
+  // genereres en NY kandidat og skrivingen forsøkes på nytt.
+  const MAX_SLUG_ATTEMPTS = 10;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await db
+        .update(requests)
+        .set({ ...rest, responseDeadline: resolvedDeadline, slug, updatedAt: new Date() })
+        .where(eq(requests.id, requestId));
+      break;
+    } catch (err) {
+      if (generatingNewSlug && isUniqueViolation(err) && attempt < MAX_SLUG_ATTEMPTS) {
+        // Bevisst IKKE generateUniqueSlug() på nytt her: den skanner
+        // deterministisk fra samme startpunkt (base, base-2, base-3, …)
+        // hver gang, så flere samtidige tapere ville konvergert mot NØYAKTIG
+        // samme neste kandidat og fortsatt kollidert med hverandre —
+        // O(antall samtidige skrivinger) runder for å løse seg helt opp.
+        // Et tilfeldig startpunkt for selve gjenopprettingsforsøket sprer
+        // taperne fra hverandre, slik at nesten alle løses i én ekstra
+        // runde uansett hvor mange som kolliderte samtidig.
+        slug = await generateUniqueSlugFrom(effectiveTitle!, 2 + Math.floor(Math.random() * 1000));
+        continue;
+      }
+      throw err;
+    }
+  }
 
   return { ok: true, id: requestId };
 }
 
 async function generateUniqueSlug(title: string): Promise<string> {
+  return generateUniqueSlugFrom(title, 2);
+}
+
+async function generateUniqueSlugFrom(title: string, startAttempt: number): Promise<string> {
   const base = slugify(title) || "foresporsel";
   let candidate = base;
-  let attempt = 2;
+  let attempt = startAttempt;
 
+  // Den ALLERFØRSTE kandidaten er bare selve basen uten suffiks — det
+  // gjelder også ved en race-gjenoppretting med et tilfeldig startpunkt >
+  // 2, siden basen kan ha blitt ledig igjen (usannsynlig, men billig å
+  // sjekke) og alltid er den peneste kandidaten om den er ledig.
   while (true) {
     const [existing] = await db
       .select({ id: requests.id })

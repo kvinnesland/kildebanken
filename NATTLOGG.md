@@ -9164,3 +9164,89 @@ asymmetriske vakter, tause klientfeil) — kun task #17-28s bredere
 spec-/testdekning-runder tidligere på kvelden. Ellers uendret: de to åpne
 spec-spørsmålene og "24.3"-referanseopprydding er fortsatt utestående for
 morgengjennomgang, ikke noe hastverk med dem.
+
+## Økt (fortsettelse): kritisk gjennomlesing av src/lib/requests/requests.ts — enda en sjekk-så-skriv-krasj, denne gangen verre å utløse i praksis
+
+Fulgte opp forrige rundes kandidat: leste `src/lib/requests/requests.ts`
+(alle ni eksporterte funksjoner) linje for linje, med samme
+sjekk-så-skriv-sjekkliste som avdekket `createCountry()`-funnet forrige
+runde.
+
+**Funn**: `generateUniqueSlug()` (kalt fra `updateDraft()` FØRSTE gang en
+tittel settes på et utkast) har nøyaktig samme sjekk-så-skriv-mønster —
+en `SELECT ... WHERE slug = kandidat`, etterfulgt av en `UPDATE`
+et helt annet sted (i selve `updateDraft()`) som ALDRI fanget databasens
+unike indeks (`requests_slug_idx` på `requests.slug`). To journalister
+(eller samme journalist i to faner) som lagrer et utkast med
+samme/lignende tittel omtrent samtidig kunne begge få samme kandidat fra
+`generateUniqueSlug()` før noen av dem rakk å skrive, og den tapende
+`UPDATE`-en ville krasjet med en uhåndtert 23505 i stedet for bare å
+prøve en ny kandidat. Dette er trolig et LETTERE utløst tilfelle enn
+`createCountry()`-racen (to administratorer som velger nøyaktig samme
+2-bokstavs landkode i samme øyeblikk er sjelden) — to journalister som
+gir forespørslene sine et likt eller generisk tittelutkast ("Trenger
+kilder til sak om ...") er langt mer sannsynlig i reell bruk.
+
+**Fiksen, og hvorfor den avviker fra `createCountry()`-mønsteret**: i
+motsetning til landkode-krasjen er "avvis med `errors.already_exists`"
+FEIL respons her — brukeren har ikke prøvd å gjenbruke noe bevisst, de
+skrev bare en tittel. Løsningen er derfor å pakke selve `UPDATE`-en i en
+løkke: ved en fanget `isUniqueViolation`, genereres en NY kandidat og
+skrivingen forsøkes på nytt (opptil 10 ganger), usynlig for brukeren.
+
+**Et andre lag i selve fiksen, funnet empirisk**: den første versjonen av
+fiksen kalte bare `generateUniqueSlug()` på nytt ved hvert forsøk — men
+den funksjonen skanner DETERMINISTISK fra samme startpunkt hver gang
+(base, base-2, base-3, …). Under ekte, HØY samtidighet (testet med 8
+parallelle skrivinger med identisk tittel) konvergerte flere samtidige
+tapere gjentatte ganger mot NØYAKTIG samme neste kandidat og kolliderte
+med HVERANDRE — en kaskade som i verste fall krever like mange runder som
+det er samtidige skrivinger for å løse seg helt opp, noe som gjorde at
+noen av de 8 fortsatt krasjet selv med 5 tillatte forsøk. Rettet ved å gi
+selve gjenopprettingsveien (ikke den vanlige, ikke-samtidige stien) et
+TILFELDIG startpunkt for disambiguator-telleren (`2 + tilfeldig(0-999)`)
+— sprer taperne fra hverandre slik at de nesten alltid løses opp i én
+ekstra runde, uansett hvor mange som kolliderte samtidig. Selve
+`generateUniqueSlug()` (den vanlige, udelte veien) er urørt og gir
+fortsatt de samme pene, deterministiske "-2"/"-3"-suffiksene som før for
+det normale (ikke-samtidige) tilfellet.
+
+**Testdekning**: la til en ekte samtidighetstest i
+`requests.integration.test.ts`: 8 utkast opprettes, deretter kalles
+`updateDraft()` på ALLE samtidig med NØYAKTIG samme tittel via
+`Promise.allSettled`, og bekrefter at alle fullføres (ingen uhåndtert
+`rejected`), og at alle 8 ender opp med DISTINKTE slugs.
+
+**Empirisk verifisering**: `git stash push -- requests.ts` for å
+midlertidig fjerne HELE fiksen → kjørte testen 3 ganger på rad →
+bekreftet krasj (`rejected`) i alle tre kjøringene → `git stash pop` for å
+gjenopprette fiksen → kjørte hele testfilen 3 ganger til → bekreftet at
+alle 9 testene består i alle tre kjøringene. Underveis ble også en
+mellomliggende, UTILSTREKKELIG versjon av fiksen (uten det tilfeldige
+startpunktet, kun med 5 forsøk) empirisk avkreftet på samme måte — den
+feilet fortsatt mot 8-veis samtidighet, noe som beviste at kaskade-
+konvergensen var reell og ikke bare en teoretisk bekymring.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (383
+tester, uendret — ren lib/integrasjonsfiks), `i18n:check` (389 nøkler,
+uendret), `design:check-tokens` (OK, 40 komponent-CSS-filer), `next build`
+(grønn), `test:integration` mot ekte lokal Postgres (**264 tester**, +1).
+
+Merknad: Postgres-tjenesten var nede ved starten av denne runden
+(`ECONNREFUSED 127.0.0.1:5432`) — startet på nytt (`service postgresql
+start`) før testene kunne kjøre. Ingen kodeårsak, bare containerens egen
+tjenestetilstand; nevnt her i tilfelle det skjer igjen neste runde.
+
+### Neste økt
+
+To reelle sjekk-så-skriv-krasjer funnet og rettet på to kvelder på rad
+(`createCountry()`, nå `generateUniqueSlug()`/`updateDraft()`) — verdt å
+sjekke om MØNSTERET finnes flere steder. Ulest ennå med denne spesifikke
+sjekklisten: `src/lib/responses/responses.ts` (kjernedomenelogikken for
+selve svar-innsendingen — har trolig egne unike indekser å sjekke, f.eks.
+én-svar-per-respondent-per-forespørsel om en slik regel finnes) og
+`src/lib/contact-requests/contact-requests.ts`. Ellers uendret: de to
+åpne spec-spørsmålene og "24.3"-referanseopprydding er fortsatt
+utestående for morgengjennomgang, ikke noe hastverk med dem.

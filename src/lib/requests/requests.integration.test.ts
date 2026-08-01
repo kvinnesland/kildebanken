@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { auditLogs, moderatorCountries, requests, responses, users } from "@/db/schema";
 import {
@@ -282,6 +282,53 @@ describe("createDraft — hastighetsgrense (SPEC-V1.md 18: 20 opprettelser per j
       if (!twentyFirst.ok) expect(twentyFirst.error).toBe("errors.rate_limited");
     } finally {
       for (const id of createdIds) {
+        await db.delete(requests).where(eq(requests.id, id));
+      }
+    }
+  });
+});
+
+describe("updateDraft() — slug-genereringen tåler SAMTIDIGE lagringer med samme tittel", () => {
+  it("nøyaktig N av N samtidige utkast med SAMME tittel ender opp med N DISTINKTE slugs, aldri en uhåndtert feil", async () => {
+    // To (eller flere) journalister som lagrer et utkast med samme/lignende
+    // tittel omtrent samtidig kunne begge få samme kandidat fra
+    // generateUniqueSlug() før noen av dem rakk å skrive — requests.slug har
+    // en unik indeks (requests_slug_idx), og uten fangst ville den tapende
+    // UPDATE-en krasje med en uhåndtert 23505 i stedet for å bare prøve en
+    // ny kandidat. Samme mønster som countries.integration.test.ts sin
+    // createCountry()-samtidighetstest.
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+
+    const drafts = await Promise.all(
+      Array.from({ length: 8 }, () => createDraft(journalist.id))
+    );
+    const requestIds = drafts.map((d) => {
+      if (!d.ok) throw new Error("Klarte ikke opprette utkast");
+      return d.id;
+    });
+
+    try {
+      const results = await Promise.allSettled(
+        requestIds.map((id) =>
+          updateDraft(id, journalist.id, { title: "Nøyaktig samme tittel for alle utkastene" })
+        )
+      );
+
+      for (const result of results) {
+        expect(result.status).toBe("fulfilled");
+        if (result.status === "fulfilled") expect(result.value.ok).toBe(true);
+      }
+
+      const rows = await db
+        .select({ slug: requests.slug })
+        .from(requests)
+        .where(inArray(requests.id, requestIds));
+      const slugs = rows.map((r) => r.slug);
+      expect(slugs).toHaveLength(requestIds.length);
+      expect(new Set(slugs).size).toBe(requestIds.length); // alle distinkte
+    } finally {
+      for (const id of requestIds) {
         await db.delete(requests).where(eq(requests.id, id));
       }
     }
