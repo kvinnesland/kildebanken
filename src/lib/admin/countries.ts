@@ -1,6 +1,7 @@
 import { and, eq, lte } from "drizzle-orm";
 import { db } from "@/db/client";
 import { auditLogs, countries, legalDocuments, moderatorCountries, users } from "@/db/schema";
+import { isUniqueViolation } from "@/db/errors";
 import { requireAdmin } from "@/lib/auth/authorize";
 
 export type CountryActionResult = { ok: true } | { ok: false; error: string };
@@ -49,21 +50,36 @@ export async function createCountry(input: CreateCountryInput): Promise<CountryA
     .limit(1);
   if (existing) return { ok: false, error: "errors.already_exists" };
 
-  await db.insert(countries).values({ ...input, status: "draft" });
+  try {
+    await db.insert(countries).values({ ...input, status: "draft" });
 
-  // FR-050: "logge alle moderator- og administratorhandlinger ... med
-  // land." Manglet i hele src/lib/admin/ frem til nå — et reelt hull
-  // oppdaget ved å spore audit_logs bakover (se NATTLOGG.md, økt 7).
-  await db.insert(auditLogs).values({
-    actorType: "user",
-    actorUserId: session.userId,
-    countryCode: input.code,
-    action: "country.create",
-    entityType: "country",
-    entityId: input.code,
-  });
+    // FR-050: "logge alle moderator- og administratorhandlinger ... med
+    // land." Manglet i hele src/lib/admin/ frem til nå — et reelt hull
+    // oppdaget ved å spore audit_logs bakover (se NATTLOGG.md, økt 7).
+    await db.insert(auditLogs).values({
+      actorType: "user",
+      actorUserId: session.userId,
+      countryCode: input.code,
+      action: "country.create",
+      entityType: "country",
+      entityId: input.code,
+    });
 
-  return { ok: true };
+    return { ok: true };
+  } catch (err) {
+    // Dekker race conditions mot sjekken over (to administratorer som
+    // oppretter samme landkode samtidig) — samme mønster som
+    // registration/recipient.ts og registration/journalist.ts: databasens
+    // unike constraint på `countries.code` (primærnøkkel) er den egentlige
+    // garantien, sjekken over er bare en tidlig, vennligere feilvei. Uten
+    // denne fangsten ville den tapende forespørselen krasjet med en
+    // uhåndtert 23505 i stedet for å få den samme, forventede
+    // errors.already_exists-responsen som den vinnende sjekken gir.
+    if (isUniqueViolation(err)) {
+      return { ok: false, error: "errors.already_exists" };
+    }
+    throw err;
+  }
 }
 
 export interface UpdateCountryInput {

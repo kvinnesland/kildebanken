@@ -9027,3 +9027,86 @@ forrige runde — selve digest-tick-logikken
 opprinnelige integrasjonstestene i task #17. Ellers uendret: de to åpne
 spec-spørsmålene og "24.3"-referanseopprydding er fortsatt utestående for
 morgengjennomgang, ikke noe hastverk med dem.
+
+## Økt (fortsettelse): kritisk gjennomlesing av src/lib/admin/countries.ts — nok en TOCTOU-krasj
+
+Fortsatte gjennomlesingen til `src/lib/admin/`-modulen, som forrige runde
+identifiserte som ulest. Leste `countries.ts` (samtlige fem
+eksporterte funksjoner: `listAllCountries`, `createCountry`,
+`updateCountry`, `setCountryStatus`, `assignModeratorToCountry`) og
+`dashboard.ts` linje for linje.
+
+**Funn**: `createCountry()` hadde nøyaktig samme sjekk-så-skriv-mønster
+som denne natten allerede har funnet og rettet gjentatte ganger andre
+steder (task #48, #49, #54) — en `SELECT ... WHERE code = X`-eksistenssjekk
+etterfulgt av en ubeskyttet `INSERT`, uten å fange databasens egen unike
+constraint på `countries.code` (primærnøkkel). To administratorer som
+samtidig oppretter samme landkode kunne begge passere sjekken før noen av
+dem rakk å skrive, og den tapende `INSERT`-en ville krasje med en uhåndtert
+Postgres-feil (23505/unique_violation) i stedet for det forventede,
+allerede-eksisterende `errors.already_exists`-svaret. Bekreftet dette er
+EKTE (ikke bare teoretisk) empirisk: 3 kjøringer på rad med 10 samtidige
+`createCountry()`-kall på samme kode ga alle tre en `rejected`-promise
+(krasj), ikke en `errors.already_exists`-respons.
+
+Det som gjør dette funnet interessant er at kodebasen allerede HAR en
+etablert, delt løsning for nøyaktig dette problemet:
+`isUniqueViolation(err)` fra `src/db/errors.ts`, brukt konsekvent i
+`registration/recipient.ts`, `registration/journalist.ts`,
+`contact-requests/contact-requests.ts` og `responses/responses.ts` — men
+`admin/countries.ts` var det ENESTE stedet i kodebasen med et
+sjekk-så-`INSERT`-mønster på et unikt/primærnøkkel-felt som IKKE brukte
+denne hjelperen. Et rent asymmetrisk-vakt-funn (samme teknikk som
+task #24/#25), denne gangen på tvers av hele kodebasen, ikke bare
+innad i én modul.
+
+**Fiksen**: pakket `INSERT`-en (og den påfølgende audit-logg-raden, siden
+begge må lykkes sammen) i `try`/`catch`, fanger `isUniqueViolation(err)` og
+returnerer `errors.already_exists` i så fall — nøyaktig samme mønster som
+`recipient.ts`/`journalist.ts`, importert fra samme `@/db/errors`-modul.
+
+**Testdekning**: `countries.integration.test.ts` hadde fra før kun én
+SEKVENSIELL "avviser en kode som allerede finnes"-test (treffer bare
+forhåndssjekken, ikke selve kappløpsvinduet). La til en ny, EKTE samtidig
+test: 10 parallelle `createCountry()`-kall med samme kode via
+`Promise.allSettled` (samme teknikk som
+`rate-limit.integration.test.ts`s 20-samtidige advisory-lås-test), som
+bekrefter at ALLE kallene fullføres (`fulfilled`, aldri en uhåndtert
+`rejected`-promise), at nøyaktig ett lykkes, og at nettopp ÉN rad havner i
+databasen.
+
+**Empirisk verifisering**: `git stash push -- countries.ts` for å
+midlertidig fjerne fangsten → kjørte den nye testen 3 ganger på rad →
+bekreftet krasj (`rejected`) i alle tre kjøringene, ikke flakete/tilfeldig
+→ `git stash pop` for å gjenopprette fiksen → kjørte testen 3 ganger til →
+bekreftet at alle 16 testene i filen består i alle tre kjøringene.
+
+**Funn 2 (vurdert, ingen fiks)**: sjekket om `updateCountry()` og
+`setCountryStatus()` har lignende TOCTOU-sårbarheter — nei: begge bruker
+`UPDATE ... WHERE code = X` (ikke `INSERT`), som er trygt uansett
+race siden en `UPDATE` mot en ikke-eksisterende rad bare påvirker null
+rader (ingen constraint-krasj mulig), og `assignModeratorToCountry()`s
+`INSERT INTO moderator_countries` bruker allerede
+`.onConflictDoNothing()` — det etablerte, korrekte mønsteret. Kun
+`createCountry()` hadde det utette mønsteret.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (383
+tester, uendret — ren lib/integrasjonsfiks, ingen unit-test berørt),
+`i18n:check` (389 nøkler, uendret), `design:check-tokens` (OK, 40
+komponent-CSS-filer), `next build` (grønn), `test:integration` mot ekte
+lokal Postgres (**263 tester**, +1 — den nye samtidighetstesten).
+
+### Neste økt
+
+Fullførte hele `src/lib/admin/`-modulen (`countries.ts` og `dashboard.ts`,
+sistnevnte uten funn — rene, parametriserte spørringer, ingen
+skriveoperasjoner å ha en race i). Neste kandidat: kandidat (b) fra
+forrige runde — selve digest-tick-logikken (`src/lib/jobs/digest.ts`/
+`tick.ts`), som ingen har lest kritisk siden de opprinnelige
+integrasjonstestene i task #17 ble skrevet. Verdt å sjekke spesifikt der,
+gitt kveldens funnmønster: er det flere sjekk-så-skriv-steder som mangler
+`isUniqueViolation`/`onConflictDoNothing`/en betinget WHERE-klausul? Ellers
+uendret: de to åpne spec-spørsmålene og "24.3"-referanseopprydding er
+fortsatt utestående for morgengjennomgang, ikke noe hastverk med dem.

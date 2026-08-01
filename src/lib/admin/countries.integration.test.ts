@@ -147,6 +147,39 @@ describe("admin/countries.ts mot ekte Postgres", () => {
     expect(result).toEqual({ ok: false, error: "errors.already_exists" });
   });
 
+  it("createCountry(): nøyaktig ÉN av mange SAMTIDIGE forsøk med samme kode lykkes, aldri en uhåndtert feil (race-beskyttelsen, ikke bare forhåndssjekken)", async () => {
+    // Flere administratorer (eller flere faner) som samtidig oppretter
+    // samme landkode kunne passere "finnes fra før"-sjekken før noen av dem
+    // rakk å skrive — uten fangsten på databasens unike constraint på
+    // countries.code (primærnøkkel) ville de tapende forespørslene krasjet
+    // med en uhåndtert 23505 i stedet for et forventet errors.already_exists.
+    // 10 samtidige kall (samme mønster som rate-limit.integration.test.ts
+    // sin 20-samtidige advisory-lås-test) for pålitelig å treffe det
+    // faktiske kappløpsvinduet, ikke bare den sekvensielle forhåndssjekken.
+    await ensureTestCountry();
+    const admin = await createAdmin(TEST_COUNTRY_CODE);
+    await loginAs(admin.id);
+    const input = testCountryInput();
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 10 }, () => createCountry(input))
+    );
+
+    for (const result of results) {
+      expect(result.status).toBe("fulfilled");
+    }
+    const values = results.map((r) => (r.status === "fulfilled" ? r.value : null));
+    expect(values.filter((v) => v?.ok)).toHaveLength(1);
+    for (const v of values) {
+      if (v && !v.ok) expect(v.error).toBe("errors.already_exists");
+    }
+
+    const rows = await db.select().from(countries).where(eq(countries.code, input.code));
+    expect(rows).toHaveLength(1);
+
+    await deleteTestCountry(input.code);
+  });
+
   it("updateCountry(): oppdaterer feltene, og logger revisjonshandlingen", async () => {
     await ensureTestCountry();
     const admin = await createAdmin(TEST_COUNTRY_CODE);
