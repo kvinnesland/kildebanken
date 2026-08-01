@@ -9250,3 +9250,86 @@ selve svar-innsendingen — har trolig egne unike indekser å sjekke, f.eks.
 `src/lib/contact-requests/contact-requests.ts`. Ellers uendret: de to
 åpne spec-spørsmålene og "24.3"-referanseopprydding er fortsatt
 utestående for morgengjennomgang, ikke noe hastverk med dem.
+
+## Økt (fortsettelse): responses.ts/contact-requests.ts allerede rene — men EN systematisk gjennomgang av ALLE unike indekser fant to til
+
+Fulgte opp forrige rundes kandidat. Leste `src/lib/responses/responses.ts`
+og `src/lib/contact-requests/contact-requests.ts` i sin helhet —
+**begge allerede korrekt rettet**: `submitResponse()` fanger
+`isUniqueViolation` mot FR-041-indeksen (kommentaren viser til migrasjon
+0001), `createContactRequest()` fanger det samme mot FR-043-indeksen, og
+`respondToContactRequest()` bruker allerede det betingede
+WHERE-status-mønsteret (task #46). Ingen nye funn i disse to filene.
+
+Gitt at MØNSTERET (sjekk-så-skriv på en unik kolonne uten
+`isUniqueViolation`-fangst) nå er funnet TO netter på rad i to urelaterte
+moduler, utvidet jeg søket til å være SYSTEMATISK i stedet for fil-for-fil:
+listet opp ALLE `uniqueIndex`/`.unique()`-deklarasjoner i `schema.ts` (11
+stykker) og sporet hvert eneste skrivested som kunne krysse dem. De fleste
+var allerede trygge (tilfeldig genererte tokens med astronomisk lav
+kollisjonssjanse, eller allerede beskyttet av `onConflictDoNothing()`/
+`isUniqueViolation()`) — men fant TO til som IKKE var det:
+
+**Funn 1**: `assignModeratorToCountry()` (`src/lib/admin/countries.ts`) —
+samme sjekk-så-`INSERT`-mønster som `createCountry()`, denne gangen mot
+`users.email` sin unike constraint. To administratorer som tildeler SAMME
+helt nye e-post som moderator omtrent samtidig kunne begge passere
+`existingUser`-sjekken før noen av dem skrev, og den tapende INSERT-en
+ville krasjet med en uhåndtert 23505. **Fiksen** avviker fra
+`createCountry()`s "avvis med feilmelding": siden begge racende kall har
+NØYAKTIG samme, riktige intensjon (denne e-posten skal være moderator for
+dette landet), henter fangst-blokken i stedet den nå-eksisterende raden
+den vinnende forespørselen opprettet, og fortsetter med DEN — samme
+sluttresultat uansett hvem som "vant", ingen brukersynlig feil i det hele
+tatt.
+
+**Funn 2**: `publishLegalDocument()` (`src/lib/admin/legal-documents.ts`)
+— verre enn de to forrige, siden denne IKKE HAR NOEN forhåndssjekk i det
+hele tatt, bare en bar `INSERT` mot den unike indeksen på
+`(countryCode, locale, documentType, version)`. En administrator som
+dobbeltklikker "Publiser" (eller to administratorer som velger samme
+versjonsstreng for samme dokument) ville krasjet umiddelbart. **Fiksen**
+er nærmere `createCountry()`s mønster enn `assignModeratorToCountry()`s:
+siden `version` er en meningsbærende streng administratoren selv valgte
+(ikke noe som kan "løses" ved å prøve på nytt slik slug-kandidater kan),
+er riktig respons å avvise med `errors.already_exists` (gjenbrukt
+eksisterende nøkkel, ikke en ny), ikke å stille velge en annen versjon.
+
+**Testdekning**: la til ekte samtidighetstester i begge testfilene (10
+parallelle kall via `Promise.allSettled`, samme mønster som
+`createCountry()`-testen): `assignModeratorToCountry()`-testen bekrefter
+nøyaktig ÉN brukerrad opprettes uansett hvor mange samtidige kall som
+tildeler samme e-post; `publishLegalDocument()`-testen bekrefter nøyaktig
+ÉN dokumentrad publiseres, resten får `errors.already_exists`, aldri en
+uhåndtert feil.
+
+**Empirisk verifisering**: `git stash` på hver av de to filene hver for
+seg → kjørte de nye testene 3 ganger på rad hver → bekreftet krasj
+(`rejected`) i alle seks kjøringene mot den gamle koden → `git stash pop`
+→ kjørte hele testfilene 3 ganger til hver → bekreftet at alle tester
+består i alle kjøringene mot fiksene.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (383
+tester, uendret — rene lib/integrasjonsfikser), `i18n:check` (389 nøkler,
+uendret — ingen nye oversettelsesnøkler, `errors.already_exists`
+gjenbrukt), `design:check-tokens` (OK, 40 komponent-CSS-filer),
+`next build` (grønn), `test:integration` mot ekte lokal Postgres
+(**266 tester**, +2).
+
+### Neste økt
+
+Fire reelle sjekk-så-skriv-krasjer nå funnet og rettet totalt
+(`createCountry`, `updateDraft`/slug, `assignModeratorToCountry`,
+`publishLegalDocument`) — den systematiske "list opp ALLE unike
+indekser i schema.ts, spor hvert skrivested"-teknikken viste seg langt
+mer effektiv enn fil-for-fil-lesing for akkurat DENNE bug-klassen, og bør
+vurderes som en generell teknikk å gjenta senere i natten på andre
+bug-klasser (f.eks. "list opp alle fremmednøkler UTEN CASCADE, spor hver
+sletting" — retention.ts/purge-unverified-klassen). For selve
+unike-indeks-sveipen: alle 11 unike deklarasjoner i schema.ts er nå
+sporet og enten bekreftet trygge eller rettet — ingen kjente gjenstående
+i DENNE spesifikke bug-klassen. Ellers uendret: de to åpne
+spec-spørsmålene og "24.3"-referanseopprydding er fortsatt utestående for
+morgengjennomgang, ikke noe hastverk med dem.

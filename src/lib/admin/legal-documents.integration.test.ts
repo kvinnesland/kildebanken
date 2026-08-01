@@ -107,6 +107,45 @@ describe("publishLegalDocument mot ekte Postgres", () => {
     expect(result).toEqual({ ok: false, error: "errors.invalid_country" });
   });
 
+  it("nøyaktig ÉN av mange SAMTIDIGE publiseringer av SAMME versjon lykkes, aldri en uhåndtert feil", async () => {
+    // publishLegalDocument() har ingen forhåndssjekk i det hele tatt (i
+    // motsetning til createCountry()) — den unike indeksen på
+    // (countryCode, locale, documentType, version) er selve garantien mot
+    // dobbel publisering, f.eks. en administrator som dobbeltklikker
+    // "Publiser". Uten en fangst på den ville alle-utenom-én av disse
+    // krasjet med en uhåndtert 23505.
+    await ensureTestCountry();
+    const admin = await createAdmin();
+    await loginAs(admin.id);
+    const input = documentInput();
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 10 }, () => publishLegalDocument(input))
+    );
+
+    for (const result of results) {
+      expect(result.status).toBe("fulfilled");
+    }
+    const values = results.map((r) => (r.status === "fulfilled" ? r.value : null));
+    expect(values.filter((v) => v?.ok)).toHaveLength(1);
+    for (const v of values) {
+      if (v && !v.ok) expect(v.error).toBe("errors.already_exists");
+    }
+
+    const rows = await db
+      .select({ id: legalDocuments.id })
+      .from(legalDocuments)
+      .where(
+        and(
+          eq(legalDocuments.countryCode, input.countryCode),
+          eq(legalDocuments.locale, input.locale),
+          eq(legalDocuments.documentType, input.documentType),
+          eq(legalDocuments.version, input.version)
+        )
+      );
+    expect(rows).toHaveLength(1);
+  });
+
   it("publiserer en NY versjon uten å røre eksisterende versjoner (17.2), og logger revisjonshandlingen", async () => {
     await ensureTestCountry();
     const admin = await createAdmin();

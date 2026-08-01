@@ -367,4 +367,29 @@ describe("admin/countries.ts mot ekte Postgres", () => {
 
     expect(result).toEqual({ ok: true });
   });
+
+  it("assignModeratorToCountry(): nøyaktig ÉN brukerrad opprettes når SAMME nye e-post tildeles samtidig, aldri en uhåndtert feil", async () => {
+    // To administratorer som tildeler samme, helt nye e-post som moderator
+    // omtrent samtidig kunne begge passere "finnes fra før"-sjekken før
+    // noen av dem rakk å skrive — uten fangsten på databasens unike
+    // constraint på users.email ville den tapende INSERT-en krasjet med en
+    // uhåndtert 23505. Samme mønster som createCountry()-samtidighetstesten
+    // over.
+    await ensureTestCountry();
+    const admin = await createAdmin(TEST_COUNTRY_CODE);
+    await loginAs(admin.id);
+    const email = uniqueTestEmail("samtidig-moderator");
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 10 }, () => assignModeratorToCountry(TEST_COUNTRY_CODE, email))
+    );
+
+    for (const result of results) {
+      expect(result.status).toBe("fulfilled");
+      if (result.status === "fulfilled") expect(result.value).toEqual({ ok: true });
+    }
+
+    const rows = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
+    expect(rows).toHaveLength(1);
+  });
 });

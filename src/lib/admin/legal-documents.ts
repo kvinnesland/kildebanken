@@ -8,6 +8,7 @@ import {
   legalDocumentType,
   users,
 } from "@/db/schema";
+import { isUniqueViolation } from "@/db/errors";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { requireAdmin } from "@/lib/auth/authorize";
 
@@ -58,18 +59,34 @@ export async function publishLegalDocument(
     .limit(1);
   if (!country) return { ok: false, error: "errors.invalid_country" };
 
-  const [published] = await db
-    .insert(legalDocuments)
-    .values({
-      countryCode: input.countryCode,
-      locale: input.locale,
-      documentType: input.documentType,
-      version: input.version,
-      body: input.body,
-      isMaterialChange: input.isMaterialChange,
-      publishedAt: new Date(),
-    })
-    .returning({ id: legalDocuments.id });
+  // Ingen forhåndssjekk her (i motsetning til createCountry() e.l.) — den
+  // unike indeksen (countryCode, locale, documentType, version,
+  // legal_documents_country_locale_type_version_idx) er selve garantien mot
+  // dobbel publisering av samme versjon, f.eks. en administrator som
+  // dobbeltklikker "Publiser". Uten fangst her ville det andre kallet
+  // krasjet med en uhåndtert 23505 i stedet for en forventet
+  // errors.already_exists — samme bug-klasse som createCountry() (se
+  // NATTLOGG.md).
+  let published: { id: string } | undefined;
+  try {
+    [published] = await db
+      .insert(legalDocuments)
+      .values({
+        countryCode: input.countryCode,
+        locale: input.locale,
+        documentType: input.documentType,
+        version: input.version,
+        body: input.body,
+        isMaterialChange: input.isMaterialChange,
+        publishedAt: new Date(),
+      })
+      .returning({ id: legalDocuments.id });
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return { ok: false, error: "errors.already_exists" };
+    }
+    throw err;
+  }
   if (!published) throw new Error("insert av juridisk dokument returnerte ingen rad");
 
   // FR-050. Manglet frem til nå — samme klasse av hull som resten av

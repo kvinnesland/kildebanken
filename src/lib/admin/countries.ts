@@ -232,19 +232,37 @@ export async function assignModeratorToCountry(
     if (existingUser.role !== "moderator") return { ok: false, error: "errors.validation_failed" };
     moderatorUserId = existingUser.id;
   } else {
-    const [created] = await db
-      .insert(users)
-      .values({
-        email,
-        role: "moderator",
-        status: "active",
-        countryCode: code,
-        locale: country.defaultLocale,
-        emailVerifiedAt: new Date(),
-      })
-      .returning({ id: users.id });
-    if (!created) throw new Error("insert av moderator returnerte ingen rad");
-    moderatorUserId = created.id;
+    try {
+      const [created] = await db
+        .insert(users)
+        .values({
+          email,
+          role: "moderator",
+          status: "active",
+          countryCode: code,
+          locale: country.defaultLocale,
+          emailVerifiedAt: new Date(),
+        })
+        .returning({ id: users.id });
+      if (!created) throw new Error("insert av moderator returnerte ingen rad");
+      moderatorUserId = created.id;
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      // Samme bug-klasse som createCountry()/updateDraft() (se NATTLOGG.md):
+      // to administratorer som tildeler SAMME nye e-post som moderator
+      // omtrent samtidig kunne begge passere `existingUser`-sjekken over før
+      // noen av dem rakk å skrive, og den tapende INSERT-en ville krasjet på
+      // users.email sin unike constraint. Henter i stedet raden den vinnende
+      // forespørselen nettopp opprettet — samme resultat uansett hvem som
+      // "vant".
+      const [raced] = await db
+        .select({ id: users.id, role: users.role })
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1);
+      if (!raced || raced.role !== "moderator") return { ok: false, error: "errors.validation_failed" };
+      moderatorUserId = raced.id;
+    }
   }
 
   await db
