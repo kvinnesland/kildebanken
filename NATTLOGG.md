@@ -11150,3 +11150,100 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 15: gjennomførte et EKTE testtema-bytte (DESIGN.md 9, kriterium 1) — beviste kriteriet for komponenter, avdekket en reell begrensning for e-post
+
+Fulgte opp forrige økts eget forslag: kriterium 1 ("et fullstendig
+temabytte... verifiseres ved å FAKTISK gjennomføre et bytte til et
+bevisst avvikende testtema før lansering") hadde ALDRI vært faktisk
+utført — bare strukturelt antatt via `check-tokens.ts` sin statiske
+lint-sjekk. Gjennomførte selve øvelsen, midlertidig og reversert etterpå
+(ikke en permanent endring).
+
+**Testtemaet**: byttet KUN `tokens/primitives.css` (nøytralskalaen fra
+kjølig blågrå, hue 250, til varm sepia, hue 40; aksenten fra dempet blå,
+hue 230, til dempet magenta, hue 300 — samme lyshet-/metningsprogresjon,
+bare ny fargetone) og `tokens/typography.css` (fontparet til "Space
+Grotesk"/"Lora" i stedet for "Inter var"/"Source Serif 4"). Rørte
+BEVISST ingen komponentfil og ingen `semantic.css` (ingen nye roller
+trengtes).
+
+**Resultat, komponentsiden — kriteriet BESTÅTT**:
+- `git status` bekreftet at NØYAKTIG de to token-filene var endret, null
+  komponentfiler.
+- `design:check-tokens` fortsatt OK (53 filer, ingen rå verdier).
+- `contrast-pairs.test.ts` sine 39 tester — som beregner kontrastforhold
+  LIVE fra de faktiske CSS-verdiene, ikke hardkodede tall — besto ALLE
+  mot det HELT NYE fargeparet, i begge temaer, uten at én eneste
+  testverdi måtte justeres. Dette er den sterkeste formen for bevis
+  akseptansekriteriet selv ber om.
+- `tsc --noEmit`, `eslint .`, `next build` — alle grønne mot testtemaet.
+- Ekte visuell verifisering (Playwright, produksjonsmodus per tidligere
+  økters etablerte `next build && next start`-mønster, se NATTLOGG
+  tidligere): skjermbilder av innloggingssiden i BÅDE lyst og mørkt tema
+  viste tydelig den varme sepiabakgrunnen, magenta-knappen og
+  serif-overskriften — reskinnet slo faktisk gjennom visuelt, ikke bare
+  i teorien.
+
+**Resultat, e-postsiden — en reell, ikke tidligere bekreftet begrensning
+avdekket**: `src/lib/email/colors.ts` sine `EMAIL_COLORS`/
+`EMAIL_COLORS_DARK`-konstanter er HARDKODEDE hex-verdier (fordi
+e-postklienter ikke støtter CSS-variabler, DESIGN.md 7) — filens egen,
+allerede eksisterende kommentar sier eksplisitt at dette er en bevisst,
+midlertidig forenkling i påvente av en full byggetids-eksportpipeline
+(`tokens/primitives.css → tokens.json`) som IKKE er bygget ennå (samme
+forenkling som `digest.ts` gjorde tidligere, se økt 7). `colors.test.ts`
+sjekker at disse hex-verdiene stemmer med de FAKTISKE primitivene — og
+under testtemaet feilet nøyaktig disse 14 testene, siden hex-verdiene
+naturligvis IKKE fulgte med det nye fargeparet automatisk.
+
+Dette betyr at DESIGN.md 9 sitt kriterium 6 ("testtemaet... slår også
+gjennom i alle e-postmaler UTEN at noen mal er redigert") IKKE holder
+fullt ut i dag — et ekte temabytte ville krevd en manuell oppdatering av
+`colors.ts` sine hex-konstanter i tillegg til de tre offisielle
+temafilene. Dette var TIDLIGERE bare en antatt risiko (nevnt i forbifarten
+i en tidligere økts NATTLOGG-notat); denne øvelsen er FØRSTE gang det er
+faktisk BEKREFTET empirisk. Ikke en ny kodefeil — allerede
+selvdokumentert og allerede fanget av en egen test (`colors.test.ts`
+gjorde nøyaktig det den skal: den fanget avviket) — men et konkret,
+bekreftet hull mellom kriterium 6 sin tekst og faktisk atferd, verdt å
+huske eksplisitt.
+
+**Reversert**: begge token-filene gjenopprettet fra sikkerhetskopi.
+Bekreftet: `git status`/`git diff` viser INGEN endringer mot siste
+commit, `colors.test.ts` (16 tester) og `contrast-pairs.test.ts` (39
+tester) begge grønne igjen, full `vitest run` (**444 tester**), `tsc`,
+`eslint` alle grønne på nytt.
+
+### Verifisert før commit (denne runden)
+
+Ingen produksjonskodeendring ble committet (selve øvelsen var
+midlertidig og fullstendig reversert) — bare denne NATTLOGG-oppføringen.
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run`
+(**444 tester**, uendret fra forrige commit), `i18n:check` og
+`design:check-tokens` uendret, `next build` grønn (kjørt både under og
+etter reverseringen).
+
+### Neste økt
+
+DESIGN.md 9 sitt kriterium 1 er nå FAKTISK bevist for komponentsiden
+(ikke bare antatt). Kriterium 6 (e-postmaler) er bevist å IKKE holde
+fullt ut ennå, av en allerede kjent og akseptert grunn (byggetids-
+eksportpipelinen for tokens er bevisst utsatt). Ingen hastende handling
+— bygging av den fulle pipelinen er en større, egen oppgave som bør
+gjøres når den faktisk trengs (f.eks. ved en reell rebranding), ikke
+spekulativt nå.
+
+Gjenstående, ikke hastende fra DESIGN.md 9: kriterium 4/5 (tastatur/
+skjermleser/360px uten horisontal scroll) krever fortsatt reell
+nettleserverifisering utover det denne økten dekket.
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.
