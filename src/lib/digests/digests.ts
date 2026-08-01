@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   auditLogs,
@@ -22,15 +22,68 @@ import {
 import { getAssignedCountryCodes, requireModeratorForCountry } from "@/lib/auth/authorize";
 import type { CurrentSession } from "@/lib/auth/session";
 
+export interface DigestListItem {
+  id: string;
+  countryCode: string;
+  scheduledFor: string;
+  requestIds: string[];
+  recipientCount: number;
+  status: "pending" | "sending" | "sent" | "failed";
+  sentAt: Date | null;
+  createdAt: Date;
+  // Utledet fra DigestDelivery.status (19.10), for 16.2s "antall sendt,
+  // bounces, klager" — IKKE lagret på selve Digest-raden.
+  sentCount: number;
+  bouncedCount: number;
+  complainedCount: number;
+  failedCount: number;
+}
+
 /** GET /admin/digests (SPEC-V1.md 16.2: "se siste digester per land, antall
  * sendt, bounces, klager") — filtrert på moderatorens tildelte land, samme
  * mønster som `listModerationQueue()` i src/lib/moderation/requests.ts. */
-export async function listDigests(session: CurrentSession) {
+export async function listDigests(session: CurrentSession): Promise<DigestListItem[]> {
   const assigned = await getAssignedCountryCodes(session);
   if (assigned !== "all" && assigned.length === 0) return [];
-  if (assigned === "all") return db.select().from(digests);
 
-  return db.select().from(digests).where(inArray(digests.countryCode, assigned));
+  const digestRows =
+    assigned === "all"
+      ? await db.select().from(digests)
+      : await db.select().from(digests).where(inArray(digests.countryCode, assigned));
+
+  if (digestRows.length === 0) return [];
+
+  // Én gruppert spørring for ALLE digester i listen, ikke N+1 — samme
+  // begrunnelse som ellers i kodebasen (se f.eks. requests/page.tsx sin
+  // ene countries-spørring for hele køen).
+  const digestIds = digestRows.map((d) => d.id);
+  const statusCounts = await db
+    .select({ digestId: digestDeliveries.digestId, status: digestDeliveries.status, value: count() })
+    .from(digestDeliveries)
+    .where(inArray(digestDeliveries.digestId, digestIds))
+    .groupBy(digestDeliveries.digestId, digestDeliveries.status);
+
+  const countsByDigest = new Map<string, Partial<Record<string, number>>>();
+  for (const row of statusCounts) {
+    const existing = countsByDigest.get(row.digestId) ?? {};
+    existing[row.status] = row.value;
+    countsByDigest.set(row.digestId, existing);
+  }
+
+  return digestRows.map((d) => {
+    const c = countsByDigest.get(d.id) ?? {};
+    return {
+      ...d,
+      // "sendt" i 16.2s forstand: mottatt av leverandøren, uansett om et
+      // etterfølgende delivered-webhook-kall også er mottatt — sent OG
+      // delivered telles derfor sammen her, siden delivered kun betyr "vi
+      // fikk ENDA en bekreftelse", ikke "sending feilet et sted underveis".
+      sentCount: (c.sent ?? 0) + (c.delivered ?? 0),
+      bouncedCount: c.bounced ?? 0,
+      complainedCount: c.complained ?? 0,
+      failedCount: c.failed ?? 0,
+    };
+  });
 }
 
 export type RetryDigestResult =

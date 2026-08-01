@@ -10119,3 +10119,84 @@ filene i `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`) — ingen av disse tre er
 endret eller besluttet denne runden, fortsatt bevisst latt åpne for
 menneskelig gjennomgang.
+
+## Økt (fortsettelse): bygget admin-siden "Utsendelser" (SPEC-V1.md 16.2)
+
+Startet på admin-UI-hullet dokumentert i forrige seksjon — valgte
+"Utsendelser" som anbefalt, siden `listDigests()`/
+`retryFailedDigestDeliveries()` og API-rutene allerede fantes og var
+testet, og dette var den eneste av de tre helt manglende seksjonene
+(Mottakere, Utsendelser, Land) som ikke krevde ny lib-logikk fra bunnen av.
+
+**Ett reelt hull oppdaget underveis**: `listDigests()` returnerte kun de
+rå `Digest`-feltene — INGEN nedbrytning på `bounces`/`klager`/`sendt`, som
+16.2 eksplisitt krever ("se ... antall sendt, bounces, klager"). Uten
+denne nedbrytningen ville den nye siden vist digester uten noen av de
+tallene spec-en faktisk ber om. Utvidet derfor `listDigests()` (fortsatt i
+`src/lib/digests/digests.ts`, samme funksjon — IKKE en ny funksjon) til å
+telle `DigestDelivery.status` gruppert per digest i én samlet spørring
+(unngår N+1), lagt til som nye felter (`sentCount`, `bouncedCount`,
+`complainedCount`, `failedCount`) på hver rad. `sent` og `delivered`
+telles sammen som "sendt" — et `delivered`-webhook-kall er bare en ekstra
+bekreftelse på en allerede vellykket sending, ikke et eget utfall.
+
+**Bygget**:
+- `src/app/[locale]/admin/digests/page.tsx` — server-komponent, samme
+  mønster som `/admin/requests`: henter `session` (kun moderator/admin),
+  kaller `listDigests(session)` direkte (ikke via `fetch`), sorterer
+  nyeste-først på `scheduledFor` (en ren strengsammenligning — feltet er
+  allerede en "YYYY-MM-DD"-streng i landets lokale tidssone, se
+  `db/integration/fixtures.ts` — bevisst UNNGÅTT enhver
+  `Date`/`Intl.DateTimeFormat`-omvei her, som kunne gitt et datoskift for
+  negative UTC-forskyvninger; samme grunn til at dashbordet i
+  `admin/page.tsx` også viser `scheduledFor` rått).
+- `src/app/[locale]/admin/digests/DigestRow.tsx` — klientkomponent for
+  hver rad: viser de fire tallene i et `<dl>`-statgrid (samme mønster som
+  dashbordets stattall), og en "Kjør på nytt"-knapp
+  (`POST /admin/digests/:id/retry`) deaktivert når `failedCount === 0`.
+  Fulgte det etablerte `errorKey`-mønsteret fra natten (5 tidligere
+  tause-feil-fiks) fra FØRSTE forsøk denne gangen, ikke som en
+  etterpåklok reparasjon: viser en oversatt feilmelding ved mislykket
+  gjensending, og en suksessmelding med faktisk antall gjensendte
+  (ICU-plural, `{count, plural, =0 {...} one {...} other {...}}`, samme
+  teknikk som `journalist.inbox.*`).
+- Ny navigasjonslenke i `admin/layout.tsx`, nye i18n-nøkler i begge
+  locales (`admin.digests.*`).
+
+**Testdekning**: ny integrasjonstest i `digests.integration.test.ts` som
+beviser at tellingen ikke blander sammen to ulike digester (fem
+leveranser fordelt bevisst skjevt over to digester, sjekker at hver
+beholder sine egne tall) — empirisk bekreftet via `git stash` (feiler mot
+gammel `listDigests()`, består mot fiksen). Ny `DigestRow.test.tsx` (4
+tester: tallene vises, knappen deaktiveres ved 0 feilede, feilmelding ved
+mislykket forsøk, suksessmelding med riktig antall) — empirisk bekreftet
+ved midlertidig å fjerne feilhåndteringen og disable-logikken fra
+komponenten (3 av 4 tester feilet da, som forventet), deretter gjenopprettet.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**400
+tester**, +4), `i18n:check` (**401 nøkler**, +12), `design:check-tokens`
+(OK, **43 komponent-CSS-filer**, +2, ingen rå verdier), `next build`
+(grønn — `/[locale]/admin/digests`, `/api/admin/digests`,
+`/api/admin/digests/[id]/retry` alle med i rutelisten),
+`test:integration` mot ekte lokal Postgres (**276 tester**, +1).
+
+### Neste økt
+
+"Utsendelser" er nå bygget og verifisert. Gjenstår av de tre opprinnelig
+helt manglende admin-seksjonene (16.2):
+- **Mottakere**: søk på e-post, kontostatus/samtykkehistorikk, sletting,
+  suspender ved misbruk. `moderation/users.ts` og API-rutene finnes og er
+  testet, MEN ingen `searchUsersByEmail()`-funksjon finnes ennå — denne må
+  bygges FØRST, med egen testdekning, før selve siden.
+- **Land** (kun administrator): opprette/redigere landkonfigurasjon,
+  status, moderator-tildeling, publisere juridiske dokumentversjoner.
+  `admin/countries.ts`/`admin/legal-documents.ts` finnes og er testet.
+  Mest sensitivt av de tre — bør bygges sist, med egen forsiktighet
+  (endrer juridisk-dokument-status og landkonfigurasjon).
+- **Journalister**-siden mangler fortsatt søk, suspender/opphev
+  suspensjon, og "se tidligere forespørsler" (kun modereringskøen finnes).
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang.

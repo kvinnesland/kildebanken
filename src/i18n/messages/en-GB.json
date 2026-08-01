@@ -146,6 +146,18 @@
   "admin.dashboard.digest_status.sent": "sent",
   "admin.dashboard.digest_status.failed": "failed",
 
+  "admin.digests.title": "Deliveries",
+  "admin.digests.empty_title": "No deliveries yet",
+  "admin.digests.empty_description": "Digests appear here as they are sent out per country.",
+  "admin.digests.row_label": "{date} ({status})",
+  "admin.digests.sent_label": "Sent",
+  "admin.digests.bounced_label": "Bounces",
+  "admin.digests.complained_label": "Complaints",
+  "admin.digests.failed_label": "Failed",
+  "admin.digests.retry": "Retry",
+  "admin.digests.retry_busy": "Retrying …",
+  "admin.digests.retry_success": "{count, plural, =0 {No failed deliveries to retry.} one {Resent to # recipient.} other {Resent to # recipients.}}",
+
   "journalist.inbox.title": "Responses to {title}",
   "journalist.inbox.total_label": "{count, plural, one {# response total} other {# responses total}}",
   "journalist.inbox.unread_label": "{count} unread",

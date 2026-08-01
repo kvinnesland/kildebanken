@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   auditLogs,
@@ -155,6 +155,73 @@ describe("listDigests mot ekte Postgres (SPEC-V1.md 16.2)", () => {
 
     await db.delete(digests).where(eq(digests.id, ownDigest!.id));
     await db.delete(digests).where(eq(digests.id, otherDigest!.id));
+  });
+
+  it("16.2: teller sendt/delivered, bounced og complained per digest, uten å blande dem sammen på tvers av to digester", async () => {
+    // Var tidligere ALDRI beregnet noe sted (se NATTLOGG.md, provider_
+    // message_id-fiksen) — listDigests() returnerte kun de rå Digest-
+    // feltene, uten den nedbrytningen 16.2 eksplisitt krever ("antall
+    // sendt, bounces, klager").
+    await ensureTestCountry();
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    const { listDigests } = await import("./digests");
+
+    const [digestA] = await db
+      .insert(digests)
+      .values({
+        countryCode: TEST_COUNTRY_CODE,
+        scheduledFor: uniqueScheduledFor(),
+        requestIds: [],
+        status: "sent",
+      })
+      .returning({ id: digests.id });
+    const [digestB] = await db
+      .insert(digests)
+      .values({
+        countryCode: TEST_COUNTRY_CODE,
+        scheduledFor: uniqueScheduledFor(),
+        requestIds: [],
+        status: "sent",
+      })
+      .returning({ id: digests.id });
+
+    const recipients = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        db
+          .insert(users)
+          .values({
+            email: uniqueTestEmail("digest-count-recipient"),
+            role: "recipient",
+            status: "active",
+            countryCode: TEST_COUNTRY_CODE,
+            locale: "nb-NO",
+            emailVerifiedAt: new Date(),
+          })
+          .returning({ id: users.id })
+      )
+    );
+
+    await db.insert(digestDeliveries).values([
+      // digestA: 2 sent, 1 bounced, 1 complained
+      { digestId: digestA!.id, userId: recipients[0]![0]!.id, locale: "nb-NO", accessTokenHash: hashToken(generateToken()), status: "sent" },
+      { digestId: digestA!.id, userId: recipients[1]![0]!.id, locale: "nb-NO", accessTokenHash: hashToken(generateToken()), status: "delivered" },
+      { digestId: digestA!.id, userId: recipients[2]![0]!.id, locale: "nb-NO", accessTokenHash: hashToken(generateToken()), status: "bounced" },
+      { digestId: digestA!.id, userId: recipients[3]![0]!.id, locale: "nb-NO", accessTokenHash: hashToken(generateToken()), status: "complained" },
+      // digestB: 1 failed only — proves digestA's counts don't leak in
+      { digestId: digestB!.id, userId: recipients[4]![0]!.id, locale: "nb-NO", accessTokenHash: hashToken(generateToken()), status: "failed" },
+    ]);
+
+    const result = await listDigests(
+      makeSession({ userId: moderator.id, role: "moderator", countryCode: TEST_COUNTRY_CODE })
+    );
+
+    const rowA = result.find((d) => d.id === digestA!.id);
+    const rowB = result.find((d) => d.id === digestB!.id);
+    expect(rowA).toMatchObject({ sentCount: 2, bouncedCount: 1, complainedCount: 1, failedCount: 0 });
+    expect(rowB).toMatchObject({ sentCount: 0, bouncedCount: 0, complainedCount: 0, failedCount: 1 });
+
+    await db.delete(digestDeliveries).where(inArray(digestDeliveries.digestId, [digestA!.id, digestB!.id]));
+    await db.delete(digests).where(inArray(digests.id, [digestA!.id, digestB!.id]));
   });
 
   it("gir en administrator ALLE lands digester (19.4)", async () => {
