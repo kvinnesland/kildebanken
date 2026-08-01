@@ -11247,3 +11247,73 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 16: bekreftet DESIGN.md 9, kriterium 5 — hele mottakerflyten på 360px bredde, ingen kodeendring
+
+Fulgte opp forrige økts eget gjenstående punkt: kriterium 5 ("hele
+mottakerflyten kan gjennomføres på en 360 px bred skjerm uten horisontal
+scroll") hadde ALDRI vært faktisk prøvd i en ekte nettleser, bare antatt.
+Gjennomførte selve sjekken, samme `next build && next start`-mønster som
+tidligere økters browser-verifisering (unngår `next dev` sitt kjente
+CSP/eval-hydreringsproblem).
+
+**Metode**: Playwright, viewport 360×640, målte
+`document.documentElement.scrollWidth` mot `window.innerWidth` (>0 betyr
+horisontal overflow) på hvert steg i selve mottakerflyten (5.2):
+1. Forsiden (`/nb-NO`)
+2. Registreringssiden (`/nb-NO/subscribe`)
+3. En ekte, midlertidig opprettet publisert forespørsel (offentlig
+   forespørselsside, `/foresporsler/[id]/[slug]`) — brukte et allerede
+   eksisterende aktivt testland (`XT`) fra den delte testdatabasen i
+   stedet for å opprette et nytt.
+4. Svarskjemaet selv (`/foresporsler/[id]/svar`), med en ekte,
+   midlertidig innlogget mottaker-økt (rå token/hash-mønsteret fra
+   tidligere økters admin-verifisering) — det er her selve
+   skjemafeltene (begrunnelse, svar på spørsmål, kort presentasjon,
+   visningsnavn, kontaktvalg) faktisk vises.
+
+**Resultat**: `scrollWidth` var NØYAKTIG 360 (ingen overflow) på alle
+fire sidene. Skjermbilder bekreftet visuelt at all tekst bryter
+ordentlig, ingen elementer klipper eller stikker utenfor, og selve
+svarskjemaet (tekstområder, radioknapper, tegn-tellere) er fullt
+brukbart på denne bredden.
+
+**Sidefunn (ikke en app-feil)**: et Playwright `.click()` på selve
+"Svar"-lenken (en Next.js `<Link>`) navigerte ikke — URL-en forble
+uendret etter klikket. Direkte navigering til lenkens `href` fungerte
+derimot helt fint (200, riktig side). Vurdert som en Playwright/Next.js
+klient-navigasjon-timing-kvirk i denne testoppsettet (samme klasse
+"verktøykvirk, ikke produktbug" som forrige økters kjente checkbox-
+klikk-kvirk), IKKE en reell navigasjonsfeil — omgått ved å navigere
+direkte til href i stedet for å klikke.
+
+**Opprydding**: alle midlertidig opprettede testrader (journalist,
+journalistprofil, forespørsel, mottakerbruker, e-postabonnement, økt)
+slettet direkte mot databasen etterpå — samme forsiktighet som tidligere
+økters admin-verifisering, for å ikke etterlate engangstestdata i den
+delte, langvarige databasen. Serveren stoppet.
+
+### Verifisert før commit (denne runden)
+
+Ingen produksjonskodeendring — bare denne NATTLOGG-oppføringen (`git
+status` viser ingen diff verken før eller etter selve
+browser-øvelsen). `tsc --noEmit` (ren), `eslint .` (0 feil/advarsler),
+`vitest run` (**444 tester**, uendret).
+
+### Neste økt
+
+DESIGN.md 9 sitt kriterium 5 er nå faktisk bevist, ikke bare antatt.
+Kriterium 4 (hele mottakerflyten med tastatur alene OG skjermleser)
+gjenstår fortsatt — krever en annen type verifisering (tab-rekkefølge,
+fokussynlighet, ARIA-roller/-navn) enn den rene bredde-/overflow-sjekken
+denne økten dekket. Ikke en hastesak, ingen kjent feil driver den.
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.
