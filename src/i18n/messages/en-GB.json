@@ -149,6 +149,15 @@
   "admin.requests.rejected_notice": "Rejected.",
   "admin.requests.changes_requested_notice": "Changes requested.",
 
+  "admin.requests.active_title": "Active requests",
+  "admin.requests.active_empty_title": "No active requests",
+  "admin.requests.active_empty_description": "Published requests that are taking responses appear here.",
+  "admin.requests.published_at_label": "Published: {date}",
+  "admin.requests.close_button": "Close the request",
+  "admin.requests.close_confirm_button": "Confirm closing",
+  "admin.requests.close_cancel_button": "Cancel",
+  "admin.requests.close_success": "The request has been closed.",
+
   "admin.dashboard.title": "Dashboard",
   "admin.dashboard.country_selector_label": "Country",
   "admin.dashboard.empty_title": "No countries to show",

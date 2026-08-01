@@ -149,6 +149,15 @@
   "admin.requests.rejected_notice": "Avvist.",
   "admin.requests.changes_requested_notice": "Bedt om endringer.",
 
+  "admin.requests.active_title": "Aktive forespørsler",
+  "admin.requests.active_empty_title": "Ingen aktive forespørsler",
+  "admin.requests.active_empty_description": "Publiserte forespørsler som tar imot svar, vises her.",
+  "admin.requests.published_at_label": "Publisert: {date}",
+  "admin.requests.close_button": "Lukk forespørselen",
+  "admin.requests.close_confirm_button": "Bekreft lukking",
+  "admin.requests.close_cancel_button": "Avbryt",
+  "admin.requests.close_success": "Forespørselen er lukket.",
+
   "admin.dashboard.title": "Dashbord",
   "admin.dashboard.country_selector_label": "Land",
   "admin.dashboard.empty_title": "Ingen land å vise",

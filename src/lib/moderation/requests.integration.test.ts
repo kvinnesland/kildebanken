@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { moderatorCountries, requests, sessions, users } from "@/db/schema";
+import { journalistProfiles, moderatorCountries, requests, sessions, users } from "@/db/schema";
 import {
   ensureSecondTestCountry,
   ensureTestCountry,
@@ -11,7 +11,8 @@ import {
   uniqueTestEmail,
 } from "@/db/integration/fixtures";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
-import { publishRequest, rejectRequest, requestChanges } from "./requests";
+import type { CurrentSession } from "@/lib/auth/session";
+import { listActiveRequests, publishRequest, rejectRequest, requestChanges } from "./requests";
 
 // publishRequest()/rejectRequest()/requestChanges() kaller
 // requireModeratorForCountry() internt, som leser getCurrentSession() (en
@@ -95,6 +96,25 @@ async function createActiveJournalistPlain(countryCode: string): Promise<{ id: s
     .returning({ id: users.id });
   if (!user) throw new Error("Klarte ikke opprette test-journalist");
   return { id: user.id, email };
+}
+
+// listModerationQueue()/listActiveRequests() innerJoin'er journalistProfiles
+// (for VISNING — se doc-kommentaren over listModerationQueue()), ulikt
+// publishRequest()/rejectRequest()/requestChanges() som ikke trenger den —
+// createActiveJournalistPlain() over holder seg derfor bevisst uendret
+// (mange eksisterende tester bruker den), og denne EGNE varianten legger
+// til profilraden bare der den faktisk trengs.
+async function createActiveJournalistWithProfile(countryCode: string): Promise<{ id: string }> {
+  const journalist = await createActiveJournalistPlain(countryCode);
+  await db.insert(journalistProfiles).values({
+    userId: journalist.id,
+    fullName: "Test Journalist",
+    jobTitle: "Journalist",
+    organizationName: "Testavisen",
+    organizationUrl: "https://example.invalid",
+    verificationStatus: "approved",
+  });
+  return { id: journalist.id };
 }
 
 describe("publishRequest/rejectRequest/requestChanges mot ekte Postgres", () => {
@@ -294,5 +314,87 @@ describe("publishRequest/rejectRequest/requestChanges mot ekte Postgres", () => 
     const result = await publishRequest(request.id);
 
     expect(result.ok).toBe(true);
+  });
+});
+
+// listActiveRequests(), i likhet med listModerationQueue(), tar en allerede
+// utledet CurrentSession direkte (kaller ikke getCurrentSession() selv) —
+// samme mønster og begrunnelse som makeSession() i
+// src/lib/admin/dashboard.integration.test.ts, ingen next/headers-mocking
+// nødvendig for DISSE testene.
+function makeSession(overrides: Partial<CurrentSession> = {}): CurrentSession {
+  return {
+    sessionId: "session-id",
+    userId: "user-id",
+    role: "moderator",
+    countryCode: TEST_COUNTRY_CODE,
+    locale: "nb-NO",
+    email: "test@example.invalid",
+    ...overrides,
+  };
+}
+
+describe("listActiveRequests mot ekte Postgres", () => {
+  afterEach(async () => {
+    await db.delete(requests).where(eq(requests.title, "Testforespørsel til moderering"));
+  });
+
+  it("en moderator tildelt SAMME land ser en publisert forespørsel for det landet", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalistWithProfile(TEST_COUNTRY_CODE);
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    const published = await createSubmittedRequest(journalist.id, {
+      status: "published",
+      publishedAt: new Date(),
+    });
+
+    const result = await listActiveRequests(
+      makeSession({ userId: moderator.id, role: "moderator", countryCode: TEST_COUNTRY_CODE })
+    );
+
+    expect(result.map((r) => r.id)).toContain(published.id);
+  });
+
+  it("en moderator tildelt et ANNET land ser IKKE forespørselen", async () => {
+    await ensureTestCountry();
+    await ensureSecondTestCountry();
+    const journalist = await createActiveJournalistWithProfile(TEST_COUNTRY_CODE);
+    const moderator = await createModerator(TEST_COUNTRY_CODE_2);
+    const published = await createSubmittedRequest(journalist.id, {
+      status: "published",
+      publishedAt: new Date(),
+    });
+
+    const result = await listActiveRequests(
+      makeSession({ userId: moderator.id, role: "moderator", countryCode: TEST_COUNTRY_CODE_2 })
+    );
+
+    expect(result.map((r) => r.id)).not.toContain(published.id);
+  });
+
+  it("en administrator ser aktive forespørsler UANSETT land", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalistWithProfile(TEST_COUNTRY_CODE);
+    const published = await createSubmittedRequest(journalist.id, {
+      status: "published",
+      publishedAt: new Date(),
+    });
+
+    const result = await listActiveRequests(makeSession({ role: "admin", countryCode: TEST_COUNTRY_CODE_2 }));
+
+    expect(result.map((r) => r.id)).toContain(published.id);
+  });
+
+  it("inkluderer ALDRI en forespørsel som ikke er publisert (f.eks. fortsatt til vurdering)", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalistWithProfile(TEST_COUNTRY_CODE);
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    const submitted = await createSubmittedRequest(journalist.id);
+
+    const result = await listActiveRequests(
+      makeSession({ userId: moderator.id, role: "moderator", countryCode: TEST_COUNTRY_CODE })
+    );
+
+    expect(result.map((r) => r.id)).not.toContain(submitted.id);
   });
 });

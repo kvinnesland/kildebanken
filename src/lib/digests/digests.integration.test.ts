@@ -32,8 +32,12 @@ function uniqueScheduledFor(): string {
   // Unngår kollisjon med det unike (country_code, scheduled_for)-paret ved
   // gjentatt kjøring — tilfeldig dato over et bredt spekter, ikke en
   // hardkodet streng (samme lærdom som magic-link-tokenene tidligere denne
-  // økten).
-  const randomMs = Math.floor(Math.random() * 1_000 * 24 * 60 * 60 * 1000);
+  // økten). 10 millioner dager (ikke 1000, se NATTLOGG.md) — SAMME formel
+  // fantes uavhengig i to andre testfiler mot samme TEST_COUNTRY_CODE, og et
+  // spekter på bare 1000 dager ga en reell, bekreftet fødselsdagsparadoks-
+  // kollisjonsrisiko på tvers av filene i en delt, aldri nullstilt database
+  // med hundrevis av allerede opprettede rader for landet.
+  const randomMs = Math.floor(Math.random() * 10_000_000 * 24 * 60 * 60 * 1000);
   return new Date(Date.now() + randomMs).toISOString().slice(0, 10);
 }
 

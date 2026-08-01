@@ -10554,3 +10554,136 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt (fortsettelse): fant og tettet et reelt hull i "Forespørsler"-delen av 16.2 — admin/moderator kunne aldri se, og dermed aldri lukke, en aktiv forespørsel
+
+Fulgte forrige økts eget "Neste økt"-spor: et generelt søk gjennom
+SPEC-V1.md etter admin/moderator-detaljer utenfor 16.2 fant ingenting nytt
+(seksjon 4, 18, 20 stemmer med koden), men et NÆRMERE blikk på 16.2 selv
+avdekket noe: "Forespørsler: modereringskø, forhåndsvisning, godkjenn,
+avvis, returner med kommentar, **lukk**." — "lukk" har aldri hatt noen
+vei inn fra administrasjonsgrensesnittet.
+
+`POST /admin/requests/:id/close` og den underliggende `closeRequest()`
+(delt med journalistens egen lukkeknapp) fantes allerede fra en tidligere
+økt (commit `d7d930e`) — ruten var korrekt landbegrenset og fungerte fint
+kalt direkte. Problemet var étt nivå opp: `listModerationQueue()`, den
+ENESTE listefunksjonen `admin/requests/page.tsx` brukte, filtrerer
+eksplisitt på `status = "submitted"` — en forespørsel som er publisert
+(altså den ENESTE statusen `closeRequest()` faktisk godtar) vises ALDRI
+der. Administrasjonsgrensesnittet hadde med andre ord en fullt fungerende
+bakvei til å lukke en forespørsel, men ingen måte å FINNE den forespørselen
+på i det hele tatt — en reell, brukbar funksjonsmangel, ikke bare en
+kosmetisk detalj.
+
+**Fiks**: ny `listActiveRequests(session)` i
+`src/lib/moderation/requests.ts` — samme landfiltrering og mønster som
+`listModerationQueue()` (dokumentert i en kommentar som eksplisitt
+forklarer GAPET den tetter), men `status = "published"`. Utvidet
+`admin/requests/page.tsx` med en ny seksjon ("Aktive forespørsler") under
+den eksisterende modereringskøen, med en ny `ActiveRequestItem.tsx`
+(+ CSS-modul) som speiler journalistsidens egen
+`CloseRequestAction.tsx`-mønster: ett bekreftende ekstra klikk før selve
+lukkingen fyrer (samme "danger"-knapp, samme begrunnelse — `closeRequest()`
+sier selv at lukking er irreversibelt, blant annet fordi ventende
+kontaktforespørsler utløper umiddelbart). Nye i18n-nøkler under
+`admin.requests.active_*`/`.close_*` i begge locales.
+
+**Testdekning**: 4 nye integrasjonstester for `listActiveRequests()`
+(moderator ser en publisert forespørsel for EGET land, ser den ALDRI for
+et annet lands, administrator ser uansett land, en `submitted`-forespørsel
+vises ALDRI her). Under skrivingen oppdaget jeg at den lokale
+`createActiveJournalistPlain()`-hjelperen i testfilen ikke oppretter noen
+`journalistProfiles`-rad — ufarlig for de eksisterende
+`publishRequest`/`rejectRequest`/`requestChanges`-testene (de trenger den
+ikke), men `listModerationQueue()` OG `listActiveRequests()` innerJoin'er
+akkurat den tabellen for visning, så en journalist uten profil ble
+usynlig i resultatet uten noen synlig feilmelding. Løst med en egen,
+ny `createActiveJournalistWithProfile()`-hjelper for disse fire testene,
+uten å røre den eksisterende (fortsatt brukt av 11 andre tester). 4 nye
+komponenttester i `ActiveRequestItem.test.tsx` (visning, bekreftelsestrinn
+kreves før kallet faktisk fyrer, avbryt uten å fyre, feilmelding og
+suksessmelding).
+
+**Empirisk verifisering**: `git stash push` på `requests.ts` (sporet fil)
+→ bekreftet at nøyaktig de 4 nye testene feiler ("is not a function") →
+`git stash pop` → alle 15 tester i filen består. For
+`ActiveRequestItem.tsx` (ny, usporet fil): sikkerhetskopi + fjernet
+feilhåndteringen i `handleClose()` → bekreftet nøyaktig 1 av 4 tester
+feiler (feilmeldingstesten) → gjenopprettet, alle 4 består.
+
+### Sidefunn under `test:integration`: en reell, bekreftet kollisjonsrisiko på tvers av tre testfiler
+
+Full kjøring av `test:integration` feilet først med
+`duplicate key value violates unique constraint
+"digests_country_scheduled_for_idx"` i
+`webhooks/email-events/route.integration.test.ts` — IKKE en fil jeg
+hadde rørt. Isolert kjøring av akkurat den filen besto uten feil, så
+gravde videre: tre HELT UAVHENGIGE testfiler
+(`route.integration.test.ts`, `digests.integration.test.ts`,
+`subscriptions/email-events.integration.test.ts`) hadde hver sin egen,
+identiske formel for å generere en "unik" `scheduledFor`-dato —
+`Math.random() * 1_000 dager` — mot SAMME `TEST_COUNTRY_CODE`. Ingen av
+de tre filene visste om de to andres identiske mønster. `scheduledFor`
+er en del av en ekte unik indeks (`(country_code, scheduled_for)`,
+19.10 — bærer idempotensen i INFRASTRUCTURE.md 5.2), og med hundrevis av
+allerede opprettede digest-rader for landet i denne delte, aldri
+nullstilte databasen (samme kjente fenomen som tidligere økter har
+støtt på, se `fixtures.ts` sin egen "disponibel sandkasse"-advarsel) ga
+et spekter på bare 1000 dager en reell, ikke bare teoretisk,
+fødselsdagsparadoks-kollisjonsrisiko — bekreftet ved at 1, deretter 3,
+tester i nøyaktig denne filen feilet på to påfølgende fulle kjøringer.
+
+**Fiks**: samme mønster i alle tre filene, endret fra `1_000` til
+`10_000_000` dager (fortsatt trygt godt innenfor JavaScript sin
+`Date`-grense på ca. ±100 millioner dager fra epoke — ingen
+overløpsrisiko). Reduserer kollisjonssannsynligheten med samme faktor
+uten å endre noen av testenes faktiske påstander (ingen av de tre
+bruker selve datoverdien til noe annet enn å tilfredsstille den unike
+indeksen og landets fremmednøkkel). Bekreftet med to påfølgende fulle
+`test:integration`-kjøringer, begge grønne (**299 tester** hver gang) —
+kollisjon er iboende sannsynlighetsbasert og kan i prinsippet fortsatt
+skje en sjelden gang, men risikoen er nå redusert med samme faktor som
+spekteret ble utvidet med (10 000×).
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run`
+(**439 tester**, +4), `i18n:check` (**507 nøkler**, +9),
+`design:check-tokens` (OK, **53 komponent-CSS-filer**, +1, ingen rå
+verdier), `next build` (grønn — `/[locale]/admin/requests` med i
+rutelisten, ny "Aktive forespørsler"-seksjon), `test:integration` mot
+ekte lokal Postgres, to påfølgende ganger (**299 tester** hver gang,
++4 fra `listActiveRequests()`).
+
+### Neste økt
+
+"Forespørsler"-delen av 16.2 er nå komplett: modereringskø,
+forhåndsvisning, godkjenn, avvis, returner med kommentar OG lukk — alle
+seks funksjonene har nå en reell vei inn fra administrasjonsgrensesnittet.
+
+Ingen kjent gjenstående admin-side-mangel fra 16.2 i det hele tatt nå.
+
+Mulige neste steg (ingen er hastesaker, ingen kjente feil driver dem):
+- `listModerationQueue()` selv mangler fortsatt egne, direkte
+  integrasjonstester (oppdaget under denne øktens arbeid — funksjonen
+  testes i dag bare INDIREKTE via UI-et og via at
+  `publishRequest`/`rejectRequest`/`requestChanges` fungerer, aldri en
+  test som kaller `listModerationQueue()` selv og sjekker landfiltrering/
+  innhold). Samme mangel som `listActiveRequests()` hadde FØR denne
+  økten — verdt å rette i en fremtidig økt for symmetri.
+- Vurdere om `CreateCountryForm`/`CountryCard` sin
+  nameKey/senderNameKey-begrensning (utvikler må legge til i18n-nøkkelen
+  separat) bør nevnes i README.md eller INFRASTRUCTURE.md som en kjent
+  driftsprosess for lansering av nye land, ikke bare i selve UI-hjelpe-
+  teksten.
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

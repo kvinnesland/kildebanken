@@ -167,7 +167,12 @@ describe("POST /webhooks/email-events mot ekte Postgres (SPEC-V1.md 10.1/10.3, F
       .insert(digests)
       .values({
         countryCode: TEST_COUNTRY_CODE,
-        scheduledFor: new Date(Date.now() + Math.floor(Math.random() * 1_000 * 86_400_000))
+        // 10 millioner dager, ikke 1000 (se NATTLOGG.md) — samme formel
+        // fantes uavhengig i digests.integration.test.ts og
+        // email-events.integration.test.ts mot SAMME TEST_COUNTRY_CODE, og
+        // ga en bekreftet fødselsdagsparadoks-kollisjon på
+        // digests_country_scheduled_for_idx ved kjøring av hele suiten.
+        scheduledFor: new Date(Date.now() + Math.floor(Math.random() * 10_000_000 * 86_400_000))
           .toISOString()
           .slice(0, 10),
         requestIds: [],

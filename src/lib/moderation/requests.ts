@@ -219,3 +219,32 @@ export async function listModerationQueue(session: CurrentSession) {
     .innerJoin(journalistProfiles, eq(requests.journalistId, journalistProfiles.userId))
     .where(and(...conditions));
 }
+
+/** GET /admin/requests (aktive-seksjonen) — 16.2 lister "lukk" som en av
+ * "Forespørsler"-funksjonene på linje med modereringskø/godkjenn/avvis, men
+ * POST /admin/requests/:id/close (closeRequest()) opererer på status
+ * "published", ikke "submitted" — listModerationQueue() over viser derfor
+ * ALDRI noe en administrator/moderator faktisk kan lukke. Samme
+ * landfiltrering og felter som listModerationQueue(), forskjellig status. */
+export async function listActiveRequests(session: CurrentSession) {
+  const assigned = await getAssignedCountryCodes(session);
+  if (assigned !== "all" && assigned.length === 0) return [];
+
+  const conditions = [eq(requests.status, "published")];
+  if (assigned !== "all") conditions.push(inArray(requests.countryCode, assigned));
+
+  return db
+    .select({
+      id: requests.id,
+      title: requests.title,
+      summary: requests.summary,
+      countryCode: requests.countryCode,
+      responseDeadline: requests.responseDeadline,
+      publishedAt: requests.publishedAt,
+      journalistFullName: journalistProfiles.fullName,
+      organizationName: journalistProfiles.organizationName,
+    })
+    .from(requests)
+    .innerJoin(journalistProfiles, eq(requests.journalistId, journalistProfiles.userId))
+    .where(and(...conditions));
+}

@@ -148,7 +148,11 @@ describe("processEmailEvent mot ekte Postgres (10.3, FR-037)", () => {
       // Tilfeldig dato over et bredt spekter unngår kollisjon med det unike
       // (country_code, scheduled_for)-paret ved parallell testkjøring (samme
       // mønster som digests.integration.test.ts sin uniqueScheduledFor()).
-      const scheduledFor = new Date(Date.now() + Math.floor(Math.random() * 1_000 * 86_400_000))
+      // 10 millioner dager, ikke 1000 (se NATTLOGG.md) — et spekter på bare
+      // 1000 dager, duplisert uavhengig i to andre filer mot samme
+      // TEST_COUNTRY_CODE, ga en bekreftet kollisjon på
+      // digests_country_scheduled_for_idx ved kjøring av hele suiten.
+      const scheduledFor = new Date(Date.now() + Math.floor(Math.random() * 10_000_000 * 86_400_000))
         .toISOString()
         .slice(0, 10);
       const [digest] = await db
