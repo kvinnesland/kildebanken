@@ -8711,3 +8711,100 @@ selve siderenderingen, ikke bare API-lagene bak dem), eller
 `src/components/`-biblioteket for øvrig. Ellers uendret: to åpne spørsmål
 (`runExpireRequests()`, 18.1 vs 16.2/FR-051), komponentbibliotek, OG-bilde,
 Sentry/Brevo.
+
+## Fortsettelse av økt 7 — trettende bug: kontosletting fyrte automatisk ved sideinnlasting, ingen bekreftelse krevd
+
+Gikk gjennom Server Components-sidene under `src/app/[locale]/` som
+varslet (admin-dashbord, admin-journalistkø, journalistens
+redigerings-/svarsider, kontaktforespørsel-siden, `me/svar`,
+forespørselssiden, svarskjemaet) — alle korrekt eierskaps-/rolle-scopet
+via allerede grundig gjennomgåtte lib-funksjoner (`getOwnedRequestDetail`,
+`getContactRequestDetail`, `listMineResponses` osv.), ingen IDOR-mønstre
+funnet. Ett mistenkelig funn (bokstavelig `"yes"`/`"no"`-streng sendt til
+en oversettelsesfunksjon i forespørselssiden) viste seg å være korrekt,
+tilsiktet bruk av ICU MessageFormat sin `select`-syntaks (`{allowed,
+select, yes {...} other {...}}`), ikke en lekkasje av engelsk tekst — ingen
+fiks nødvendig.
+
+**Fant derimot noe reelt og alvorlig i `me/slett-konto/ConfirmDeletionClient.tsx`**:
+siden fyrte selve kontoslettingen — en IRREVERSIBEL handling — AUTOMATISK i
+en `useEffect` ved sideinnlasting, uten noe eksplisitt brukerhandling som
+portvakt. Å bare BESØKE lenken fra bekreftelses-e-posten (uten å klikke noe
+som helst PÅ SELVE SIDEN) var nok til å slette kontoen permanent.
+
+Dette er nøyaktig samme trusselbilde som ble lagt til grunn for
+engangstoken-TOCTOU-fiksen i `verifyMagicLink()`/`confirmAccountDeletion()`
+tidligere i natt (se bug ti): e-postsikkerhetsskannere hos enkelte
+bedrifter forhåndsbesøker lenker i innkommende e-post automatisk. Den
+tidligere fiksen sikret at BARE ÉN bruker av et engangstoken lykkes ved
+samtidighet — men den løser IKKE dette problemet: en slik skanner som
+besøker lenken FØR den faktiske brukeren rekker det, ville vunnet
+kappløpet om selve tokenet og trigget ekte, irreversibel sletting helt
+uten at brukeren selv noensinne besøkte siden eller klikket noe. Sammenlign
+med steg 1 av samme flyt (`DeleteAccountSection.tsx`, "Be om sletting av
+konto") — DEN krever allerede et eksplisitt knappetrykk (`variant="danger"`)
+før noe som helst sendes. Steg 2 fulgte ikke sitt eget etablerte mønster.
+
+Sporet opprinnelsen: koden siterte spec-en som begrunnelse ("24.3: 'særlig
+sensitive handlinger skal kreve ny autentisering'"), men et grep etter
+selve sitatteksten i HELE `SPEC-V1.md` fant KUN denne ene frasen igjen —
+sitert tre ganger av kode-/spec-kommentarer, aldri som faktisk,
+frittstående spec-prosa noe sted. Seksjon 24 i spec-en
+("Implementeringsrekkefølge") har ingen underseksjon 24.1/24.2/24.3 i det
+hele tatt. Konklusjon: en tidligere økt bygde denne totrinnsflyten som en
+fornuftig, selvstendig designbeslutning, men tilskrev den en spec-referanse
+som enten aldri fantes eller ble hengende igjen etter en senere
+omnummerering — selve designbeslutningen (egen bekreftelseslenke, tydelig
+advarsel i e-postteksten) var riktig og allerede bygget og
+nettleser-verifisert av en tidligere økt, men UTEN at den tidligere økten
+hadde det senere (denne nattens) e-postskanner-trusselbildet i tankene når
+den valgte "automatisk ved lenkeklikk" fremfor "krev en ekstra bekreftelse
+på selve siden".
+
+**Fiksen**: `ConfirmDeletionClient.tsx` fyrer ikke lenger POST-kallet
+automatisk. Leser tokenet, viser en tydelig advarsel
+(`me.confirm_deletion.warning`, ny nøkkel) og en eksplisitt
+`variant="danger"`-knapp (`me.confirm_deletion.confirm_button`, ny nøkkel)
+— selve API-kallet skjer FØRST når brukeren trykker den. Oppdaterte OGSÅ
+`me.delete_account_description`/`me.delete_account_requested_notice` (på
+`/me` selv, steg 1) — den gamle teksten lovet eksplisitt "kontoen slettes
+ikke før du klikker den [lenken]", som ikke lenger stemmer nå som et ekstra
+bekreftelsestrinn kreves på selve siden.
+
+**Testdekning**: ingen testfil eksisterte for denne komponenten i det hele
+tatt (samme mangel som webhook-ruten tidligere i natt). La til fire tester:
+bekrefter INGEN automatisk `fetch()`-kall ved innlasting (selve beviset på
+at feilen er rettet), bekrefter kallet skjer FØRST etter knappetrykk med
+korrekt suksessvisning, bekrefter en manglende token gir feilmelding
+umiddelbart uten noe kall, og bekrefter en feilrespons etter knappetrykk
+viser feilmeldingen. Bekreftet empirisk via `git stash`: 3 av 4 nye tester
+feilet mot den gamle, automatisk-fyrende komponenten (ingen knapp fantes i
+det hele tatt å klikke på), og alle 4 består mot fiksen.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**372
+tester**, +4 — bekreftet 3/4 feiler mot gammel automatisk-fyrende
+komponent, består mot fiksen), `i18n:check` (**389 nøkler**, +2), `rm -rf
+.next && next build` (grønn — bekrefter ingen `useSearchParams`/Suspense-
+byggefeil ble introdusert), `test:integration` mot ekte lokal Postgres
+(**262 tester**, uendret — selve API-kontrakten for
+`POST /me/confirm-deletion` er urørt, kun klientsidens bruk av den endret).
+
+### Neste økt
+
+Denne fiksen retter en reell, om enn smal, konto-integritetsrisiko —
+verdt å nevne eksplisitt for morgengjennomgang siden den endrer en
+BRUKERFLYT (krever nå ett ekstra trykk før kontosletting fullføres), ikke
+bare et internt implementasjonsdetalj. Verdt å sjekke: finnes det FLERE
+"engangslenke → automatisk irreversibel handling"-mønstre andre steder i
+kodebasen? Kun `unsubscribe/[token]/route.ts` (avmelding — reversibelt,
+lavt alvorlighetsnivå selv om det skulle skje utilsiktet) og
+`digest-access/[token]/route.ts` (oppretter bare en økt, ikke en
+destruktiv handling) bruker lignende engangslenker — begge trygge, siden
+ingen av dem er IRREVERSIBLE på samme måte som kontosletting. Ellers
+uendret: to åpne spørsmål (`runExpireRequests()`, 18.1 vs 16.2/FR-051),
+den siterte, tilsynelatende ugyldige "24.3"-referansen i spec-en (verdt en
+egen opprydding — men IKKE gjort her, siden det er en ren
+dokumentasjonsopprydding uten hastverk, til forskjell fra selve
+sikkerhetsfiksen), komponentbibliotek, OG-bilde, Sentry/Brevo.
