@@ -9869,3 +9869,48 @@ de gjenværende FR-kravene med en konkret "returnerer X" (ikke bare "skal
 gjøre Y")-påstand, f.eks. FR-041 (409), FR-043 (409), FR-051 (422). Ellers
 uendret: de tre åpne spec-spørsmålene og "24.3"-referanseopprydding er
 fortsatt utestående for morgengjennomgang, ikke noe hastverk med dem.
+
+## Økt (fortsettelse): fullførte de tre gjenstående HTTP-status-sjekkene — alle rene
+
+Sjekket de tre resterende, konkrete "returnerer X"-påstandene fra
+forrige runde sin liste:
+
+- **FR-041** ("andre innsending returnerer 409"): allerede bekreftet
+  korrekt i samme rute som ble rettet denne natten
+  (`errors.already_responded` → 409 i `requests/[id]/responses/route.ts`).
+- **FR-043** ("andre forsøk returnerer 409"): `journalist/responses/[id]/
+  contact-request/route.ts` mapper `errors.contact_request_already_sent`
+  → 409 korrekt.
+- **FR-051** ("oppslag uten begrunnelse returnerer 422"):
+  `admin/responses/[id]/route.ts` returnerer eksplisitt 422
+  (`errors.reason_required`) for en manglende/ugyldig begrunnelse, FØR
+  den i det hele tatt kaller `getResponseForAdmin()`.
+
+Alle tre allerede korrekte — ingen funn, ingen endring. Dette
+konkluderer HTTP-status-sporingsteknikken for denne natten: av de
+konkrete "returnerer X"-påstandene som faktisk ble sporet gjennom hele
+kallkjeden (rute → lib-funksjon → tilbake), ble 2 reelle avvik funnet og
+rettet (FR-023, FR-002-relatert) og 3 bekreftet allerede korrekte
+(FR-041, FR-043, FR-051). Teknikken er nå kjørt til et naturlig
+metningspunkt for denne runden.
+
+### Verifisert før commit (denne runden)
+
+Ingen kodeendring — ren gjennomlesing/verifisering uten funn.
+
+### Neste økt
+
+Kodebasen er i en solid, grønn tilstand etter en lang natt med
+systematisk feiljakt (72 fullførte oppgaver totalt). Tre uavhengige
+brede teknikker er nå kjørt til metning: klientkomponent-taus-feil (5
+funn), sjekk-så-skriv-races på unike/fremmednøkler (5 funn), og
+HTTP-status-presisjon mot FR-krav (2 funn). Anbefaler at neste økt enten
+(a) velger et helt nytt, ennå ukritisk-lest hjørne av kodebasen å lese
+linje for linje (f.eks. `src/lib/journalists/` eller
+`src/lib/legal/documents.ts`, som ingen av disse tre teknikkene direkte
+har dekket), eller (b) venter på morgengjennomgang av de TRE åpne
+spec-spørsmålene (`runExpireRequests()` manglende varsling; 18.1 vs
+16.2/FR-051 motsigelse om hvem som kan lese et svars innhold; om
+403→404-presiseringen fra FR-023 bør utvides til de fire andre
+moderator-scopede filene) og "24.3"-referanseopprydding, som alle
+fortsatt er utestående, ikke noe hastverk med dem.
