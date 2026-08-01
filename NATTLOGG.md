@@ -9793,3 +9793,79 @@ men FR-023s KONKRETE akseptansekriterium nevner bare forespørsler
 eksplisitt — ikke stort nok grunnlag til å utvide stille i natt. Ellers
 uendret: de to andre åpne spec-spørsmålene og "24.3"-referanseopprydding
 er fortsatt utestående, ikke noe hastverk med dem.
+
+## Økt (fortsettelse): FR-002-sjekk fant en reell mangel i selve RUTENS statuskode-mapping (ikke i submitResponse() selv)
+
+Fortsatte den målrettede FR-krav-sjekken med FR-002: "Systemet skal ikke
+ta imot svar fra en konto uten `email_verified_at`. | Test: innsending
+fra ubekreftet konto returnerer 403."
+
+**Undersøkelsen**: `submitResponse()` (`src/lib/responses/responses.ts`)
+sjekker allerede korrekt `respondent.status !== "active"` og returnerer
+`errors.not_authorized` for det — men RUTEN
+(`src/app/api/requests/[id]/responses/route.ts`) sin egen
+status-mappende ternary manglet en eksplisitt gren for akkurat DENNE
+feilkoden, til forskjell fra samtlige ~10 søsterruter jeg sjekket (som
+alle eksplisitt mapper `errors.not_authorized` til 403) — falt i stedet
+gjennom til den generiske 422-en.
+
+**Et viktig funn UNDERVEIS, som endret hva fiksen faktisk beviser**: den
+første testversjonen (en full databasedrevet rutetest, med en EKTE
+`pending_email_verification`-konto og en ekte økt) ga **401**, ikke
+403/422 som forventet! Sporet dette til `getCurrentSession()`
+(`src/lib/auth/session.ts`, linje 122): den gjør SIN EGEN, tidligere
+ferske statussjekk (`row.status !== "active"` → `null`) og returnerer
+dermed 401 for ENHVER ikke-aktiv konto LENGE FØR ruten når frem til
+`submitResponse()` i det hele tatt. Konklusjon: FR-002s bokstavelige
+scenario ("ubekreftet konto") er allerede korrekt håndtert — bare via
+401, ikke 403 som spec-teksten sier ordrett (en presisjonsforskjell i
+spec-en, ikke en funksjonssvikt i koden — selve sikkerhetsegenskapen
+holder). `submitResponse()` sin EGEN interne `not_authorized`-gren er i
+praksis kun nåbar via et smalt kappløpsvindu (kontoen suspenderes MELLOM
+øktsjekkens lesning og `submitResponse()` sin egen, ferske re-lesning av
+samme rad) — et reelt, om enn smalt, forsvar-i-dybden-tilfelle, ikke
+selve FR-002-scenarioet.
+
+**Fiksen**: la til den manglende `errors.not_authorized → 403`-grenen i
+rutens ternary, for konsistens med alle søsterruter og som et reelt
+(om smalt) forsvar mot kappløpsvinduet over. Oppdaterte kode- og
+kommentarteksten til å beskrive dette PRESIST (kappløpsvindu-forsvar,
+ikke "fikser FR-002"), fremfor å overselge fiksen som noe den ikke er.
+
+**Testdekning**: skrev først en full integrasjonstest (ekte DB, ekte
+økt) — den AVDEKKET selv 401-oppdagelsen over, men kunne ikke bevise
+FIKSEN (siden 403-grenen aldri nås via en ekte, sekvensiell HTTP-kjede).
+Erstattet med en ren enhetsnivå-test som mocker
+`submitResponse()`/`getCurrentSession()` direkte — beviser nøyaktig
+ternary-logikken som faktisk ble endret, uten å late som om et umulig
+scenario er testet.
+
+**Empirisk verifisering**: `git stash push` på ruten → kjørte
+enhetstesten → bekreftet at nøyaktig 1 av 2 tester feiler (422 mottatt,
+403 forventet; den andre testen, som dekker de allerede-korrekte
+404/409/429-grenene, besto uendret) → `git stash pop` → bekreftet begge
+tester består.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**393
+tester**, +2), `i18n:check` (389 nøkler, uendret), `design:check-tokens`
+(OK, 41 komponent-CSS-filer, uendret), `next build` (grønn),
+`test:integration` mot ekte lokal Postgres (269 tester, uendret — ren
+enhetsnivåfiks, ingen integrasjonstest berørt). Merknad: én kjøring av
+HELE integrasjonssuiten viste én forbigående, urelatert feil i
+`digests.integration.test.ts` — bekreftet IKKE reproduserbar (besto i
+isolasjon og i en påfølgende full kjøring), samme klasse delt-database-
+tilstandsstøy som er sett flere ganger tidligere i natt, ikke en
+regresjon fra denne fiksen.
+
+### Neste økt
+
+Metoden denne runden (spore en FR-akseptansekriteriums PRESISE HTTP-
+status ende-til-ende gjennom hele kallkjeden, ikke bare den underliggende
+lib-funksjonen) fant to reelle, om enn små, presisjonsavvik på to netter
+på rad (FR-023, nå FR-002) — verdt å fortsette samme teknikk på flere av
+de gjenværende FR-kravene med en konkret "returnerer X" (ikke bare "skal
+gjøre Y")-påstand, f.eks. FR-041 (409), FR-043 (409), FR-051 (422). Ellers
+uendret: de tre åpne spec-spørsmålene og "24.3"-referanseopprydding er
+fortsatt utestående for morgengjennomgang, ikke noe hastverk med dem.
