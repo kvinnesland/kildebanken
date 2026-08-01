@@ -8808,3 +8808,58 @@ den siterte, tilsynelatende ugyldige "24.3"-referansen i spec-en (verdt en
 egen opprydding — men IKKE gjort her, siden det er en ren
 dokumentasjonsopprydding uten hastverk, til forskjell fra selve
 sikkerhetsfiksen), komponentbibliotek, OG-bilde, Sentry/Brevo.
+
+## Økt (fortsettelse): selvintrodusert regresjon i ProfileForm.tsx
+
+Fortsatte den kritiske gjennomlesingen til `/me`-skjemalaget etter forrige
+runde. Fant en regresjon jeg selv innførte forrige runde (task #57): da
+`PATCH /api/me`s Zod-skjema ble rettet fra `max(200)` til `max(80)` for
+`displayName` (for å samsvare med `POST /subscribe`,
+`POST /requests/:id/responses` og `responses/validate.ts`s egen grense på
+samme underliggende `users.display_name`-felt), ble IKKE
+`ProfileForm.tsx`s tilhørende klientside-`inputProps={{ maxLength: 200 }}`
+oppdatert til å matche.
+
+**Konsekvens**: en bruker med et visningsnavn på 81-200 tegn kunne skrive
+inn hele det i nettleseren (feltet tillot det), trykke "Lagre", og få en
+uforklarlig 422-avvisning fra serveren uten at grensesnittet noensinne
+hadde antydet en grense lavere enn 200. Samme klasse asymmetrisk-vakt-feil
+som er funnet flere ganger tidligere i natt (task #24/#25), denne gangen
+selvpåført i stedet for arvet.
+
+**Fiksen**: `ProfileForm.tsx` — `maxLength: 200` → `maxLength: 80`, med en
+kommentar som forklarer grensen og hvorfor den nå er strengere enn den så
+ut til å være. Ingen testfil eksisterte for denne komponenten i det hele
+tatt; la til `ProfileForm.test.tsx` med to tester: én som bekrefter
+`maxLength="80"` på selve inputfeltet, én som bekrefter selve
+lagre-flyten (fetch-kall med riktig body, suksessmelding vises).
+
+**Empirisk verifisering**: `git stash push -- ProfileForm.tsx` for å
+midlertidig gjenopprette den gamle `maxLength: 200`-verdien → kjørte
+testfilen → bekreftet at nøyaktig 1 av 2 tester feiler (maxLength-testen,
+med tydelig `Received: maxLength="200"`; lagre-flyt-testen består uendret,
+siden den ikke er avhengig av selve grenseverdien) → `git stash pop` for å
+gjenopprette fiksen → bekreftet begge tester består.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**374
+tester**, +2), `i18n:check` (389 nøkler, uendret — ingen nye
+oversettelsesnøkler i denne fiksen), `design:check-tokens` (OK, 40
+komponent-CSS-filer), `next build` (grønn), `test:integration` mot ekte
+lokal Postgres (262 tester, uendret — ingen server-side kontrakt endret).
+
+### Neste økt
+
+Neste kandidat, per tidligere identifisert og ikke påbegynt: task #60,
+`ChangeCountryForm.tsx` mangler `focusFirstInvalidField()`
+(DESIGN.md 6.1) til tross for at den har `isInvalid`-tilstand på to
+Select-felt og en Checkbox — de 6 andre skjemaene i kodebasen har dette
+mønsteret. Krever restrukturering fra dagens
+`<div className={styles.form}>` + `<Button onPress={handleSubmit}>` til
+et faktisk `<form ref={formRef} onSubmit={...}>`-element, etter samme
+mønster som `ReportForm.tsx` (`useRef<HTMLFormElement>`,
+`<form ref={formRef} onSubmit={handleSubmit} noValidate>`, kaller
+`focusFirstInvalidField(formRef)` når validering feiler ved innsending).
+Ellers uendret: de to åpne spec-spørsmålene og "24.3"-opprydding fra
+forrige runde er fortsatt utestående, ikke noe hastverk med dem.

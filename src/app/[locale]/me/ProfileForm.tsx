@@ -65,7 +65,13 @@ export function ProfileForm({
         label={t("me.display_name_label")}
         value={displayName}
         onChange={setDisplayName}
-        inputProps={{ maxLength: 200 }}
+        // 80, ikke 200 — samme grense som PATCH /me sitt Zod-skjema
+        // (src/app/api/me/route.ts) håndhever server-side. Sto tidligere
+        // som 200 her, en reell uoverensstemmelse: brukeren kunne skrive
+        // inn 81-200 tegn i nettleseren og få en uforklarlig 422-avvisning
+        // ved lagring, siden serverens grense allerede var rettet til 80
+        // (se NATTLOGG.md) uten at denne klientsidegrensen fulgte med.
+        inputProps={{ maxLength: 80 }}
       />
       <Select
         label={t("me.locale_label")}
