@@ -1,10 +1,10 @@
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 
-// Tokens skal aldri lagres rått (SPEC-V1.md 24.3) — bare hashen. Selve
-// tokenet eksisterer kun i URL-en/cookien brukeren har, og i minnet i det
-// korte øyeblikket det verifiseres.
+// Tokens skal aldri lagres rått (SPEC-V1.md 18: "Tokens lagres hashet") —
+// bare hashen. Selve tokenet eksisterer kun i URL-en/cookien brukeren har,
+// og i minnet i det korte øyeblikket det verifiseres.
 
-const TOKEN_BYTES = 32; // 256 bit — tilfeldig og ikke-gjettbar (24.3)
+const TOKEN_BYTES = 32; // 256 bit — tilfeldig og ikke-gjettbar (18)
 
 /** Genererer et nytt, url-trygt engangstoken. Returnerer RÅTT token — kalleren
  * må selv hashe det før lagring (`hashToken`) og bare sende det rå tokenet

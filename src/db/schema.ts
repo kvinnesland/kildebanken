@@ -478,7 +478,9 @@ export const suppressions = pgTable("suppressions", {
 });
 
 // ---------------------------------------------------------------------------
-// 19.14 AuthToken — engangstoken for magic link (SPEC-V1.md 6.1, 24.3)
+// 19.14 AuthToken — engangstoken for magic link (SPEC-V1.md 6.1) og for
+// sensitive, irreversible handlinger som kontosletting (18.2, purpose
+// "delete_account" — et EGET token, atskilt fra innloggingstokenet)
 // ---------------------------------------------------------------------------
 
 export const authTokens = pgTable("auth_tokens", {

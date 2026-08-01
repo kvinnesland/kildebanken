@@ -7,8 +7,9 @@ import { updateMyProfile } from "@/lib/me/profile";
 // økt → cookie → oppslag) faktisk henger sammen. DELETE /me er bygget som
 // en egen to-stegs flyt (POST /me/request-deletion + /me/confirm-deletion,
 // se NATTLOGG.md økt 7) i stedet for én direkte DELETE-rute, nettopp fordi
-// 24.3 krever ny autentisering for sensitive handlinger — et rent
-// DELETE-kall fra en allerede innlogget klient kunne ikke tvinge det frem.
+// 18.2 krever et eget bekreftelsestoken for sensitive, irreversible
+// handlinger — et rent DELETE-kall fra en allerede innlogget klient kunne
+// ikke tvinge det frem.
 export async function GET() {
   const session = await getCurrentSession();
   if (!session) {

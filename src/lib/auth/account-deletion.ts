@@ -19,8 +19,8 @@ const TOKEN_TTL_MS = 15 * 60 * 1000;
 export type AccountDeletionResult = { ok: true } | { ok: false; error: string };
 
 /**
- * Steg 1 av 2 (24.3: "særlig sensitive handlinger skal kreve ny
- * autentisering"). Sender en egen bekreftelseslenke — IKKE den vanlige
+ * Steg 1 av 2 (18.2: eget bekreftelsestoken for sensitive, irreversible
+ * handlinger). Sender en egen bekreftelseslenke — IKKE den vanlige
  * innloggingslenken, se begrunnelse i SPEC-V1.md 15. Avslører aldri om
  * brukeren finnes; kalleren (route) returnerer alltid samme generiske svar,
  * samme prinsipp som `requestMagicLink`.
@@ -82,7 +82,7 @@ export async function confirmAccountDeletion(rawToken: string): Promise<AccountD
   // (src/lib/auth/magic-link.ts) — uten isNull(usedAt) i selve UPDATE-en
   // kunne to samtidige forsøk på å bekrefte SAMME slettelenke begge passere
   // sjekken over og begge trigge performAccountDeletion(), en irreversibel
-  // handling (24.3: "særlig sensitive handlinger").
+  // handling (18.2).
   const [claimed] = await db
     .update(authTokens)
     .set({ usedAt: now })

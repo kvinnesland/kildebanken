@@ -1014,6 +1014,24 @@ Kun respondenten selv, journalisten som eier forespørselen, og en moderator
 eller administrator med registrert begrunnelse og tildeling til svarets land.
 Ingen andre. Ingen teamdeling i v1.
 
+### 18.2 Sensitive, irreversible handlinger
+
+Handlinger som ikke kan angres – kontosletting er det klareste eksempelet i
+v1 – skal ikke kunne utløses av at en lenke besøkes automatisk (f.eks. av en
+e-postskanner eller en forhåndsvisningsrobot hos mottakerens e-postleverandør).
+Slike handlinger bruker et EGET bekreftelsestoken, atskilt fra det vanlige
+innloggingstokenet, og krever et eksplisitt, bevisst brukervalg (et
+knappetrykk) på siden tokenet fører til – aldri en handling som fyrer
+automatisk ved sidelasting. E-postteksten skal si tydelig fra at handlingen
+er irreversibel.
+
+(Lagt til under autonomt arbeid, natt til 2026-08-01, se `NATTLOGG.md` —
+koden siterte gjentatte ganger en "24.3" som begrunnelse for nettopp dette
+prinsippet, men seksjon 24 ("Implementeringsrekkefølge") har ingen
+underseksjon 24.1–24.3 og inneholder ingen slik tekst. Prinsippet var en
+reell, riktig designbeslutning, bare med en spec-referanse som aldri fantes
+noe sted i denne filen – rettet her, spec først, deretter kodens sitater.)
+
 ---
 
 ## 19. Datamodell

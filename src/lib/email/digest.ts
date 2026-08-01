@@ -28,7 +28,7 @@ export interface RenderedDigest {
 export const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN ?? "https://kildebanken.example";
 
 // To ULIKE plassholdere, ikke én — de to lenkene bærer to ulike tokens med
-// ulikt formål (SPEC-V1.md 6.2 vs. 24.3/9.3):
+// ulikt formål (SPEC-V1.md 6.2 vs. 10.3):
 //  - tilgangstoken: gir en innlogget økt, ett per mottaker per utsendelse
 //  - avmeldingstoken: virker UTEN innlogging, roteres ved hver utsendelse
 //    (se insertPerRecipientTokens og tick.ts — det er derfor det er

@@ -4,7 +4,7 @@ import { confirmAccountDeletion } from "@/lib/auth/account-deletion";
 
 const bodySchema = z.object({ token: z.string().min(1) });
 
-// POST /me/confirm-deletion (SPEC-V1.md 17.5, 24.3 — steg 2 av 2). Krever
+// POST /me/confirm-deletion (SPEC-V1.md 17.5, 18.2 — steg 2 av 2). Krever
 // IKKE en aktiv økt — tokenet alene er autoriteten her, samme prinsipp som
 // magic link-verifisering (src/lib/auth/magic-link.ts): å ha mottatt
 // e-posten ER beviset, uavhengig av om brukeren fortsatt er innlogget i

@@ -10056,3 +10056,66 @@ Ellers: kodebasen er grønn. `provider_message_id`-fiksen over er
 selvstendig verifiserbar og trygg å bygge videre på (f.eks. når/hvis
 "Utsendelser"-siden bygges, vil bounce-/klage-tallene den skal vise nå
 faktisk kunne beregnes korrekt).
+
+## Økt (fortsettelse): "24.3"-referanseopprydding — spec rettet først, deretter kodens sitater
+
+Tok tak i den lavprioriterte, lenge utestående "24.3"-opprydningen (nevnt
+som utestående i flere tidligere økter). Grep bekreftet 9 siteringer av
+"SPEC-V1.md 24.3" på tvers av 6 filer — seksjon 24 ("Implementeringsrekke-
+følge") har ingen underseksjoner i det hele tatt, og frasen "særlig
+sensitive handlinger skal kreve ny autentisering" finnes ikke som
+frittstående spec-prosa noe sted. Prinsippet koden faktisk implementerer
+(et EGET bekreftelsestoken, atskilt fra innloggingstokenet, pluss et
+eksplisitt knappetrykk før en irreversibel handling som kontosletting
+fyrer) er reelt og riktig — bare uten noen faktisk hjemmel i spec-en.
+
+**Fulgte regelen ordrett: spec først, deretter kode.** La til en ny
+`### 18.2 Sensitive, irreversible handlinger` i `SPEC-V1.md` (rett etter
+18.1, i "Sikkerhet"-kapittelet — det naturlige hjemmet, ikke seksjon 24
+som er ren fasedokumentasjon) som beskriver prinsippet presist slik det
+faktisk er bygget, med en synlig fotnote om HVORFOR den ble lagt til nå.
+
+Rettet deretter alle 9 kodesiteringer, men IKKE mekanisk til "18.2" overalt
+— sjekket hver enkelt i kontekst, siden ikke alle faktisk siterte SAMME
+prinsipp:
+- `me/route.ts`, `me/confirm-deletion/route.ts`, `me/request-deletion/
+  route.ts`, `account-deletion.ts` (×2), `schema.ts` (AuthToken) — alle
+  disse siterte NETTOPP "eget token for en sensitiv, irreversibel
+  handling" → rettet til 18.2.
+- `tokens.ts` (×2) — siterte generell token-hashing/tilfeldighet, som
+  allerede er dekket av 18s hovedliste ("Tokens lagres hashet") — IKKE
+  18.2s mer spesifikke prinsipp. Rettet til en enkel "18"-henvisning i
+  stedet for å tvinge inn en 18.2 som ikke passer.
+- `digest.ts` — fant HER en ANNEN, ubeslektet feilsitering i SAMME
+  kommentarlinje ("9.3", som er "Moderering" — helt urelatert):
+  "tilgangstoken" og "avmeldingstoken" siktet åpenbart til 6.2 ("Tilgang
+  fra digest-lenken") og 10.3 ("Bounce, klager og avmelding") — trolig en
+  fingerglipp (10.3 → 9.3) fra en tidligere økt. Rettet begge samtidig
+  siden de sto i nøyaktig samme linje.
+
+Ingen av disse er atferdsendringer — bare kommentar-/spec-tekst. Ingen ny
+testdekning var påkrevd (ingen kode-logikk endret), men kjørte likevel
+hele verifiseringskjeden for å utelukke en skrivefeil i selve
+redigeringen.
+
+### Verifisert før commit (denne runden)
+
+`tsc --noEmit` (ren), `eslint .` (0 feil/advarsler), `vitest run` (**396
+tester**, uendret), `i18n:check` (389 nøkler, uendret),
+`design:check-tokens` (OK, 41 komponent-CSS-filer, uendret), `next build`
+(grønn), `test:integration` mot ekte lokal Postgres (**275 tester**,
+uendret). Grep etter "24.3" i hele `src/` bekrefter null gjenværende
+treff.
+
+### Neste økt
+
+"24.3"-opprydningen er nå fullført og kan fjernes fra "utestående"-listen.
+Gjenstår: admin-UI-hullet (16.2, se forrige seksjon over — stort, venter
+på morgenbeslutning) og de tre opprinnelige åpne spec-spørsmålene
+(`runExpireRequests()` manglende varsling; 18.1 vs 16.2/FR-051-
+motsigelsen om hvem som kan lese et svars innhold; om 403→404-
+presiseringen fra FR-023 bør utvides til de fire andre moderator-scopede
+filene i `moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`) — ingen av disse tre er
+endret eller besluttet denne runden, fortsatt bevisst latt åpne for
+menneskelig gjennomgang.
