@@ -13241,3 +13241,91 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 37: rettet forrige økts oppdagede opprydningsmangel i
+`moderation/requests.integration.test.ts`s `createModerator()` — fant
+underveis at samme mønster er MYE mer utbredt enn antatt: 3599 opphopede
+testrader i databasen, og ni ANDRE testfiler med nøyaktig samme hull
+
+`createModerator()` (brukt fra 16 kallesteder på tvers av tre
+describe-blokker i denne filen) oppretter en `users`-rad OG en
+`moderatorCountries`-rad, men INGEN av blokkenes egne `afterEach`-hooks
+rydder opp i dem — kun forespørslene de opererer på slettes. Kjørte et
+diagnoseskript FØR fiksen: **3599** moderator-prefiksede testbrukere lå
+allerede i databasen, opphopet gjennom natten fra gjentatte kjøringer av
+denne ene filen alene.
+
+**Fiks**: lagt til et modul-scopet `createdModeratorIds`-array som
+`createModerator()` (og den ene rå-innsatte "unassignedModerator"-testen)
+pusher til, og ÉN samlet `afterAll` nederst i filen (kjører etter ALLE
+describe-blokkene, ikke bare én) som rydder alle radene disse
+moderatorene noensinne har fått: `auditLogs` (moderatorenes egne
+publiser/avvis/lukk-handlinger logger `actorUserId`), `sessions`
+(`loginAs()` setter inn en økt for noen av dem), `moderatorCountries`,
+og til slutt `users` — i den rekkefølgen, siden `users.id` ikke har
+kaskadesletting noe sted (`references()` uten `onDelete`).
+
+**Fanget en feil i egen fiks underveis**: første forsøk på `afterAll`
+glemte `auditLogs`-slettingen og krasjet med nøyaktig samme fremmednøkkel-
+brudd revisjonslogging alltid gir når den ikke er tenkt på (samme
+klasse feil som `purgeRejectedJournalistApplications()` hadde, Økt 24,
+og `performAccountDeletion()`, Økt 25). Rettet før commit.
+
+**Empirisk verifisert reelt løst**: kjørte testfilen to ganger på rad
+etter fiksen og bekreftet 0 gjenværende moderator-prefiksede rader begge
+ganger (mot 3599 FØR). Ryddet også bort de 3599 opphopede radene fra
+FØR fiksen via et engangsskript (måtte i tillegg nulle ut
+`journalist_profiles.reviewed_by` og slette tilhørende `auditLogs`-rader
+for disse — samme fremmednøkkel-avhengigheter som selve fiksen måtte
+håndtere).
+
+**Betydelig sidefunn**: kjørte HELE integrasjonstestpakken (326 tester)
+og målte 98 NYE moderator-prefiksede rader etterpå — fra NI andre
+testfiler (`admin/legal-documents`, `admin/responses`, `auth/authorize`,
+`digests/digests`, `moderation/journalists`, `moderation/responses`,
+`moderation/users`, `reports/reports`, `requests/requests`) som alle
+bruker samme `uniqueTestEmail("moderator...")`-mønster og
+sannsynligvis samme opprydningshull. Ryddet bort disse 98 radene også
+(samme engangsskript-mønster), men rettet IKKE selve de ni filene denne
+runden — en betydelig større jobb enn denne øktens avgrensede oppgave,
+og fortjener sin egen runde med samme grundighet (verifisere HVER fils
+faktiske mønster, ikke anta de er identiske).
+
+### Verifisert før commit (denne runden)
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 451 tester, alle
+  bestod (uendret — denne filen er integrasjonstest, utenfor pakken).
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 kall-steder funnet
+  (uendret — ingen i18n-berøring).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts` (full
+  integrasjonstestpakke mot ekte lokal Postgres): 32 filer, 326 tester,
+  alle bestod — kjørt TO ganger for stabilitet, identisk resultat begge
+  ganger. Bekreftet 0 nye moderator-prefiksede rader etter denne kjøringen
+  fra DENNE filens tester (de 98 fra de ni ANDRE filene ble ryddet bort
+  manuelt, uendret av min kode).
+- Direkte kjøring av kun denne testfilen, to ganger på rad: 21/21 bestod
+  begge ganger, 0 gjenværende rader begge ganger (mot 3599 FØR fiksen).
+
+### Neste økt
+
+Gjenstående kandidater, i prioritert rekkefølge: (a) **samme
+opprydningsmønster i de ni andre testfilene** som ble oppdaget denne
+runden (se over) — en dedikert runde bør gå gjennom hver fil for seg,
+siden mønstrene kan variere (noen bruker kanskje allerede delvis
+opprydning); (b) `countryCode`-visningshullet i admin/moderator-listene
+(digests, journalists, recipients), fortsatt bevisst utsatt til land
+nummer to faktisk legges til; (c) den avbrutte E2E-kjeden fra Økt 30
+(respondentens godkjenn/avslå-sti) er fortsatt utestet LEVENDE, men lav
+prioritet gitt grundig eksisterende testdekning. Ellers uendret: de tre
+opprinnelige åpne spec-spørsmålene, fortsatt bevisst latt åpne for
+menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

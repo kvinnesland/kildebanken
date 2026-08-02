@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { and, count, eq } from "drizzle-orm";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { journalistProfiles, moderatorCountries, requests, sessions, users } from "@/db/schema";
+import { auditLogs, journalistProfiles, moderatorCountries, requests, sessions, users } from "@/db/schema";
 import {
   ensureSecondTestCountry,
   ensureTestCountry,
@@ -37,6 +37,16 @@ async function loginAs(userId: string): Promise<void> {
   } as unknown as Awaited<ReturnType<typeof cookies>>);
 }
 
+// Alle moderatorer denne filen oppretter, på tvers av ALLE describe-
+// blokkene under — hver blokks egen `afterEach` rydder kun opp
+// forespørslene den selv opererer på, aldri moderatorene. Reelt hull
+// oppdaget under Økt 36s arbeid med submitRequest()-tester (se
+// NATTLOGG.md): stadig flere moderator-e-poster dukket opp i loggen ved
+// gjentatte kjøringer av HELE testfilen. Ryddes samlet i én `afterAll`
+// nederst i filen i stedet for i hver enkelt blokk, siden funksjonen
+// brukes fra tre forskjellige describe-blokker.
+const createdModeratorIds: string[] = [];
+
 async function createModerator(countryCode: string): Promise<{ id: string }> {
   const [moderator] = await db
     .insert(users)
@@ -51,6 +61,7 @@ async function createModerator(countryCode: string): Promise<{ id: string }> {
     .returning({ id: users.id });
   if (!moderator) throw new Error("Klarte ikke opprette test-moderator");
   await db.insert(moderatorCountries).values({ moderatorUserId: moderator.id, countryCode });
+  createdModeratorIds.push(moderator.id);
   return moderator;
 }
 
@@ -533,6 +544,7 @@ describe("listModerationQueue mot ekte Postgres", () => {
       })
       .returning({ id: users.id });
     if (!unassignedModerator) throw new Error("Klarte ikke opprette test-moderator");
+    createdModeratorIds.push(unassignedModerator.id); // ingen moderatorCountries-rad her, med hensikt — se testnavnet
 
     const result = await listModerationQueue(
       makeSession({ userId: unassignedModerator.id, role: "moderator", countryCode: TEST_COUNTRY_CODE })
@@ -540,4 +552,19 @@ describe("listModerationQueue mot ekte Postgres", () => {
 
     expect(result).toEqual([]);
   });
+});
+
+// Rydder ALLE moderatorer opprettet av createModerator() (og den ene
+// rå-innsatte "unassignedModerator" over) på tvers av HELE filen — se
+// createdModeratorIds sin egen kommentar. auditLogs og sessions FØRST:
+// publishRequest()/rejectRequest()/requestChanges() logger moderatorens
+// handling med actorUserId, og loginAs() setter inn en økt — users.id
+// har ingen kaskadesletting (`references()` uten `onDelete`), så en
+// gjenværende rad i noen av de to ville gitt et fremmednøkkelbrudd.
+afterAll(async () => {
+  if (createdModeratorIds.length === 0) return;
+  await db.delete(auditLogs).where(inArray(auditLogs.actorUserId, createdModeratorIds));
+  await db.delete(sessions).where(inArray(sessions.userId, createdModeratorIds));
+  await db.delete(moderatorCountries).where(inArray(moderatorCountries.moderatorUserId, createdModeratorIds));
+  await db.delete(users).where(inArray(users.id, createdModeratorIds));
 });
