@@ -33,6 +33,7 @@ describe("getPublicRequest mot ekte Postgres", () => {
         summary: "En testforespørsel for synlighetsregelen.",
         description: "Full beskrivelse.",
         targetPersonDescription: "Hvem som helst.",
+        geographicNote: "Østlandet",
         responseDeadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         status: "published",
         allowsAnonymousParticipation: true,
@@ -52,6 +53,11 @@ describe("getPublicRequest mot ekte Postgres", () => {
   it("er offentlig synlig så lenge journalisten er aktiv", async () => {
     const found = await getPublicRequest(requestId);
     expect(found?.id).toBe(requestId);
+  });
+
+  it("inkluderer geographicNote (SPEC-V1.md 9.1: 'valgfritt fritekst, kun visning' — feltets eneste formål er å bli vist på den offentlige siden)", async () => {
+    const found = await getPublicRequest(requestId);
+    expect(found?.geographicNote).toBe("Østlandet");
   });
 
   it("inkluderer landets tidssone (SPEC-V1.md 11: 'svarfrist med tidssone')", async () => {

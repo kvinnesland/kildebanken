@@ -119,6 +119,11 @@ export default async function RequestDetailPage({
             organizationName: request.organizationName,
           })}
         </p>
+        {request.geographicNote ? (
+          <p className={styles.byline} lang={request.contentLanguage}>
+            {request.geographicNote}
+          </p>
+        ) : null}
       </div>
 
       {showForeignLanguageNotice ? (

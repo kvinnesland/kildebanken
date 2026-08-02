@@ -12650,3 +12650,122 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 31: generaliserte forrige økts funn til en systematisk sveip — er det
+FLERE steder der en backend-funksjon returnerer et felt ingen side noensinne
+viser? Fant én til: `geographicNote` (SPEC-V1.md 9.1, "kun visning") ble
+hentet av `getPublicRequest()`, men aldri vist på selve den offentlige
+forespørselssiden
+
+Fremfor å fortsette den avbrutte E2E-kjeden fra forrige økt (respondentens
+godkjenn/avslå-sti, som allerede har grundig, direkte testdekning i
+`contact-requests.integration.test.ts` — lav forventet gevinst av enda en
+smoke-test der), generaliserte jeg heller selve BUGKLASSEN forrige økt fant:
+en side som kaller en `get*`/`list*`-funksjon fra `src/lib/**`, der
+funksjonens returtype har et felt som aldri faktisk leses noe sted i siden
+eller dens barnekomponenter — data beregnet og returnert av
+forretningslogikken, men stille mistet før det når brukeren. Delegerte en
+grundig gjennomgang av alle 15 `page.tsx`-filer som kaller en slik funksjon
+til en agent (les-only, ingen filendringer), som sammenlignet hver
+returtype/interface mot faktisk JSX-bruk gjennom hele render-treet.
+
+**Funnet som traff bugklassen mest presist**: `geographicNote` i
+`getPublicRequest()` (`src/lib/requests/requests.ts:532`) — SPEC-V1.md 9.1
+sier ORDRETT om feltet: "Geografisk område | valgfritt fritekst, **kun
+visning** | 100 tegn". Feltets ENESTE formål ifølge spec-en er å bli vist.
+Det ER korrekt lagret, korrekt redigerbart (`RequestEditForm.tsx`), og
+korrekt vist i sammendrags-e-posten (`src/lib/email/digest.ts:89-91`, som
+en dempet linje rett under tittelen) — men den offentlige
+forespørselssiden (`foresporsler/[id]/[slug]/page.tsx`), stedet der "kun
+visning" faktisk skulle bety noe, viste den aldri. Samme mønster som
+Økt 30s `sharedEmail`-hull: logikken/datalaget var riktig hele veien,
+kun visningen manglet ett sted.
+
+**Fiks**: la til en dempet linje rett under byline-avsnittet i
+`foresporsler/[id]/[slug]/page.tsx`, gjenbrukte `styles.byline` (samme
+visuelle vekt som `digest.ts` sin `geoLine`) med `lang={request.contentLanguage}`
+— samme mønster som resten av sidens innholds-tagging (summary/description/
+target_person_description har alle allerede `lang`-attributtet). Ingen ny
+i18n-nøkkel nødvendig — feltet er ren fritekst uten etikett, akkurat som i
+e-postmalen. Styrket også `requests.integration.test.ts`s eksisterende
+`getPublicRequest`-testsuite med én ny påstand: at `geographicNote` faktisk
+ruller gjennom uendret (datalaget var allerede riktig, men ingen test
+bekreftet det eksplisitt før nå).
+
+**Verifisering var annerledes enn Økt 30s stash-kontrast**: siden selve
+BACKEND-funksjonen aldri var buggy her (bare siden), ville en
+stash-basert før/etter-test på `getPublicRequest()` bestått uansett — det
+ville bevist ingenting om selve visningsfeilen. Kjørte i stedet en direkte
+levende HTML-sjekk: startet `npm run dev`, opprettet en ekte publisert
+testforespørsel med `geographicNote: "Bergen og omegn"`, hentet den
+faktiske HTML-en via `curl` og bekreftet strengen dukker opp i selve det
+gjengitte markup-et (`<p class="page_byline__..." lang="nb-NO">Bergen og
+omegn</p>`), ikke bare i Next sin RSC-hydreringspayload (som forventet
+dukket strengen opp TO ganger i rå HTML — én gang i selve markup-et, én
+gang i hydreringsdataene bakerst i dokumentet; begge korrekte, ingen
+duplisering i det faktiske synlige innholdet).
+
+Sveipen fant også flere ANDRE kandidater av samme bugklasse, med lavere
+prioritet enn `geographicNote` (ingen av dem rettet denne runden):
+- `countryCode` mangler i visningen av admin/moderator-lister som KAN vise
+  flere land samtidig (`admin/digests`, `admin/journalists`,
+  `admin/recipients`) — reelt, men uten praktisk konsekvens ennå siden bare
+  ett land (`NO`) er aktivt og fortsatt `draft` (26.1); blir en reell feil
+  den dagen land nummer to legges til og en administrator ser en blandet
+  liste uten landmerking. Samme utsettelsesbegrunnelse som
+  retensjonsjobbens hardkodede per-land-konstanter (se filens egen
+  kommentar, økt 5) — ikke rettet nå av samme grunn.
+- `responseDeadline` fra `listActiveRequests()` brukes til tidssoneoppslag
+  i `admin/requests/page.tsx`, men vises aldri som en frist-etikett i selve
+  den publiserte/aktive-seksjonen — moderator kan ikke se en publisert
+  forespørsels frist herfra, til tross for at dashbordets
+  `expiringSoonCount` eksisterer nettopp for å flagge forespørsler nær
+  fristen. Reell, men lavere alvorlighet enn `geographicNote` (ingen
+  eksplisitt "kun visning"-spec-setning å vise til).
+- `MyProfileView.role` (`src/lib/me/profile.ts`) velges fra databasen, men
+  leses aldri av noen kaller — siden forgrener seg på `session.role` i
+  stedet. Motsatt av de andre funnene: ikke et manglende-visning-hull, bare
+  død kode uten funksjonell konsekvens (`session.role` dekker det samme).
+
+### Verifisert før commit (denne runden)
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 85 filer, 441 tester, alle
+  bestod.
+- `npx tsx src/i18n/check-keys.ts`: OK — 508 nøkler funnet, alle finnes i
+  nb-NO (ingen ny nøkkel — feltet vises uten etikett, som i e-postmalen).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts` (full
+  integrasjonstestpakke mot ekte lokal Postgres): 32 filer, 320 tester
+  (319 + 1 ny), alle bestod — kjørt TO ganger for stabilitet, identisk
+  resultat begge ganger.
+- Levende HTML-sjekk (se over): bekreftet strengen faktisk dukker opp i
+  det gjengitte markup-et, ikke bare i testdataene.
+
+All testdata (journalist, forespørsel) ryddet bort umiddelbart etter
+verifiseringen via et engangsskript (aldri commitet — slettet før denne
+oppføringen ble skrevet). Utviklingsserveren stoppet. `git status`
+bekreftet kun de to tiltenkte kildefilene endret.
+
+### Neste økt
+
+Naturlig fortsettelse, i prioritert rekkefølge: (a) vurder om
+`countryCode`-visningshullet i admin/moderator-listene (digests,
+journalists, recipients) bør rettes NÅ eller fortsatt utsettes til land
+nummer to faktisk legges til — samme avveining som retensjonsjobbens
+TODO; (b) vurder `responseDeadline`-visningshullet i
+`admin/requests/page.tsx`s aktive-seksjon; (c) fjern evt. det døde
+`MyProfileView.role`-feltet (ren opprydning, ingen funksjonell risiko);
+(d) den avbrutte E2E-kjeden fra Økt 30 (respondentens
+godkjenn/avslå-sti) er fortsatt utestet LEVENDE, men lav prioritet gitt
+grundig eksisterende testdekning. Ellers uendret: de tre opprinnelige
+åpne spec-spørsmålene, fortsatt bevisst latt åpne for menneskelig
+gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.
