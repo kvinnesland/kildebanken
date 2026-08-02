@@ -656,7 +656,14 @@ describe("runDigestTick mot ekte Postgres (FR-030 til FR-038, SPEC-V1.md 10, 23 
       const result = await runDigestTick(db);
 
       expect(result.job).toBe("digest-tick");
-      expect(result.errors).toEqual([]);
+      // Filtrert på VÅR forespørsels ID, ikke `toEqual([])` på hele arrayet —
+      // `runDigestTick` skanner bevisst ALLE land med forfalt digest, ikke
+      // bare denne testens isolerte land, så en samtidig kjørende testfils
+      // (uryddede FØR sin egen `finally` rekker å kjøre) publiserte
+      // forespørsel i et ANNET land kan i prinsippet dukke opp i samme
+      // resultat uten at det sier noe om DENNE testens egen forespørsel (se
+      // NATTLOGG.md, Økt 47).
+      expect(result.errors.filter((e) => e.includes(request.id))).toEqual([]);
 
       const [digestRow] = await db.select().from(digests).where(eq(digests.countryCode, code));
       expect(digestRow?.status).toBe("sent");
@@ -765,14 +772,15 @@ describe("runDigestTick mot ekte Postgres (FR-030 til FR-038, SPEC-V1.md 10, 23 
     const code = await createIsolatedActiveCountry();
     try {
       const journalist = await createIsolatedJournalist(code);
-      await createPublishedRequestForDigest(journalist.id, code);
+      const request = await createPublishedRequestForDigest(journalist.id, code);
       const activeRecipient = await createIsolatedRecipient(code, "nb-NO", "active");
       const unsubscribedRecipient = await createIsolatedRecipient(code, "nb-NO", "unsubscribed");
       const bouncedRecipient = await createIsolatedRecipient(code, "nb-NO", "bounced");
 
       const result = await runDigestTick(db);
 
-      expect(result.errors).toEqual([]);
+      // Se begrunnelsen ved forrige `runDigestTick`-assert over (Økt 47).
+      expect(result.errors.filter((e) => e.includes(request.id))).toEqual([]);
       const [digestRow] = await db.select().from(digests).where(eq(digests.countryCode, code));
       expect(digestRow?.recipientCount).toBe(1);
       const activeDelivery = await db

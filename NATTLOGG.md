@@ -14317,3 +14317,96 @@ menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+---
+
+## Økt 48: fulgte opp begge spor fra forrige økt — sveip fant ingen nye
+kandidater, og herdet den observerte flaky-testen
+
+Forrige økt (47) etterlot to spor. Fulgte begge, i rekkefølge:
+
+**Spor (b) — flere skjulte fallback-hemmeligheter?** Grep'et gjennom hele
+`src/` etter `process.env.` (utenom `NODE_ENV`) for å finne EVENTUELLE
+flere av samme mønster som `BREVO_API_KEY`/`NEXT_PUBLIC_SITE_ORIGIN`.
+Gjennomgått alle treff:
+- `EMAIL_WEBHOOK_SECRET` (`route.ts` for `/api/webhooks/email-events`):
+  feiler allerede LUKKET (401) hvis hemmeligheten mangler — motsatt
+  retning av bugklassen (trygg standard, ikke en stille, farlig
+  reservevei), og allerede dokumentert som bevisst i filens egen
+  kommentar.
+- `BREVO_SENDER_TRANSACTIONAL`/`BREVO_SENDER_BULK`: kaster allerede
+  UBETINGET (uansett miljø, ikke bare i produksjon) når de mangler — Økt
+  46s antagelse om at disse to allerede var dekket, bekreftet direkte i
+  koden nå.
+- `SENTRY_DSN`/`NEXT_PUBLIC_SENTRY_DSN`: Sentry sin egen `init()` er et
+  dokumentert no-op når `dsn` er `undefined` — fravær slår av
+  feilrapportering, det erstatter den ikke med noe FEIL eller
+  villedende, så dette er ikke samme bugklasse.
+- `RETENTION_DRY_RUN`: standardverdien er `true` (dry-run) med mindre
+  eksplisitt satt til `"false"` — trygg retning, motsatt av bugklassen.
+- `DATABASE_URL`/`DB_POOL_MAX`: driftskonfigurasjon for selve
+  tilkoblingen, ikke en forretningslogikk-hemmelighet med en stille
+  reservevei.
+
+**Ingen nye kandidater funnet.** To reelle funnet og rettet over de to
+siste øktene (`BREVO_API_KEY`, `NEXT_PUBLIC_SITE_ORIGIN`); resten av
+kodebasen følger allerede enten "feil lukket"- eller
+"kast-ubetinget"-mønsteret. Dette sporet regnes som avsluttet inntil noe
+NYTT dukker opp (f.eks. en fremtidig hemmelighet lagt til uten samme
+disiplin).
+
+**Spor (a) — herdet flaky-testen.** `tick.integration.test.ts` sin
+`runDigestTick(db)` brukes 11 steder i filen, men bare TO av dem asserter
+`expect(result.errors).toEqual([])` direkte på hele resultatet
+("oppretter en digest og sender..." og "FR-035: utelater en mottaker
+med avmeldt eller sprettet abonnement") — de ni andre stedene sjekker
+allerede bare sine EGNE rader, ikke hele feil-arrayet, og var derfor
+aldri utsatt for samme flake. Rettet begge til å filtrere
+`result.errors` på egen forespørsels-ID FØR sammenligning med et tomt
+array, i stedet for å kreve at HELE arrayet er tomt — det er testens
+EGEN forespørsel som er invarianten som faktisk testes, ikke fraværet av
+enhver feil fra en HVILKEN SOM HELST samtidig kjørende testfil sitt
+midlertidige land. `FR-035`-testen manglet i tillegg en fanget referanse
+til sin egen `createPublishedRequestForDigest(...)`-rad (kastet bort med
+en bar `await`) — lagt til (`const request = await ...`) slik at samme
+filtrering kunne brukes der også.
+
+Ingen `git stash`-kontrast denne gangen: dette er en testfil-egen
+herding av en observert (men ikke deterministisk reproduserbar)
+race, ikke en fiks for en feil i produksjonskode — det finnes ingen
+"gammel kode som skal feile" å stille opp mot, kun en assert som var
+for bredt formulert.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 458 tester, uendret
+  (denne testfilen er en `.integration.test.ts` og dekkes ikke av denne
+  kommandoen).
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts` (full
+  integrasjonstestpakke mot ekte lokal Postgres): Postgres hadde
+  stoppet mellom denne og forrige økt (`pg_isready` returnerte "no
+  response") — startet den på nytt (`service postgresql start`) før
+  kjøring. 32 filer, 328 tester, ALLE bestod (inkludert de to herdede
+  testene). Global-opprydningen fyrte automatisk og fjernet 228
+  testbrukere, uendret oppførsel.
+
+### Neste økt
+
+Begge spor fra forrige økt er nå lukket. Ingen kjent gjenstående
+handling. Mulig neste spor, ingen hastende: en generell revurdering av om
+FLERE av de resterende 9 `runDigestTick`-kallene i samme fil (som
+allerede unngår denne spesifikke fellen ved å sjekke egne rader) har
+TILSVARENDE, men annerledes formulerte, brede asserts et annet sted i
+testpakken (f.eks. mot `digests`- eller `digestDeliveries`-tabellene uten
+å filtrere på egen land-/forespørsels-ID) som kunne rammes av samme
+underliggende årsak — ikke undersøkt denne runden. Ellers uendret: de to
+gjenværende GENUINE åpne spec-spørsmålene, fortsatt bevisst latt åpne for
+menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
