@@ -12769,3 +12769,80 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 32: rettet det nest mest alvorlige funnet fra forrige økts sveip —
+moderator kunne ikke se en publisert forespørsels svarfrist i
+aktive-seksjonen på /admin/requests, til tross for at akkurat samme
+dato/tidssone-oppslag allerede fantes rett over den ubrukt
+
+`listActiveRequests()` (`src/lib/moderation/requests.ts:249`) henter
+`responseDeadline` for hver rad, men `admin/requests/page.tsx` brukte den
+KUN til å slå opp riktig tidssone for `dateFormatter` (delt med
+modereringskø-seksjonen rett over) — selve verdien ble aldri formatert
+til en etikett og sendt videre til `ActiveRequestItem`. Modereringskø-
+seksjonen (`RequestQueueItem`) har nøyaktig samme mønster og gjør det
+riktig (`deadlineLabel`-feltet, se `admin.requests.deadline_label`) — bare
+noen titalls linjer lenger ned i samme fil brytes mønsteret. En moderator
+som vurderer om en publisert forespørsel bør lukkes (SPEC-V1.md 16.2,
+`POST /admin/requests/:id/close`) hadde ingen måte å se fristen på fra
+denne listen, til tross for at dashbordets `expiringSoonCount` eksisterer
+nettopp for å flagge forespørsler nær fristen (`admin/dashboard.ts`).
+
+**Fiks**: speilet `RequestQueueItem`s eksisterende
+`deadlineLabel`-mønster inn i aktive-seksjonen — la til `deadlineLabel`
+på `ActiveRequestItemData`-interfacet (`ActiveRequestItem.tsx`), bygget
+etiketten i `page.tsx` med samme `dateFormatter`/`t("admin.requests.deadline_label", ...)`-
+kall som allerede fantes for køen, og la til en betinget
+`<span className={styles.meta}>`-linje i komponentens render, rett under
+`publishedAtLabel`. Ingen ny i18n-nøkkel — gjenbrukte den eksisterende
+`admin.requests.deadline_label`.
+
+**Empirisk bekreftet feilen var reell**: la til en eksplisitt påstand i
+`ActiveRequestItem.test.tsx` (`expect(screen.getByText("Svarfrist: ..."))
+.toBeInTheDocument()`), `git stash push` på de to kildefilene (beholdt
+kun testfilen), kjørte testen mot den GAMLE komponenten — feilet nøyaktig
+som forventet (elementet fantes ikke i DOM-en). `git stash pop`
+gjenopprettet fiksen, samme test kjørt på nytt: bestod. Hele testfilen:
+4/4 bestod (3 eksisterende + den styrkede påstanden i den første).
+
+### Verifisert før commit (denne runden)
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 85 filer, 441 tester, alle
+  bestod.
+- `npx tsx src/i18n/check-keys.ts`: OK — 509 kall-steder funnet (508 → 509,
+  ÉN ekstra forekomst av den allerede eksisterende
+  `admin.requests.deadline_label`-nøkkelen, ikke en ny nøkkel — scriptet
+  teller kall-steder, ikke unike nøkler; bekreftet ved å sammenligne mot
+  samme sjekk kjørt uten disse endringene, som ga 508).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts` (full
+  integrasjonstestpakke mot ekte lokal Postgres): 32 filer, 320 tester,
+  alle bestod — kjørt TO ganger for stabilitet, identisk resultat begge
+  ganger.
+- Empirisk git-stash-kontrast (se over): bekreftet feilen var reell før
+  fiksen, og at fiksen løser den.
+
+### Neste økt
+
+Naturlig fortsettelse, i prioritert rekkefølge: (a) vurder om
+`countryCode`-visningshullet i admin/moderator-listene (digests,
+journalists, recipients) bør rettes NÅ eller fortsatt utsettes til land
+nummer to faktisk legges til — samme avveining som retensjonsjobbens
+TODO; (b) fjern evt. det døde `MyProfileView.role`-feltet (ren
+opprydning, ingen funksjonell risiko); (c) den avbrutte E2E-kjeden fra
+Økt 30 (respondentens godkjenn/avslå-sti) er fortsatt utestet LEVENDE,
+men lav prioritet gitt grundig eksisterende testdekning; (d) vurder om
+det er verdt å utvide "felt-vs-visning"-sveipen til IKKE-side-filer også,
+f.eks. e-postmaler som IKKE ble sjekket i forrige økts sveip (kun
+`page.tsx`-filer ble gjennomgått). Ellers uendret: de tre opprinnelige
+åpne spec-spørsmålene, fortsatt bevisst latt åpne for menneskelig
+gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

@@ -10,6 +10,7 @@ const request = {
   summary: "Et sammendrag",
   byLabel: "Kari Nordmann, Avisa",
   publishedAtLabel: "Publisert: 1. august 2026",
+  deadlineLabel: "Svarfrist: 1. september 2026",
 };
 
 vi.mock("next/navigation", () => ({
@@ -27,6 +28,7 @@ describe("ActiveRequestItem", () => {
     render(<ActiveRequestItem locale="nb-NO" request={request} />);
 
     expect(screen.getByText("En aktiv forespørsel")).toBeInTheDocument();
+    expect(screen.getByText("Svarfrist: 1. september 2026")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Lukk forespørselen" }));
 
     expect(screen.getByRole("button", { name: "Bekreft lukking" })).toBeInTheDocument();

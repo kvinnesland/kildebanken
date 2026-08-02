@@ -125,6 +125,11 @@ export default async function AdminRequestsPage({
                         date: dateFormatter.format(request.publishedAt),
                       })
                     : "",
+                  deadlineLabel: request.responseDeadline
+                    ? t("admin.requests.deadline_label", {
+                        deadline: dateFormatter.format(request.responseDeadline),
+                      })
+                    : "",
                 }}
               />
             );

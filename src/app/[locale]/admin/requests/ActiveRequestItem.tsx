@@ -13,6 +13,7 @@ interface ActiveRequestItemData {
   summary: string;
   byLabel: string;
   publishedAtLabel: string;
+  deadlineLabel: string;
 }
 
 type Mode = "view" | "confirming" | "busy" | "closed";
@@ -60,6 +61,7 @@ export function ActiveRequestItem({
         <span className={styles.title}>{request.title}</span>
         <span className={styles.meta}>{request.byLabel}</span>
         <span className={styles.meta}>{request.publishedAtLabel}</span>
+        {request.deadlineLabel ? <span className={styles.meta}>{request.deadlineLabel}</span> : null}
         <p className={styles.summary}>{request.summary}</p>
       </div>
 
