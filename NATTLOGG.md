@@ -11589,3 +11589,65 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 20: fullførte task #90 — resten av kritisk-lesing-runden, ingen ny bug
+
+Leste de tre gjenstående filene fra forrige økts liste:
+`src/lib/reports/reports.ts`, `src/lib/security/rate-limit.ts`,
+`src/lib/countries/countries.ts`. Ingen sjekk-så-skriv-kappløp mulig i
+noen av dem — alle tre er enten rene lesninger (`countries.ts`) eller har
+allerede korrekt håndtering fra tidligere økter (`rate-limit.ts` sin
+advisory-lås fra task #42; `reports.ts` skriver ingenting til databasen i
+det hele tatt, bare e-postutsendelse, per 25 punkt 10s bevisste
+kutt av egen datamodell).
+
+**Én observasjon, IKKE en bekreftet bug**: `POST /report`
+(`src/app/api/report/route.ts`) krever ingen innlogging OG har ingen
+hastighetsbegrensning — noen kunne i prinsippet spamme moderatorenes
+innbokser med `content_reported`-varsler i ubegrenset tempo. Vurderte om
+dette er samme klasse funn som de tidligere TOCTOU-bugene i natt (der et
+udiskutabelt avvik fra spec-tekst ble rettet umiddelbart), men konkluderte
+med at det IKKE er det: SPEC-V1.md 18 lister eksplisitt bare TRE
+hastighetsgrenser med konkrete tall (innlogging, svarinnsendelse,
+forespørselsopprettelse) — `/report` er ikke blant dem, og siden ruten er
+anonym (ingen e-post i selve skjemaet, se `ReportForm`), finnes det heller
+ingen naturlig bucket-nøkkel å låse på uten å innføre IP-adresse-
+utlesing, en infrastruktur som IKKE finnes noe sted i kodebasen fra før
+(ingen `x-forwarded-for`-håndtering, ingen presedens for hvordan man
+stoler på/normaliserer en klient-IP bak Netlifys edge). Å innføre dette nå
+ville vært en reell ny sikkerhetsfunksjon, ikke en liten feilretting, og
+fortjener en bevisst avgjørelse (også organisk lav risiko akkurat nå,
+tilsvarende begrunnelsen i rate-limit.ts sin egen kommentar om at
+"Stadium 0 har ingen reell samtidig trafikk ennå"). Latt urørt denne
+runden — flagget her for en fremtidig, bevisst vurdering, IKKE lagt til de
+tre permanent åpne spec-spørsmålene (dette er et hardening-spørsmål, ikke
+en spec-selvmotsigelse som krever en policy-avgjørelse).
+
+Ingen kodeendring denne runden — task #90 markert fullført.
+
+### Verifisert før commit (denne runden)
+
+Ingen kodeendring — `git status` viser ingen diff mot forrige commit
+(95185b0). Ren gjennomlesing, nevnt eksplisitt i NATTLOGG likevel (samme
+begrunnelse som økt 7 og økt 18s tilsvarende "lest kritisk, ingenting å
+rette"-oppføringer).
+
+### Neste økt
+
+Ingen spesifikk pekepinn denne gangen — hele den opprinnelige
+"kritisk lesing av gjenstående moduler"-runden (task #90) er nå
+fullført. Et naturlig neste steg er enten (a) en fornyet
+kritisk-lesing-runde mot moduler bygget TIDLIG i natt (før dagens
+sjekkliste — sjekk-så-skriv, asymmetriske vakter, tause klientfeil,
+klient-/server-grensedrift — var etablert), eller (b) en bevisst
+vurdering av observasjonen over (hastighetsbegrensning på `/report`).
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.
