@@ -142,7 +142,19 @@ export const TOKEN_PAIRS: readonly TokenPair[] = [
 
   // Badge (forespørselsstatus, DESIGN.md 6.2).
   { name: "nøytral badge-tekst", foreground: "color-text-muted", background: "color-surface-sunken", category: "text" },
-  { name: "advarsel-badge-tekst (expired)", foreground: "color-warning-on-subtle", background: "color-warning-subtle", category: "text" },
+  // Oppdaget ved en systematisk kryssjekk av samtlige *.module.css-filer
+  // (samme øvelse som Økt 14, gjentatt her siden listen er manuelt kurert
+  // og IKKE automatisk holdt i synk med ny CSS — se NATTLOGG.md): SAMME
+  // par brukes også av journalist/requests/[id]/page.module.css sin
+  // .comment (moderatorkommentaren på en endrings-/avvist-forespørsel) —
+  // den brukte FØR denne økten --color-text der, nøyaktig samme bugklasse
+  // denne kommentaren advarer mot to linjer under (1.02:1 i mørkt tema,
+  // langt under kravet). Rettet til nøyaktig dette paret, ikke en egen
+  // oppføring, siden det er samme (forgrunn, bakgrunn) uansett komponent.
+  { name: "advarsel-tekst på advarsel-bakgrunn (badge \"expired\"; journalist request-siden sin moderatorkommentar)", foreground: "color-warning-on-subtle", background: "color-warning-subtle", category: "text" },
+  // journalist/responses/[id]/page.module.css sin .contactSharing —
+  // besto med god margin i begge temaer (16-18:1), men var utestet.
+  { name: "delt kontaktinfo på sunken-flate (journalist svar-side)", foreground: "color-text", background: "color-surface-sunken", category: "text" },
 
   // Ikke-tekst grensesnittelementer (WCAG 1.4.11 via DESIGN.md 2.4 sin
   // "3:1 ... for grensesnittelementer og fokusmarkering").

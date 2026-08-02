@@ -30,10 +30,14 @@
   padding-inline: var(--space-4);
 }
 
+/* IKKE --color-text her — den er kalibrert mot --color-surface, ikke mot
+   --color-warning-subtle, og kolliderer med den i mørkt tema (samme
+   bugklasse Badge.module.css sin .warning-kommentar advarer mot; oppdaget
+   her ved en systematisk kryssjekk av contrast-pairs.ts, se NATTLOGG.md). */
 .comment {
   font-family: var(--font-ui);
   font-size: var(--text-sm);
-  color: var(--color-text);
+  color: var(--color-warning-on-subtle);
   background: var(--color-warning-subtle);
   border-radius: var(--radius-md);
   padding-block: var(--space-3);

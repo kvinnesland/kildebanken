@@ -13771,3 +13771,101 @@ respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold;
 (c) [LØST denne økten — se over, ikke lenger et åpent spørsmål].
+
+## Økt 42: fulgte opp forrige økts anbefaling — sjekket DESIGN.md 9
+kriterium 3 i dybden, og fant en EKTE WCAG AA-kontrastfeil i mørkt tema
+
+Forrige økt (41) foreslo å gå bredere fremfor å fortsette å lete i
+allerede grundig gjennomgåtte moduler — pekte konkret på DESIGN.md 9s
+kriterier 2/3/6/7 som ikke eksplisitt bekreftet i noen tidligere økt.
+Sjekket kriterium 2 først (`npm run design:check-tokens` — kjørte rent,
+0 brudd, 54 komponent-CSS-filer). Gikk deretter i dybden på kriterium 3
+("Kontrasttesten dekker ALLE brukte tokenpar") — `contrast-pairs.ts`s
+`TOKEN_PAIRS`-liste er BEVISST manuelt kurert, ikke automatisk
+ekstrahert fra CSS-en (egen kommentar i filen sier dette rett ut), og
+siste systematiske kryssjekk mot faktisk CSS-bruk var Økt 14 — lenge
+siden, og flere nye komponenter/sider er bygget siden da.
+
+**Metode**: skrev et engangsskript som gikk gjennom alle 54
+`*.module.css`-filer, fant hver regelblokk med BÅDE en `color:`- og en
+`background`/`background-color:`-egenskap som pekte på et
+`var(--color-*)`-token, og samlet de DISTINKTE (forgrunn,
+bakgrunn)-parene som faktisk forekommer. Sammenlignet resultatet mot
+`TOKEN_PAIRS`.
+
+**Funn — to genuint utestede par**:
+1. `journalist/requests/[id]/page.module.css` sin `.comment`
+   (moderatorens kommentar på en endrings-/avvist forespørsel) brukte
+   `color: var(--color-text)` på `background: var(--color-warning-subtle)`
+   — **EKTE FEIL**: 15.62:1 i lyst tema (OK), men kun **1.02:1 i mørkt
+   tema** (kravet er 4.5:1) — teksten er praktisk talt usynlig for en
+   journalist som bruker mørkt tema og får en endringsforespørsel med
+   moderatorkommentar. Nøyaktig samme bugklasse `Badge.module.css` sin
+   egen kommentar ved `.warning` advarer eksplisitt mot ("IKKE
+   --color-warning-text her — den er kalibrert mot --color-surface,
+   ikke mot --color-warning-subtle, og kolliderer med den i mørkt
+   tema") — men med `--color-text` i stedet, samme underliggende
+   årsak (en generell tekstfarge kalibrert mot sidens/flatens
+   bakgrunn, ikke mot den tint-ede advarselsbakgrunnen, som forskyver
+   seg i mørkt tema). Denne SPESIFIKKE forekomsten slapp gjennom fordi
+   `TOKEN_PAIRS` aldri inneholdt akkurat dette paret — kriterium 3s
+   "dekker ALLE brukte tokenpar" var med andre ord IKKE sant i praksis.
+2. `journalist/responses/[id]/page.module.css` sin `.contactSharing`
+   brukte `color: var(--color-text)` på
+   `background: var(--color-surface-sunken)` — besto med god margin i
+   begge temaer (16-18:1), men var også utestet.
+
+**Fiks**: endret `.comment` til `color: var(--color-warning-on-subtle)`
+— nøyaktig samme, allerede riktige token `Badge.module.css` sin
+`.warning`-klasse bruker for identisk formål. Bekreftet numerisk
+(10.08:1 i BEGGE temaer) med samme `auditPair()`-funksjon testene selv
+bruker, FØR jeg rørte selve komponentfilen. La til begge parene i
+`TOKEN_PAIRS` — det første som en UTVIDET kommentar på den
+EKSISTERENDE "advarsel-badge-tekst"-oppføringen (siden det etter fiksen
+er nøyaktig samme (forgrunn, bakgrunn)-par som Badge allerede tester,
+ikke en ny, duplikat rad), det andre som en helt ny oppføring.
+
+**Verifiserte selve fiksen LEVENDE, ikke bare via beregnet forhold**:
+startet `npm run dev`, hentet den faktiske, kompilerte CSS-en for siden
+via et `curl`-kall mot `/_next/static/css/...`, og bekreftet at
+`.page_comment__...`-regelen faktisk inneholdt
+`color: var(--color-warning-on-subtle)` i den SERVERTE filen — ikke
+bare i kildefilen. Utviklingsserveren stoppet umiddelbart etterpå.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, **453** tester
+  (451 + 2 nye, fra den ekstra `TOKEN_PAIRS`-oppføringen × to temaer),
+  alle bestod.
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret (ingen ny
+  nøkkel — ren fargetoken-endring).
+- `npx tsx src/styles/check-tokens.ts` (DESIGN.md 9 kriterium 2): OK —
+  54 filer sjekket, ingen rå verdier.
+- `npx next build`: bygget uten feil.
+- Levende sjekk av den faktiske, kompilerte CSS-en (se over): bekreftet
+  fiksen er reelt servert, ikke bare i kildekoden.
+- Ingen integrasjonstester berørt av denne endringen (ren CSS-token +
+  en test-fixture-liste) — `test:integration` ikke kjørt denne runden.
+
+### Neste økt
+
+DESIGN.md 9 kriterium 2 (design:check-tokens) og 3 (kontrasttesten,
+etter denne fiksen) er nå BEGGE eksplisitt verifisert. Gjenstående
+kandidater fra forrige økts liste: (a) kriterium 6 (testtema slår
+gjennom i e-postmaler UTEN at noen mal redigeres) — ikke undersøkt
+ennå; (b) kriterium 7 (grensesnittet lesbart/ubrutt med 40 % lengre
+tekststrenger) — ikke undersøkt ennå, sannsynligvis den mest
+arbeidskrevende av de fire, siden den krever en reell
+pseudo-lokaliseringstest eller en manuell gjennomgang av flere sider;
+(c) vurder om samme systematiske CSS-kryssjekk (denne økten) bør
+gjentas periodisk, ikke bare ved anledning — risikoen for at
+`TOKEN_PAIRS` sakte faller bak faktisk CSS-bruk er strukturell, ikke en
+engangshendelse (dette ER andre gang samme mønster oppdages, Økt 14 og
+nå). Ellers uendret: de to gjenværende GENUINE åpne spec-spørsmålene,
+fortsatt bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
