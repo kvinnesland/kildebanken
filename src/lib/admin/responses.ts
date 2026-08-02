@@ -2,20 +2,9 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { auditLogs, requests, responses } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth/authorize";
+import { type AdminResponseAccessReason } from "./response-access-reasons";
 
-// 16.2 (lagt til under autonomt arbeid, økt 7, se NATTLOGG.md) — en lukket
-// liste, IKKE fritekst. Fritekst (som ved avvisning av en forespørsel) er
-// moderatorens EGET resonnement i egne ord; dette er en av fire faste
-// kategorier, nettopp for å kunne revidere alle oppslag av én kategori i
-// etterkant.
-export const ADMIN_RESPONSE_ACCESS_REASONS = [
-  "user_support_request",
-  "abuse_report_investigation",
-  "legal_or_regulatory_request",
-  "security_incident",
-] as const;
-
-export type AdminResponseAccessReason = (typeof ADMIN_RESPONSE_ACCESS_REASONS)[number];
+export { ADMIN_RESPONSE_ACCESS_REASONS, type AdminResponseAccessReason } from "./response-access-reasons";
 
 export interface AdminResponseDetail {
   id: string;

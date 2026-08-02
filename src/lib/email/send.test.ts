@@ -154,6 +154,36 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
     expect(loggedMessage).toContain("Kunne ikke bekrefte tilknytning til oppgitt redaksjon.");
   });
 
+  it("logger den faktisk rendrede malen for content_reported, med lenke til DET SPESIFIKKE svaret for entityType='response'", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sendTransactionalEmail({
+      template: "content_reported",
+      to: { email: "moderator@example.com", locale: "nb-NO" },
+      data: { entityType: "response", entityId: "response-42", reason: "Upassende innhold", comment: "" },
+    });
+
+    const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
+    expect(loggedMessage).toContain("/nb-NO/admin/responses/response-42");
+  });
+
+  it("faller tilbake til det generiske formatet når content_reported mangler entityId", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sendTransactionalEmail({
+      template: "content_reported",
+      to: { email: "moderator@example.com", locale: "nb-NO" },
+      data: { entityType: "response", reason: "Upassende innhold", comment: "" },
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[email:stub] content_reported → moderator@example.com (nb-NO)",
+      { entityType: "response", reason: "Upassende innhold", comment: "" }
+    );
+  });
+
   it("logger den faktisk rendrede malen for contact_request_received", async () => {
     vi.stubEnv("BREVO_API_KEY", "");
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});

@@ -12902,3 +12902,162 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 34: utvidet felt-vs-visning-sveipen til e-postmalsystemet (Neste
+økt-punkt fra Økt 33) — fant et betydelig STØRRE hull enn de forrige to:
+hele UI-en for SPEC-V1.md 16.2s "åpne et enkeltsvar med begrunnelse"
+manglet fullstendig, ikke bare ett felt
+
+Delegerte en gjennomgang av alle 23 filer i `src/lib/email/templates/`
+til en agent (les-only), som sammenlignet hver mals data-parameter mot
+både selve rendringen og alle kallesteders `data`-objekter via
+`send.ts`s dispatch-switch. Fant to kandidater: `content-reported.ts`
+(alvorlig — se under) og en svakere kandidat i
+`new-request-for-moderation.ts` (`requestId` sendes med, men brukes ikke
+— vurdert lav prioritet siden modereringskøen allerede lister ALLE
+ventende forespørsler etter tittel, ingen egen detaljrute mangler der,
+ulikt svar-tilfellet under).
+
+**Det alvorlige funnet**: `submitReport()` (`src/lib/reports/reports.ts`)
+sender `entityId` i `data`-objektet til `content_reported`-malen, men
+`send.ts`s dispatch-case for `content_reported` plukket kun ut
+`{entityType, reason, comment}` — `entityId` ble aldri lest, og
+`renderContentReportedEmail()`s signatur hadde ikke engang et parameter
+for den. Lenken i e-posten pekte derfor ALLTID til den generiske
+modereringskøen (`/admin/requests`), uansett om det rapporterte
+innholdet var en forespørsel ELLER et svar.
+
+For en rapportert FORESPØRSEL er dette ufarlig (køen lister alle
+innsendte forespørsler, moderator finner den uansett). For et rapportert
+SVAR er det et reelt, alvorlig hull: SPEC-V1.md 16.2 sier ORDRETT "Det
+finnes ingen visning som lister svar på tvers av forespørsler" — og
+siden rapporter ikke har noen egen datamodell i v1 (25, punkt 10;
+`submitReport()` er ren e-postvarsling, lagrer ingenting), var
+e-postens lenke den ENESTE veien en moderator noensinne kunne finne frem
+til det rapporterte svaret. Gravde videre og fant et enda dypere hull:
+sporet gjennom til `GET /admin/responses/:id?reason=...`
+(`src/lib/admin/responses.ts`, `getResponseForAdmin()`) — funksjonen
+(begrunnelseskrav fra en lukket firevalgsliste, revisjonslogging FØR
+returnering, FR-051s administrator-only-krav) og selve API-ruten fantes
+allerede og var korrekt bygget og testet, men **INGEN side i hele
+`src/app/[locale]/` noensinne lot en administrator faktisk BRUKE den**.
+16.2 sier ordrett "Åpning av et enkeltsvar FRA ADMINISTRASJONSGRENSE-
+SNITTET krever ..." — spec-en forutsetter eksplisitt en UI-flyt, ikke
+bare et API-endepunkt. Selv om e-postlenken hadde pekt riktig sted fra
+starten, ville moderatoren likevel landet på en side som ikke fantes.
+
+**Fiks, i to lag**:
+
+1. **Bygget selve manglende siden**, `src/app/[locale]/admin/responses/[id]/`:
+   - `page.tsx`: administrator-only (redirect ellers, samme mønster som
+     `admin/countries/page.tsx`). Leser `?reason=` fra URL-en (samme
+     "URL-en ER tilstanden"-mønster som `admin/recipients`s `?email=`-søk
+     og `CountrySelector.tsx`s `?country=`-valg) — mangler eller ugyldig
+     begrunnelse viser en velger, en gyldig begrunnelse kaller
+     `getResponseForAdmin()` direkte (samme konvensjon som resten av
+     kodebasen: sider kaller lib-funksjoner direkte, ikke sin egen
+     API-rute) og viser hele svaret.
+   - `ReasonPicker.tsx`: en `Select` som navigerer via `router.push`,
+     speiler `CountrySelector.tsx` ord for ord (samme mønster, ingen egen
+     innsendingsknapp — valget ER innsendingen).
+   - `HideResponseAction.tsx`: skjul-knapp med ett bekreftende ekstra
+     klikk, speiler `ActiveRequestItem.tsx`s mønster, kaller den
+     allerede eksisterende `POST /admin/responses/:id/hide`.
+   - Ni nye i18n-nøkler under `admin.response_detail.*` i begge språk,
+     gjenbruker eksisterende nøkler (`journalist.response_detail.*`,
+     `response.form.relevance_label`) der samme tekst allerede fantes.
+   - **Byggefeil oppdaget og rettet underveis** (fanget av
+     `npx next build`, IKKE av `tsc`/`eslint`/`vitest` — nøyaktig derfor
+     bygget er en obligatorisk del av verifiseringskjeden): `ReasonPicker.tsx`
+     (klientkomponent) importerte `ADMIN_RESPONSE_ACCESS_REASONS` fra
+     `admin/responses.ts`, som drar inn `next/headers` transitivt via
+     `requireAdmin()` → `authorize.ts` → `auth/session.ts` — ulovlig i en
+     klientkomponent. Løst ved å skille ut selve listen/typen til en ny,
+     avhengighetsfri fil (`src/lib/admin/response-access-reasons.ts`),
+     som både `admin/responses.ts` (server, re-eksporterer for
+     bakoverkompatibilitet) og `ReasonPicker.tsx` (klient) nå importerer
+     fra.
+
+2. **Rettet e-postlenken**: `renderContentReportedEmail()` fikk et nytt
+   `entityId`-parameter — bygger `/admin/responses/:id` for
+   `entityType="response"` (den nye siden), beholder
+   `/admin/requests` uendret for `entityType="request"`. `send.ts`s
+   dispatch-case oppdatert til å faktisk lese og videresende `entityId`.
+
+**Empirisk bekreftelse**: siden selve funksjonssignaturen endret seg
+(ikke bare et stille mistet felt i en uendret signatur, som Økt 30/31),
+var en ren `git stash`-kontrast på KUN kildefilene ikke meningsfull mot
+de NYE testkallene (feil posisjonelle argumenter mot gammel signatur).
+I stedet: kjørte de to nye testene i `send.test.ts` (som kaller
+`sendTransactionalEmail()` — den STABILE, uendrede offentlige grensesnitt-
+funksjonen, ikke selve malen direkte) mot den gamle `send.ts`/
+`content-reported.ts` via `git stash` — begge feilet nøyaktig som
+forventet (den første fordi lenken pekte til køen i stedet for svaret,
+den andre fordi den gamle koden aldri krevde `entityId` og derfor rendret
+vellykket i stedet for å falle tilbake til stubb-formatet). `git stash pop`
+gjenopprettet fiksen, begge testene bestod.
+
+Deretter en FULL levende HTTP-smoke-test av selve den nye siden (ikke
+bare enhetstester): satt opp en ekte administratorkonto, en publisert
+forespørsel og et innsendt svar med `contactSharing: "email"`. Bekreftet
+via `curl` med en ekte `kb_session`-informasjonskapsel: (1) siden UTEN
+`?reason=` viser velgeren; (2) siden MED en gyldig begrunnelse viser
+hele svarinnholdet (relevans, svartekst, delt-e-post-notis, status
+"Aktivt", skjul-knapp); (3) en direkte database-spørring bekreftet
+revisjonsloggraden ble skrevet MED riktig begrunnelse; (4)
+`POST .../hide` satt `lifecycle_status` til `hidden_by_moderator`; (5)
+siden lastet på nytt viser nå "Skjult av moderator" og en
+"allerede skjult"-notis i stedet for skjul-knappen; (6) selve
+e-postmalens genererte lenke ble bekreftet å peke NØYAKTIG til denne
+fungerende siden for samme svar-ID.
+
+### Verifisert før commit (denne runden)
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 448 tester, alle
+  bestod (opp fra 85/441 — nye tester i `HideResponseAction.test.tsx`,
+  `content-reported.test.ts`, `send.test.ts`).
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 kall-steder funnet (opp fra
+  509 — ni nye `admin.response_detail.*`-nøkler pluss deres bruk), alle
+  finnes i nb-NO.
+- `npx next build`: FEILET FØRST (client/server-grensehullet over),
+  rettet, bygget deretter uten feil. Bekreftet at
+  `/[locale]/admin/responses/[id]` og de to API-rutene er med i
+  byggemanifestet.
+- `npx vitest run -c vitest.integration.config.ts` (full
+  integrasjonstestpakke mot ekte lokal Postgres): 32 filer, 320 tester,
+  alle bestod — kjørt TO ganger for stabilitet, identisk resultat begge
+  ganger (uendret av denne økten — ingen eksisterende integrasjonstest
+  berørt).
+- Empirisk git-stash-kontrast på `send.test.ts`s to nye tester (se
+  over): begge feilet mot gammel kode, begge bestod med fiksen.
+- Full levende HTTP-smoke-test av hele den nye siden og hele kjeden fra
+  e-postlenke til fungerende UI (se over) — all testdata ryddet bort
+  umiddelbart etterpå via engangsskript (aldri commitet), utviklings-
+  serveren stoppet, `git status` bekreftet ingen gjenværende
+  testdata-artefakter.
+
+### Neste økt
+
+Gjenstående kandidater, i prioritert rekkefølge: (a) den svakere
+`new-request-for-moderation.ts`-`requestId`-kandidaten fra denne øktens
+sveip — vurdert lav prioritet, men ikke undersøkt i dybden; (b)
+`request-rejected.ts`s manglende forespørselstittel i selve
+avvisnings-e-posten (agenten bemerket dette som et mindre, beslektet
+funn — en journalist med flere innsendte forespørsler får en
+avvisnings-e-post uten noen tittel å knytte den til, kun moderatorens
+begrunnelse); (c) `countryCode`-visningshullet i admin/moderator-listene
+(digests, journalists, recipients), fortsatt bevisst utsatt til land
+nummer to faktisk legges til; (d) den avbrutte E2E-kjeden fra Økt 30
+(respondentens godkjenn/avslå-sti) er fortsatt utestet LEVENDE, men lav
+prioritet gitt grundig eksisterende testdekning. Ellers uendret: de tre
+opprinnelige åpne spec-spørsmålene, fortsatt bevisst latt åpne for
+menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

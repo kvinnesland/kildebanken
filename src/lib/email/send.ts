@@ -251,15 +251,16 @@ function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedE
       return renderNewRequestForModerationEmail(locale, title);
     }
     case "content_reported": {
-      const { entityType, reason, comment } = input.data;
+      const { entityType, entityId, reason, comment } = input.data;
       if (
         (entityType !== "request" && entityType !== "response") ||
+        typeof entityId !== "string" ||
         typeof reason !== "string" ||
         typeof comment !== "string"
       ) {
         return null;
       }
-      return renderContentReportedEmail(locale, entityType, reason, comment);
+      return renderContentReportedEmail(locale, entityType, entityId, reason, comment);
     }
     case "contact_request_cancelled_account_deleted":
       return renderContactRequestCancelledAccountDeletedEmail(locale);
