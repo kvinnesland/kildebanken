@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { sessions, users } from "@/db/schema";
 import { createActiveJournalist, createActiveRecipient, ensureTestCountry } from "@/db/integration/fixtures";
@@ -50,6 +50,18 @@ async function insertSession(
   return rawToken;
 }
 
+// Rydder ALLE moderatorer opprettet av testene under (to describe-
+// blokker) — se createdModeratorIds sin egen kommentar i de andre
+// testfilene fra samme fiks (NATTLOGG.md). sessions FØRST: users.id har
+// ingen kaskadesletting.
+const createdModeratorIds: string[] = [];
+
+afterAll(async () => {
+  if (createdModeratorIds.length === 0) return;
+  await db.delete(sessions).where(inArray(sessions.userId, createdModeratorIds));
+  await db.delete(users).where(inArray(users.id, createdModeratorIds));
+});
+
 describe("createSession mot ekte Postgres (SPEC-V1.md 6.1/6.3)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -96,6 +108,7 @@ describe("createSession mot ekte Postgres (SPEC-V1.md 6.1/6.3)", () => {
         emailVerifiedAt: new Date(),
       })
       .returning({ id: users.id });
+    if (moderator) createdModeratorIds.push(moderator.id);
     installFakeCookieJar();
     const { createSession } = await import("./session");
 
@@ -179,6 +192,7 @@ describe("getCurrentSession mot ekte Postgres", () => {
         emailVerifiedAt: new Date(),
       })
       .returning({ id: users.id });
+    if (moderator) createdModeratorIds.push(moderator.id);
     const originalExpiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000);
     const rawToken = await insertSession(moderator!.id, { expiresAt: originalExpiresAt });
     const { store } = installFakeCookieJar();

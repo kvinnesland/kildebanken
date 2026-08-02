@@ -13329,3 +13329,137 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 38: fulgte opp forrige økts prioritet (a) — samme
+`createModerator()`-opprydningshull i de resterende testfilene Økt 37
+fant, men ikke rakk å rette
+
+Gikk gjennom hver av de ni filene Økt 37 identifiserte, ETT ETT, og
+verifiserte hvert fils faktiske mønster i stedet for å anta de var
+identiske — akkurat slik forrige økts "Neste økt"-notat ba om. Fant at
+mønsteret varierte mer enn ventet, og at søket etter "alle berørte
+filer" måtte gjøres i stadig bredere omganger:
+
+1. **Literal-substreng-søk** (`uniqueTestEmail("moderator`) fanget
+   `auth/authorize.ts`, `digests/digests.ts`, `moderation/journalists.ts`,
+   `moderation/responses.ts`, `moderation/users.ts`,
+   `admin/legal-documents.ts`, `admin/responses.ts` — 7 filer.
+2. **Søk etter dynamiske kall** (`uniqueTestEmail(...)` UTEN literal
+   streng) fant en åttende: `admin/countries.ts` bruker
+   `uniqueTestEmail(role)` der `role` er en parameter — usynlig for
+   søk 1.
+3. **Bredt søk på `role: "moderator"`** (uavhengig av
+   `uniqueTestEmail`) fant to til: `admin/dashboard.ts` (prefiks
+   `"dashboard-moderator"`/`"dashboard-unassigned-moderator"`) og
+   `auth/session.ts` (rå template-strenger,
+   `` `session-moderator-${Date.now()}@example.invalid` ``, ingen
+   hjelpefunksjon i det hele tatt).
+4. **Direkte DB-spørring** (`SELECT ... WHERE role = 'moderator'`,
+   IKKE e-postprefiks-`LIKE`) var det eneste fullt pålitelige målet —
+   prefiks-/substreng-grep er ikke til å stole på alene, siden
+   testfiler bruker helt ulike, ikke-forutsigbare navnemønstre for
+   samme rolle.
+
+Totalt **10 filer** rettet denne runden (ikke 9 — dashboard.ts og
+session.ts kom først frem via søk 3, etter at de opprinnelige 9 var
+rettet og en ny full-pakke-måling fortsatt viste gjenværende rader).
+
+**Standardfiks** (samme mønster i alle, med tre unntak beskrevet
+under): modul-scopet `createdModeratorIds: string[]`, pushet til inne i
+`createModerator()` (og ved ethvert rå-innsatt moderator-kallested i
+samme fil), og ÉN `afterAll` nederst i filen som sletter i streng
+FK-trygg rekkefølge: `journalistProfiles.reviewedBy` → `null` (kun der
+moderator-id faktisk skrives dit), `auditLogs.actorUserId`,
+`sessions.userId`, `moderatorCountries.moderatorUserId`, `users.id`.
+
+**Filspesifikke avvik fra standardmønsteret**:
+- `moderation/journalists.ts`: trengte `journalistProfiles.reviewedBy`
+  → `null` FØRST (samme klasse feil som Økt 37 fanget i
+  `moderation/requests.ts`) siden `approveJournalist()`/
+  `rejectJournalist()` setter dette feltet. Hadde OGSÅ en fjerde,
+  separat rå-innsatt "unassigned-moderator"-test i
+  `listJournalists`-describe-blokken (linje 335) som IKKE brukte
+  `createModerator()`-hjelperen og som jeg først overså i min egen fiks
+  av filen — fanget opp igjen ved en siste full-pakke-verifisering (se
+  under) som viste 1 gjenværende rad etter alt annet var rettet.
+- `admin/legal-documents.ts` og `admin/responses.ts`: enkle,
+  isolerte rå-innsatte moderatorer i én test hver — rettet inline med
+  `try/finally` i stedet for fil-nivå `afterAll`, siden ingen delt
+  hjelpefunksjon fantes.
+- `admin/countries.ts`: dynamisk `uniqueTestEmail(role)`-kall i en
+  delt `createActiveUser()`-hjelper, pluss tre YTTERLIGERE
+  rå-innsatte moderator-kontoer i egne tester (prefiks
+  `"ny-moderator"`, `"dobbel-moderator"`, `"samtidig-moderator"`) som
+  krevde egne manuelle `push()`-kall.
+- `admin/dashboard.ts`: describe-blokk-scopet (ikke fil-scopet)
+  `createdModeratorIds`/`afterAll`, siden kun ÉN av flere
+  describe-blokker i filen oppretter moderatorer — og ingen
+  `auditLogs`/`sessions`-sletting trengtes, siden
+  `getDashboardCountries()` er en ren lesefunksjon uten økt.
+- `auth/session.ts`: ingen hjelpefunksjon i det hele tatt — to rå
+  template-streng-opprettede moderatorer, fil-nivå tracker rett før
+  første `describe`.
+
+**Målt effekt**: 566 opphopede `role='moderator'`-rader (registrert
+FØR denne runden, på tvers av de da 10 kjente filene) ned til 0 etter
+opprydning, deretter **1** gjenværende rad funnet i en etterfølgende
+full integrasjonspakke-kjøring (den upassede `listJournalists`-testen i
+`moderation/journalists.ts`, se over) — rettet, og bekreftet 0 både FØR
+og ETTER i to påfølgende fulle kjøringer av hele integrasjonspakken.
+
+**Falsk alarm underveis**: én kjøring av hele integrasjonspakken viste
+1 test feilet (`security/rate-limit`-relatert, ikke identifisert
+nøyaktig — output rullet forbi før jeg fikk fanget den eksakte testen).
+Kjørte pakken på nytt umiddelbart: 326/326 bestod. Ansett som en
+forbigående, tidsavhengig flaks uten sammenheng med denne øktens
+endringer (som utelukkende er testopprydning, ingen produksjonskode
+rørt) — bekreftet ved to RENE påfølgende kjøringer etterpå.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 451 tester, alle
+  bestod.
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret (ingen
+  i18n-berøring).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 32 filer, 326
+  tester — kjørt FLERE ganger denne runden (én forbigående flaks i en
+  urelatert test, se over), avsluttet med TO rene påfølgende kjøringer
+  à 326/326 bestått. Bekreftet 0 `role='moderator'`-rader både FØR og
+  ETTER hver av de to siste kjøringene.
+- Alle 10 filene kjørt enkeltvis under selve rettingen (før
+  full-pakke-kjøringen): `auth/authorize.ts` 11/11,
+  `digests/digests.ts` 8/8, `moderation/journalists.ts` 13/13 (etter
+  siste fiks), `moderation/responses.ts` 7/7, `moderation/users.ts`
+  25/25, `admin/legal-documents.ts` 11/11, `admin/responses.ts` 4/4,
+  `admin/countries.ts` 19/19, `admin/dashboard.ts` 10/10,
+  `auth/session.ts` 15/15.
+- Ryddet bort alle midlertidige diagnose-/opprydningsskript
+  (`scratch-*.mjs`) fra disk før commit — ingen slike filer skal inn i
+  git.
+
+### Neste økt
+
+Test-hygiene-opprydningen fra Økt 37 og 38 anses nå FULLFØRT — alle
+kjente `createModerator()`-relaterte opprydningshull er lukket, og
+0-rader er bekreftet empirisk over flere kjøringer. Gjenstående
+kandidater: (a) `countryCode`-visningshullet i admin/moderator-listene
+(digests, journalists, recipients), fortsatt bevisst utsatt til land
+nummer to faktisk legges til; (b) den avbrutte E2E-kjeden fra Økt 30
+(respondentens godkjenn/avslå-sti) er fortsatt utestet LEVENDE, men lav
+prioritet gitt grundig eksisterende testdekning; (c) vurder om samme
+`role='moderator'`-DB-spørring (i stedet for e-postprefiks-grep) bør
+brukes proaktivt ved fremtidige nattlige sveip for andre roller også
+(f.eks. `role='admin'`) — ikke gjort denne runden, men mønsteret kan
+gjenta seg. Ellers uendret: de tre opprinnelige åpne
+spec-spørsmålene, fortsatt bevisst latt åpne for menneskelig
+gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

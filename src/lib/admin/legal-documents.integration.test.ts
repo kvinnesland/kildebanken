@@ -86,9 +86,16 @@ describe("publishLegalDocument mot ekte Postgres", () => {
       .returning({ id: users.id });
     await loginAs(nonAdmin!.id);
 
-    const result = await publishLegalDocument(documentInput());
-
-    expect(result).toEqual({ ok: false, error: "errors.not_authorized" });
+    try {
+      const result = await publishLegalDocument(documentInput());
+      expect(result).toEqual({ ok: false, error: "errors.not_authorized" });
+    } finally {
+      // Reelt hull frem til nå (se NATTLOGG.md): denne moderatoren ble
+      // aldri ryddet bort, ulikt den bevisste unntaksbegrunnelsen for
+      // publiserte dokumenter over (som IKKE gjelder denne brukeren).
+      await db.delete(sessions).where(eq(sessions.userId, nonAdmin!.id));
+      await db.delete(users).where(eq(users.id, nonAdmin!.id));
+    }
   });
 
   it("avviser tom tekst eller tomt versjonsnummer", async () => {

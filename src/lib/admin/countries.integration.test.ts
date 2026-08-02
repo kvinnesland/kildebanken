@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { auditLogs, countries, legalDocuments, moderatorCountries, sessions, users } from "@/db/schema";
 import { ensureTestCountry, TEST_COUNTRY_CODE, uniqueTestEmail } from "@/db/integration/fixtures";
@@ -32,6 +32,17 @@ async function loginAs(userId: string): Promise<void> {
   } as unknown as Awaited<ReturnType<typeof cookies>>);
 }
 
+// Moderatorer opprettet av createActiveUser("moderator", ...) OG av
+// assignModeratorToCountry() (som selv oppretter en ny brukerkonto når
+// e-posten ikke finnes fra før) ryddes samlet i én afterAll nederst i
+// filen — se createdModeratorIds sin egen kommentar. Reelt hull frem til
+// nå (se NATTLOGG.md, samme mønster som ni andre testfiler): denne filen
+// bruker `uniqueTestEmail(role)` med en DYNAMISK rolleparameter, ikke den
+// bokstavelige `uniqueTestEmail("moderator")`-formen de andre filene
+// hadde — derfor ble den ikke fanget opp av det første søket som
+// oppdaget mønsteret.
+const createdModeratorIds: string[] = [];
+
 async function createActiveUser(
   role: "recipient" | "journalist" | "moderator" | "admin",
   countryCode: string
@@ -48,6 +59,7 @@ async function createActiveUser(
     })
     .returning({ id: users.id, email: users.email });
   if (!user) throw new Error(`Klarte ikke opprette test-${role}`);
+  if (role === "moderator") createdModeratorIds.push(user.id);
   return user;
 }
 
@@ -372,6 +384,7 @@ describe("admin/countries.ts mot ekte Postgres", () => {
     const [created] = await db.select().from(users).where(eq(users.email, email));
     expect(created?.role).toBe("moderator");
     expect(created?.status).toBe("active");
+    if (created) createdModeratorIds.push(created.id);
     const [assignment] = await db
       .select()
       .from(moderatorCountries)
@@ -400,6 +413,8 @@ describe("admin/countries.ts mot ekte Postgres", () => {
     const result = await assignModeratorToCountry(TEST_COUNTRY_CODE, email);
 
     expect(result).toEqual({ ok: true });
+    const [created] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
+    if (created) createdModeratorIds.push(created.id);
   });
 
   it("assignModeratorToCountry(): nøyaktig ÉN brukerrad opprettes når SAMME nye e-post tildeles samtidig, aldri en uhåndtert feil", async () => {
@@ -425,5 +440,19 @@ describe("admin/countries.ts mot ekte Postgres", () => {
 
     const rows = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
     expect(rows).toHaveLength(1);
+    if (rows[0]) createdModeratorIds.push(rows[0].id);
   });
+});
+
+// Rydder ALLE moderatorer opprettet i denne filen (via createActiveUser
+// og via assignModeratorToCountry(), begge sporet i createdModeratorIds)
+// — se dens egen kommentar. auditLogs/sessions FØRST, av samme grunn
+// som de andre testfilene denne natten (users.id har ingen kaskade-
+// sletting).
+afterAll(async () => {
+  if (createdModeratorIds.length === 0) return;
+  await db.delete(auditLogs).where(inArray(auditLogs.actorUserId, createdModeratorIds));
+  await db.delete(sessions).where(inArray(sessions.userId, createdModeratorIds));
+  await db.delete(moderatorCountries).where(inArray(moderatorCountries.moderatorUserId, createdModeratorIds));
+  await db.delete(users).where(inArray(users.id, createdModeratorIds));
 });

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { moderatorCountries, sessions, users } from "@/db/schema";
 import {
@@ -28,6 +29,9 @@ async function loginAs(userId: string): Promise<void> {
   } as unknown as Awaited<ReturnType<typeof cookies>>);
 }
 
+// Ryddes samlet i én afterAll nederst i filen — se createdModeratorIds.
+const createdModeratorIds: string[] = [];
+
 async function createModerator(countryCode: string): Promise<{ id: string }> {
   const [moderator] = await db
     .insert(users)
@@ -42,6 +46,7 @@ async function createModerator(countryCode: string): Promise<{ id: string }> {
     .returning({ id: users.id });
   if (!moderator) throw new Error("Klarte ikke opprette test-moderator");
   await db.insert(moderatorCountries).values({ moderatorUserId: moderator.id, countryCode });
+  createdModeratorIds.push(moderator.id);
   return moderator;
 }
 
@@ -209,6 +214,7 @@ describe("getAssignedCountryCodes mot ekte Postgres", () => {
         emailVerifiedAt: new Date(),
       })
       .returning({ id: users.id });
+    if (moderator) createdModeratorIds.push(moderator.id);
     const { getAssignedCountryCodes } = await import("./authorize");
 
     const result = await getAssignedCountryCodes({
@@ -222,4 +228,15 @@ describe("getAssignedCountryCodes mot ekte Postgres", () => {
 
     expect(result).toEqual([]);
   });
+});
+
+// Rydder ALLE moderatorer opprettet av createModerator() på tvers av
+// HELE filen (tre describe-blokker) — se createdModeratorIds sin egen
+// kommentar. sessions FØRST: loginAs() setter inn en økt for de fleste
+// av disse moderatorene, og users.id har ingen kaskadesletting.
+afterAll(async () => {
+  if (createdModeratorIds.length === 0) return;
+  await db.delete(sessions).where(inArray(sessions.userId, createdModeratorIds));
+  await db.delete(moderatorCountries).where(inArray(moderatorCountries.moderatorUserId, createdModeratorIds));
+  await db.delete(users).where(inArray(users.id, createdModeratorIds));
 });

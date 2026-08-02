@@ -101,6 +101,10 @@ describe("getResponseForAdmin mot ekte Postgres (SPEC-V1.md 16.2, FR-051)", () =
 
     await db.delete(responses).where(eq(responses.id, response!.id));
     await db.delete(requests).where(eq(requests.id, request!.id));
+    // Reelt hull frem til nå (se NATTLOGG.md): denne moderatoren ble
+    // aldri ryddet bort.
+    await db.delete(sessions).where(eq(sessions.userId, moderator!.id));
+    await db.delete(users).where(eq(users.id, moderator!.id));
   });
 
   it("returnerer svaret og logger oppslaget MED begrunnelsen (16.2)", async () => {

@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   auditLogs,
@@ -41,6 +41,9 @@ async function loginAs(userId: string): Promise<void> {
   } as unknown as Awaited<ReturnType<typeof cookies>>);
 }
 
+// Ryddes samlet i én afterAll nederst i filen — se createdModeratorIds.
+const createdModeratorIds: string[] = [];
+
 async function createModerator(countryCode: string): Promise<{ id: string }> {
   const [moderator] = await db
     .insert(users)
@@ -55,6 +58,7 @@ async function createModerator(countryCode: string): Promise<{ id: string }> {
     .returning({ id: users.id });
   if (!moderator) throw new Error("Klarte ikke opprette test-moderator");
   await db.insert(moderatorCountries).values({ moderatorUserId: moderator.id, countryCode });
+  createdModeratorIds.push(moderator.id);
   return moderator;
 }
 
@@ -243,4 +247,16 @@ describe("hideResponse mot ekte Postgres (SPEC-V1.md 12.5)", () => {
       expect(hideWasLogged).toBe(false);
     }
   });
+});
+
+// Rydder ALLE moderatorer opprettet av createModerator() på tvers av
+// HELE filen — se createdModeratorIds sin egen kommentar. auditLogs/
+// sessions FØRST: hideResponse() logger moderatorens handling, og
+// loginAs() setter inn en økt.
+afterAll(async () => {
+  if (createdModeratorIds.length === 0) return;
+  await db.delete(auditLogs).where(inArray(auditLogs.actorUserId, createdModeratorIds));
+  await db.delete(sessions).where(inArray(sessions.userId, createdModeratorIds));
+  await db.delete(moderatorCountries).where(inArray(moderatorCountries.moderatorUserId, createdModeratorIds));
+  await db.delete(users).where(inArray(users.id, createdModeratorIds));
 });

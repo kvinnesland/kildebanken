@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { journalistProfiles, moderatorCountries, requests, sessions, users } from "@/db/schema";
+import { auditLogs, journalistProfiles, moderatorCountries, requests, sessions, users } from "@/db/schema";
 import {
   ensureSecondTestCountry,
   ensureTestCountry,
@@ -44,6 +44,9 @@ async function loginAs(userId: string): Promise<void> {
   } as unknown as Awaited<ReturnType<typeof cookies>>);
 }
 
+// Ryddes samlet i én afterAll nederst i filen — se createdModeratorIds.
+const createdModeratorIds: string[] = [];
+
 async function createModerator(countryCode: string): Promise<{ id: string }> {
   const [moderator] = await db
     .insert(users)
@@ -58,6 +61,7 @@ async function createModerator(countryCode: string): Promise<{ id: string }> {
     .returning({ id: users.id });
   if (!moderator) throw new Error("Klarte ikke opprette test-moderator");
   await db.insert(moderatorCountries).values({ moderatorUserId: moderator.id, countryCode });
+  createdModeratorIds.push(moderator.id);
   return moderator;
 }
 
@@ -336,6 +340,7 @@ describe("listJournalists mot ekte Postgres (SPEC-V1.md 16.2)", () => {
         emailVerifiedAt: new Date(),
       })
       .returning({ id: users.id });
+    if (unassignedModerator) createdModeratorIds.push(unassignedModerator.id);
 
     const result = await listJournalists(
       makeSession({ userId: unassignedModerator!.id, role: "moderator", countryCode: TEST_COUNTRY_CODE })
@@ -343,4 +348,22 @@ describe("listJournalists mot ekte Postgres (SPEC-V1.md 16.2)", () => {
 
     expect(result).toEqual([]);
   });
+});
+
+// Rydder ALLE moderatorer opprettet av createModerator() på tvers av
+// HELE filen (to describe-blokker) — se createdModeratorIds sin egen
+// kommentar. journalist_profiles.reviewed_by nulles FØRST:
+// approveJournalist()/rejectJournalist() setter reviewedBy = moderatorens
+// id, og den kolonnen har ingen kaskadesletting. auditLogs/sessions
+// deretter, av samme grunn.
+afterAll(async () => {
+  if (createdModeratorIds.length === 0) return;
+  await db
+    .update(journalistProfiles)
+    .set({ reviewedBy: null })
+    .where(inArray(journalistProfiles.reviewedBy, createdModeratorIds));
+  await db.delete(auditLogs).where(inArray(auditLogs.actorUserId, createdModeratorIds));
+  await db.delete(sessions).where(inArray(sessions.userId, createdModeratorIds));
+  await db.delete(moderatorCountries).where(inArray(moderatorCountries.moderatorUserId, createdModeratorIds));
+  await db.delete(users).where(inArray(users.id, createdModeratorIds));
 });

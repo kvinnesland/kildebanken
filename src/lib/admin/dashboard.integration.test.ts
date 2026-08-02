@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
@@ -388,6 +388,17 @@ describe("getDashboardStatsForCountry mot ekte Postgres (SPEC-V1.md 16.1)", () =
 });
 
 describe("getDashboardCountries mot ekte Postgres", () => {
+  // Reelt hull frem til nå (se NATTLOGG.md): de to moderatorene testene
+  // under oppretter ble aldri ryddet bort. Ryddes samlet i afterAll
+  // nederst i denne blokken.
+  const createdModeratorIds: string[] = [];
+
+  afterAll(async () => {
+    if (createdModeratorIds.length === 0) return;
+    await db.delete(moderatorCountries).where(inArray(moderatorCountries.moderatorUserId, createdModeratorIds));
+    await db.delete(users).where(inArray(users.id, createdModeratorIds));
+  });
+
   it("en administrator uten valgt land får en TOM liste (venter på et valg via velgeren)", async () => {
     const countries = await getDashboardCountries(makeSession({ role: "admin" }));
     expect(countries).toEqual([]);
@@ -411,6 +422,7 @@ describe("getDashboardCountries mot ekte Postgres", () => {
         emailVerifiedAt: new Date(),
       })
       .returning({ id: users.id });
+    if (moderator) createdModeratorIds.push(moderator.id);
     await db.insert(moderatorCountries).values({
       moderatorUserId: moderator!.id,
       countryCode: TEST_COUNTRY_CODE,
@@ -437,6 +449,7 @@ describe("getDashboardCountries mot ekte Postgres", () => {
         emailVerifiedAt: new Date(),
       })
       .returning({ id: users.id });
+    if (moderator) createdModeratorIds.push(moderator.id);
 
     const countries = await getDashboardCountries(makeSession({ role: "moderator", userId: moderator!.id }));
 
