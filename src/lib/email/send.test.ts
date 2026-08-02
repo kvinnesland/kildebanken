@@ -306,6 +306,26 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
     expect(loggedMessage).toContain("Forespørselen din er lukket");
   });
+
+  // INFRASTRUCTURE.md 10: "Personopplysninger logges ikke: ingen
+  // e-postadresser" — stubb-loggingen over er en bevisst
+  // utviklingsbekvemmelighet, men skal ALDRI kunne skje i produksjon (en
+  // glemt BREVO_API_KEY der skal feile høylytt, ikke stille skrive
+  // mottakerens e-postadresse til logg).
+  it("kaster i produksjon i stedet for å falle tilbake til stubb-logging av e-postadressen", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.stubEnv("NODE_ENV", "production");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await expect(
+      sendTransactionalEmail({
+        template: "magic_link",
+        to: { email: "test@example.com", locale: "nb-NO" },
+        data: { token: "abc123" },
+      })
+    ).rejects.toThrow(/BREVO_API_KEY/);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe("sendTransactionalEmail (ekte Brevo-kall, mocket fetch)", () => {
@@ -523,5 +543,23 @@ describe("sendBulkEmail", () => {
     });
 
     expect(result).toBeNull();
+  });
+
+  // Se samme begrunnelse i sendTransactionalEmail sin tilsvarende test over.
+  it("kaster i produksjon i stedet for å falle tilbake til stubb-logging av e-postadressen", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.stubEnv("NODE_ENV", "production");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await expect(
+      sendBulkEmail({
+        to: { email: "recipient@example.com", locale: "nb-NO" },
+        subject: "Dagens digest",
+        html: "<p>hei</p>",
+        text: "hei",
+        listUnsubscribeUrl: "https://tjenesten.no/api/unsubscribe/tok-1",
+      })
+    ).rejects.toThrow(/BREVO_API_KEY/);
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 });

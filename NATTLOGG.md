@@ -14102,3 +14102,99 @@ bevisst latt åpne for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 46: bred sveip etter at DESIGN.md 9-verifiseringsbølgen var
+fullført — fant og rettet et reelt, om enn smalt, personvernhull i
+`send.ts` sin stubb-modus
+
+Fulgte forrige økts eget forslag om å gå bredere igjen. Sjekket flere
+spor før noe reelt dukket opp:
+- Kjørte `npx tsx src/i18n/check-keys.ts` på nytt for å se om `en-GB`
+  hadde driftet fra `nb-NO` siden Økt 13s `findLocaleGaps()`-verktøy ble
+  bygget — ingen advarsel, fortsatt full paritet.
+- Bekreftet INFRASTRUCTURE.md 16.8s vert-uvitenhets-grense fortsatt
+  holder: søkte gjennom HELE `src/` etter "netlify"/"NETLIFY" — kun fire
+  kommentarer som FORKLARER arkitekturen, ingen faktisk vertsspesifikk
+  kode (ingen `process.env.NETLIFY`, ingen `@netlify/*`-importer i
+  forretningslogikk). Leste `netlify/functions/tick.ts` i sin helhet —
+  fortsatt en genuint tynn adapter, ingen forretningslogikk sneket seg
+  inn.
+- Bekreftet retensjonsjobben (SPEC-V1.md 17.4, den opprinnelige
+  natte-instruksens forsiktighetspunkt) fortsatt er korrekt koblet:
+  kjører daglig rundt 03:00 UTC via et enkelt klokkeslett-vindu i
+  `runTick()` (Stadium 0 har ingen egen planlegger utover 15-minutters-
+  tikket), fortsatt i "dry run" som standard.
+- Bekreftet `POST /subscribe`/`POST /journalists/apply` faktisk skriver
+  `ConsentRecord`-rader (den ALLER FØRSTE prioriteringen i den
+  opprinnelige natte-instruksen, bekreftet allerede løst for lenge
+  siden).
+
+**Reelt funn**: sjekket INFRASTRUCTURE.md 10s ubetingede regel
+("Personopplysninger logges ikke: ingen e-postadresser, ingen
+svartekst") mot alle `console.*`-kall i `src/`. `sendTransactionalEmail()`
+og `sendBulkEmail()` (`src/lib/email/send.ts`) faller BEGGE tilbake til
+en "stubb-modus" som logger mottakerens FULLE e-postadresse via
+`console.warn()` når `BREVO_API_KEY` mangler — bevisst og nyttig for
+lokal utvikling/tester (dusinvis av eksisterende tester i `send.test.ts`
+forutsetter nettopp dette), MEN uten noe skille mellom lokal utvikling
+og en EKTE, driftsatt miljø der nøkkelen ved en feil ble utelatt. Ingen
+oppstartsvalidering av `BREVO_API_KEY` finnes noe sted (kun de to
+kallestedene selv sjekker `if (!apiKey)` og faller stille til stubben).
+En glemt hemmelighet i produksjon ville dermed IKKE feilet høylytt —
+den ville stille begynt å skrive ekte brukeres e-postadresser til
+uansett hvilket loggsystem det driftsatte miljøet bruker, i strid med
+10s regel, i stedet for enten å sende ekte e-post eller feile synlig.
+
+**Fiks**: la til en sperre i begge funksjonene — `if
+(process.env.NODE_ENV === "production") throw new Error(...)` FØR
+stubb-loggingen, slik at et manglende `BREVO_API_KEY` i produksjon
+feiler høylytt i stedet for å degradere stille til PII-logging.
+Uendret for alle andre miljøer (lokal utvikling, CI, Vitest — som
+bruker `NODE_ENV=test` som standard, ALDRI `"production"`), så samtlige
+eksisterende tester i `send.test.ts` (som alle forutsetter stubb-modus
+uten denne sperren) fortsatte å bestå uendret.
+
+**Empirisk bekreftet feilen var reell** (samme disiplin som resten av
+natten): la til to nye tester (én for hver funksjon) som setter
+`NODE_ENV=production` OG fjerner `BREVO_API_KEY`, og forventer at
+kallet KASTER i stedet for å logge. `git stash push` på `send.ts` alene
+(beholdt de nye testene) → begge nye tester FEILET som forventet mot
+den gamle koden (`rejects.toThrow` fikk i stedet en oppløst verdi —
+`undefined`/`null`) → `git stash pop` gjenopprettet fiksen → begge
+tester består. Hele testfilen kjørt samlet: 32/32 bestod (30
+eksisterende + 2 nye).
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, **455** tester
+  (453 + 2 nye), alle bestod.
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts` (full
+  integrasjonstestpakke mot ekte lokal Postgres — kjørt siden `send.ts`
+  brukes av svært mange integrasjonsflyter): 32 filer, 328 tester, alle
+  bestod. Global-opprydningen (Økt 40) fyrte automatisk og fjernet 228
+  testbrukere, uendret oppførsel.
+- Empirisk `git stash`-kontrast (se over) beviser fiksen løser et reelt,
+  reproduserbart hull, ikke bare en teoretisk bekymring.
+
+### Neste økt
+
+Ingen kjent gjenstående handling fra denne runden. Mulige neste spor,
+ingen hastende: (a) vurder om det finnes en TILSVARENDE
+oppstartsvalidering som burde legges til for andre påkrevde
+hemmeligheter (`BREVO_SENDER_TRANSACTIONAL`/`BREVO_SENDER_BULK` kaster
+allerede når de mangler MED en nøkkel til stede, se eksisterende kode —
+disse to er trolig allerede tilstrekkelig dekket; dette var spesifikt
+om SELVE nøkkelens fravær som utløste en STILLE, PII-loggende
+reservevei, en annen feilklasse); (b) en generell sveip av ALLE
+`console.*`-kall i `src/` for andre, lignende stille-degraderings-
+mønstre er allerede gjort denne runden og fant kun dette ene tilfellet.
+Ellers uendret: de to gjenværende GENUINE åpne spec-spørsmålene,
+fortsatt bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.

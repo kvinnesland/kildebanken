@@ -286,6 +286,19 @@ export async function sendTransactionalEmail(
   const rendered = renderTransactionalEmail(input);
 
   if (!apiKey) {
+    // INFRASTRUCTURE.md 10: "Personopplysninger logges ikke: ingen
+    // e-postadresser" — stubb-loggingen under skriver nettopp
+    // mottakerens e-postadresse, og er ment KUN som en utviklingsbekvemmelighet
+    // for lokal kjøring/tester uten en ekte Brevo-nøkkel (se resten av denne
+    // funksjonen, og de mange testene i send.test.ts som forutsetter nettopp
+    // dette). Uten denne sperren ville en glemt/feilkonfigurert
+    // `BREVO_API_KEY` i en EKTE driftsatt miljø stille degradert til å skrive
+    // brukeres e-postadresser til logg i stedet for å feile høylytt.
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "sendTransactionalEmail: BREVO_API_KEY mangler i produksjon — nekter å falle tilbake til stubb-logging (ville skrevet mottakerens e-postadresse til logg, se INFRASTRUCTURE.md 10)."
+      );
+    }
     if (rendered) {
       console.warn(
         `[email:stub] ${input.template} → ${input.to.email} (${input.to.locale}) — "${rendered.subject}"\n${rendered.text}`
@@ -359,6 +372,12 @@ export async function sendBulkEmail(input: SendBulkEmailInput): Promise<string |
   const apiKey = process.env.BREVO_API_KEY;
 
   if (!apiKey) {
+    // Se samme sperre og begrunnelse i sendTransactionalEmail() over.
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "sendBulkEmail: BREVO_API_KEY mangler i produksjon — nekter å falle tilbake til stubb-logging (ville skrevet mottakerens e-postadresse til logg, se INFRASTRUCTURE.md 10)."
+      );
+    }
     console.warn(
       `[email:stub:bulk] "${input.subject}" → ${input.to.email} (${input.to.locale}) ` +
         `[List-Unsubscribe: ${input.listUnsubscribeUrl}]`
