@@ -12298,3 +12298,22 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+**Tillegg samme økt**: fulgte opp egen "Neste økt"-ledetråd over med en
+gang — bekreftet FR-041 og FR-043 er BEGGE trygge mot samme
+kappløpsklasse som FR-029, men av en helt annen (sterkere) grunn: begge
+håndheves av en EKTE databasebegrensning, ikke applikasjonslagets egen
+telling. FR-041 (ett aktivt svar per person per forespørsel) har en
+betinget UNIK INDEKS (`db/migrations/0001_responses_active_unique_index.sql`,
+referert i `schema.ts` sin kommentar over `responses`-tabellen), og
+FR-043 (én kontaktforespørsel per svar) har en vanlig
+`.unique()`-begrensning på `contact_requests.response_id`. Begge er
+derfor UMULIGE å kappløpe forbi — Postgres selv avviser det andre
+samtidige forsøket, uavhengig av applikasjonslagets timing. Bekreftet i
+tillegg at BÅDE `submitResponse()` (`responses/responses.ts`) og
+`createContactRequest()` (`contact-requests/contact-requests.ts`)
+allerede fanger denne unike-constraint-feilen korrekt via
+`isUniqueViolation()` og returnerer den forventede feilkoden
+(`errors.already_responded`/`errors.contact_request_already_sent`) i
+stedet for å krasje med en uhåndtert 23505. Ingen kodeendring — begge
+bekreftet trygge.
