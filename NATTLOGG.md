@@ -12533,3 +12533,120 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 30: fulgte opp forrige økts anbefaling (a) — en TREDJE levende
+smoke-test-kjede — og fant underveis et reelt, funksjonelt hull: den
+delte e-postadressen fra SPEC-V1.md 12.2s direkte delingsvalg ble ALDRI
+faktisk vist til journalisten noe sted
+
+Startet der forrige økt sluttet: satte opp `npm run dev` mot ekte lokal
+Postgres og bygde en ny testkjede (`scratch-e2e-setup.mjs`, aldri
+commitet) med en godkjent journalist, en moderator tildelt
+`TEST_COUNTRY_CODE` og en aktiv mottaker, hver med en ekte økt satt inn
+direkte i `sessions`-tabellen. Kjørte kjeden steg for steg via ekte
+`curl`-kall med `kb_session`-informasjonskapsler: opprettet kladd →
+PATCHet med påkrevde felt → sendte inn → moderator publiserte (bekreftet
+underveis at FR-025s "offentlig lesbar umiddelbart etter publisering"
+holder, via et uautentisert `curl`-kall mot samme forespørsel) →
+mottaker sendte inn et svar med `contactSharing: "email"` (SPEC-V1.md
+12.2s andre delingsvalg, ordrett "Del e-postadressen min med
+journalisten – adressen følger svaret") → journalist listet svarene
+(bekreftet `hasSharedEmail: true` vist korrekt, ingen rå adresse lekket
+i selve listen — riktig, uendret oppførsel) → journalist åpnet
+svardetaljen via `GET /api/journalist/responses/:id`.
+
+**Funn**: svardetalj-JSON-en inneholdt `contactSharing: "email"`, men
+INGEN e-postadresse noe sted i responsen. Prøvde det logiske neste
+steget i kjeden, `POST /journalist/responses/:id/contact-request`, og
+fikk `422 {"error":"errors.contact_already_shared"}` — undersøkte dette
+først som et mulig eget hull, men `createContactRequest()`
+(`contact-requests.ts`) og SPEC-V1.md 12.2 bekreftet dette ER korrekt,
+spec-tro oppførsel (adressen skal allerede være tilgjengelig via den
+direkte delingsveien; en egen kontaktforespørsel er overflødig når den
+allerede er delt). Det reelle hullet lå et annet sted: sporet gjennom
+`getResponseDetailForJournalist()` (`journalist-inbox.ts`) og fant at
+funksjonen aldri selekterte eller returnerte respondentens e-post i det
+hele tatt — verken der, i "nytt svar mottatt"-varselet
+(`email/templates/new-response-received.ts`, lest og bekreftet samme
+mangel), eller i selve siden (`journalist/responses/[id]/page.tsx`,
+som kun viste en tekstetikett om AT adressen var delt, aldri selve
+adressen) eller klientkomponenten (`ResponseDetailPanel.tsx`, lest i
+sin helhet — null e-post-relatert kode). Sammenlignet med den ANDRE
+delingsveien i kodebasen (en godkjent `ContactRequest.sharedEmail`, se
+`getContactRequestDetail()` i `contact-requests.ts`), som håndterer
+akkurat samme "vis kun betinget"-mønster korrekt — dette ble
+referansemønsteret for fiksen.
+
+**Fiks**, tre filer:
+- `src/lib/journalist-inbox/journalist-inbox.ts`: la til
+  `sharedEmail: string | null` på `ResponseDetail`, joinet `users` via
+  `responses.respondentId` i `getResponseDetailForJournalist()`s
+  spørring, populerte betinget (`contactSharing === "email" ?
+  respondentEmail : null`) — nøyaktig samme betingelse
+  `createContactRequest()` allerede brukte for å avvise en overflødig
+  forespørsel.
+- `src/app/[locale]/journalist/responses/[id]/page.tsx`: la til et nytt
+  avsnitt som viser adressen når `sharedEmail` er satt. Gjenbrukte den
+  EKSISTERENDE i18n-nøkkelen `contact_request.shared_email_label`
+  ("Delt e-postadresse" / "Shared email address", allerede i bruk i
+  `contact-requests/[id]/page.tsx` for samme formål) i stedet for å
+  legge til en ny nøkkel.
+- `src/lib/journalist-inbox/journalist-inbox.integration.test.ts`: to
+  nye tester i `getResponseDetailForJournalist`-blokken — én som
+  bekrefter `sharedEmail` er den faktiske adressen når
+  `contactSharing="email"`, én som bekrefter `null` når `"none"`.
+
+**Empirisk bekreftet feilen var reell** (samme disiplin som resten av
+økten): `git stash push` på de to kildefilene, kjørte de to nye testene
+mot den GAMLE koden — begge FEILET som forventet (`sharedEmail` var
+`undefined` i begge tilfeller, ikke `respondent.email`/`null`). `git
+stash pop` gjenopprettet fiksen, samme to tester kjørt på nytt: begge
+BESTOD. Hele testfilen kjørt samlet: 10/10 bestod (8 eksisterende + 2
+nye).
+
+Kjeden ble ikke ført videre til respondentens
+godkjenn/avslå-kontaktforespørsel-steg denne runden — oppdagelsen av
+hullet tok over resten av økten. Den gjenstående delen av kjeden (den
+ANDRE delingsveien: en godkjent kontaktforespørsel) er fortsatt utestet
+i en levende HTTP-sammenheng og kan være et naturlig neste smoke-test-mål.
+
+All E2E-testdata (journalist, moderator, mottaker, forespørsel, svar,
+økter) ryddet bort umiddelbart etter verifiseringen via et engangsskript
+(aldri commitet — slettet før denne oppføringen ble skrevet).
+Utviklingsserveren stoppet. `git status` bekreftet kun de tre tiltenkte
+kildefilene endret, ingen gjenværende testdata-artefakter.
+
+### Verifisert før commit (denne runden)
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 85 filer, 441 tester, alle
+  bestod.
+- `npx tsx src/i18n/check-keys.ts`: OK — 508 nøkler funnet, alle finnes
+  i nb-NO (ingen ny nøkkel lagt til — gjenbrukte en eksisterende).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts` (full
+  integrasjonstestpakke mot ekte lokal Postgres): 32 filer, 319 tester,
+  alle bestod — kjørt TO ganger for stabilitet, identisk resultat begge
+  ganger.
+- Levende HTTP-smoke-test av selve oppdagelsen og fiksen (se over):
+  bekreftet både at feilen var synlig via ekte HTTP før fiksen
+  (`GET /api/journalist/responses/:id` manglet adressen) og at
+  `git stash`-kontrasten beviste fiksen løser den.
+
+### Neste økt
+
+Naturlig fortsettelse: fullfør den avbrutte kjeden fra denne økten — la
+respondenten godkjenne/avslå en kontaktforespørsel via `curl` og
+bekreft journalisten mottar adressen gjennom DEN andre veien
+(`getContactRequestDetail()`), den eneste av de to delingsveiene som
+ennå ikke er smoke-testet levende denne natten. Ellers uendret: de tre
+opprinnelige åpne spec-spørsmålene, fortsatt bevisst latt åpne for
+menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

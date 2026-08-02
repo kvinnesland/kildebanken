@@ -1,6 +1,6 @@
 import { and, count, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { contactRequests, requests, responses } from "@/db/schema";
+import { contactRequests, requests, responses, users } from "@/db/schema";
 
 export type InboxResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -112,6 +112,16 @@ export interface ResponseDetail {
   answerText: string;
   shortBio: string | null;
   contactSharing: "none" | "email";
+  // Kun satt når contactSharing="email" (12.2, ordrett: "Del e-postadressen
+  // min med journalisten – adressen følger svaret"). Reelt hull frem til nå
+  // (se NATTLOGG.md): dette valget ble lagret og korrekt behandlet av
+  // createContactRequest() (avviser en overflødig kontaktforespørsel med
+  // errors.contact_already_shared, "adressen er allerede delt"), men selve
+  // adressen ble ALDRI faktisk vist til journalisten noe sted — verken her
+  // eller i "nytt svar mottatt"-varselet. Sammenlignet med DEN andre
+  // delingsveien (en godkjent ContactRequest.sharedEmail, se
+  // getContactRequestDetail() i contact-requests.ts) for samme mønster.
+  sharedEmail: string | null;
   journalistMarking: "unreviewed" | "shortlisted" | "not_selected";
   journalistNote: string | null;
   submittedAt: Date;
@@ -137,6 +147,7 @@ export async function getResponseDetailForJournalist(
       answerText: responses.answerText,
       shortBio: responses.shortBio,
       contactSharing: responses.contactSharing,
+      respondentEmail: users.email,
       journalistMarking: responses.journalistMarking,
       journalistNote: responses.journalistNote,
       submittedAt: responses.submittedAt,
@@ -145,6 +156,7 @@ export async function getResponseDetailForJournalist(
     })
     .from(responses)
     .innerJoin(requests, eq(responses.requestId, requests.id))
+    .innerJoin(users, eq(responses.respondentId, users.id))
     .where(eq(responses.id, responseId))
     .limit(1);
 
@@ -158,7 +170,11 @@ export async function getResponseDetailForJournalist(
     row.viewedAt = now;
   }
 
-  const { requestJournalistId: _omit, lifecycleStatus: _omit2, ...detail } = row;
+  const { requestJournalistId: _omit, lifecycleStatus: _omit2, respondentEmail, ...rest } = row;
+  const detail: ResponseDetail = {
+    ...rest,
+    sharedEmail: row.contactSharing === "email" ? respondentEmail : null,
+  };
   return { ok: true, data: detail };
 }
 

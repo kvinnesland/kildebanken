@@ -68,6 +68,11 @@ export default async function ResponseDetailPage({
           ? t("journalist.response_detail.contact_sharing_shared")
           : t("journalist.response_detail.contact_sharing_not_shared")}
       </p>
+      {response.sharedEmail ? (
+        <p className={styles.contactSharing}>
+          {t("contact_request.shared_email_label")}: {response.sharedEmail}
+        </p>
+      ) : null}
 
       <ResponseDetailPanel
         locale={locale}

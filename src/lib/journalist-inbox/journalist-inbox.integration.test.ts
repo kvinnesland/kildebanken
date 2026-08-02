@@ -175,6 +175,42 @@ describe("journalist-inbox mot ekte Postgres (SPEC-V1.md 13, 13.1)", () => {
       if (!second.ok) return;
       expect(second.data.viewedAt?.getTime()).toBe(firstViewedAt?.getTime());
     });
+
+    it("sharedEmail er den FAKTISKE adressen når contactSharing='email' (12.2: 'adressen følger svaret')", async () => {
+      // Reelt hull frem til nå (se NATTLOGG.md): dette valget ble lagret og
+      // korrekt håndtert av createContactRequest() (avviser en overflødig
+      // kontaktforespørsel), men selve adressen ble ALDRI faktisk vist til
+      // journalisten noe sted.
+      const respondent = await createActiveRecipient();
+      const submitted = await submitResponse(requestId, respondent.id, {
+        relevanceStatement: "Relevant.",
+        answerText: "Svar.",
+        contactSharing: "email",
+      });
+      if (!submitted.ok) throw new Error("fail submit");
+
+      const result = await getResponseDetailForJournalist(submitted.id, journalistId);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.sharedEmail).toBe(respondent.email);
+    });
+
+    it("sharedEmail er null når contactSharing='none'", async () => {
+      const respondent = await createActiveRecipient();
+      const submitted = await submitResponse(requestId, respondent.id, {
+        relevanceStatement: "Relevant.",
+        answerText: "Svar.",
+        contactSharing: "none",
+      });
+      if (!submitted.ok) throw new Error("fail submit");
+
+      const result = await getResponseDetailForJournalist(submitted.id, journalistId);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.sharedEmail).toBeNull();
+    });
   });
 
   describe("updateResponseMarking", () => {
