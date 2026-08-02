@@ -27,5 +27,9 @@ export default defineConfig({
     environment: "node",
     include: ["**/*.integration.test.ts"],
     testTimeout: 15000,
+    // Kjøres ÉN gang, i en egen prosess, etter at HELE pakken er ferdig —
+    // fjerner alle @example.invalid-testbrukere ingen enkelt testfil selv
+    // ryddet opp. Se filens egen kommentar for hvorfor (NATTLOGG.md, Økt 39).
+    globalSetup: ["./src/db/integration/global-teardown.ts"],
   },
 });

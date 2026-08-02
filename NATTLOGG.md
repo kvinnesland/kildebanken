@@ -13573,3 +13573,111 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 40: samme opprydningshull, men for mottakere/journalister — for stort
+til én-fil-av-gangen-fiksing, så bygget en systemisk løsning i stedet
+
+Forrige økt (39) sin "Neste økt" nevnte som en lav-prioritert kandidat at
+`role='recipient'`/`role='journalist'` KANSKJE hadde samme opprydningshull,
+men antok det trolig var ufarlig siden disse rollene "brukes i så stort
+volum i den normale test-flyten". Målte det for å være sikker FØR jeg gikk
+videre — antagelsen var FEIL: **15258** opphopede brukere totalt, og en
+enkelt full kjøring av hele integrasjonspakken la til **232 NYE** rader
+(109 journalister + 123 mottakere) — et reelt, kontinuerlig voksende hull,
+ikke bare historisk støv.
+
+**Hvorfor ikke samme fiks som moderator/admin**: `createModerator()`/
+`createAdmin()`-hullet var avgrenset til 8-11 kjente filer med en håndfull
+kallesteder hver. Mottakere/journalister opprettes derimot i NESTEN HVER
+eneste av de 32 integrasjonstestfilene (`createActiveRecipient()`,
+`createActiveJournalist()` fra `fixtures.ts` m.fl., pluss utallige rå
+innsettinger) — å legge til `createdXIds`-sporing og en `afterAll` i HVER
+fil ville vært en enormt mye større, mer feilutsatt jobb enn de to forrige
+øktenes fiks, med langt dårligere kost/nytte-forhold (fremtidige nye
+tester ville uansett kunne glemme det samme igjen).
+
+**Løsningen i stedet**: en GLOBAL opprydning, `src/db/integration/
+global-teardown.ts`, koblet inn via Vitest sin `test.globalSetup`
+(`vitest.integration.config.ts`) — kjøres ÉN gang, i en EGEN prosess, etter
+at HELE testpakken er ferdig (ikke per fil). Den henter ALLE brukere med
+e-post som slutter på `@example.invalid` (RFC 2606-reservert domene,
+bekreftet trygt for masseopprydning — kan aldri kollidere med en ekte
+adresse) og fjerner dem, PLUSS alt som refererer til dem, i streng
+FK-trygg rekkefølge (samme mønster som `performAccountDeletion()`/
+`retention.ts` allerede etablerte, generalisert til et helt utvalg i
+stedet for én bruker om gangen): `journalistProfiles.reviewedBy` → null
+først, deretter forespørsler eid som journalist ELLER som moderator (funnet
+FØR noe slettes, slik at svar knyttet til DEM fanges opp uansett hvem som
+svarte), så kontaktforespørsler (både via `responseId` og `journalistId`),
+svar, forespørsler, `digestDeliveries`, `consentRecords`, `auditLogs`,
+`authTokens`, `sessions`, `emailSubscriptions`, `journalistProfiles`,
+`moderatorCountries`, og til slutt selve brukerraden. Kjøres i biter à 500
+IDer om gangen (samme størrelse som de tidligere engangs-opprydnings-
+skriptene brukte), med en fersk, frittstående `pg.Pool` (kan ikke gjenbruke
+`@/db/client` sin poolinstans, siden `globalSetup` kjører i en annen
+prosess enn selve testfilene) som lukkes eksplisitt i `finally`.
+
+**Rører aldri ekte anonymiserte kontosletting-rader**: oppdaget underveis
+at 390 (nå voksende, +6 per kjøring) brukerrader har e-post som IKKE er
+`@example.invalid` — disse er `performAccountDeletion()`-testenes egne,
+spec-korrekte sluttresultater (SPEC-V1.md 17.5: e-post erstattes med en
+hash, raden ANONYMISERES, ikke slettes). Global-opprydningen filtrerer
+eksplisitt kun på `@example.invalid`, så disse rørt IKKE — de er ikke et
+opprydningshull, men nøyaktig den permanente tilstanden spec-en selv
+beskriver for en slettet konto.
+
+**Verifisert grundig FØR den ble koblet inn i selve konfigurasjonen**:
+kjørte hele slette-logikken som et frittstående engangsskript mot den
+FAKTISKE opphopede 15258-rad-databasen først (ingen FK-feil, 14868
+@example.invalid-rader fjernet, de 390 ekte anonymiserte radene urørt),
+FØR den ble gjort om til den permanente `global-teardown.ts`-filen og
+koblet inn i `vitest.integration.config.ts` — i tråd med instruksen om at
+noe som sletter/anonymiserer data skal bygges FORSIKTIG med egen
+verifisering før det kobles til noe som ligner ekte data.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil (fjernet to overflødige
+  `eslint-disable`-kommentarer for `no-console`, som prosjektets
+  eslint-oppsett ikke faktisk flagger).
+- `npx vitest run` (full enhetstestpakke): 86 filer, 451 tester, alle
+  bestod.
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 32 filer, 326 tester —
+  TO rene påfølgende kjøringer, 326/326 bestått begge ganger. Bekreftet
+  0 `@example.invalid`-rader FØR og ETTER hver kjøring, og at
+  global-opprydningen selv fyrer automatisk og fjerner nøyaktig de 226
+  nye radene HVER kjøring la til (konsistent begge ganger) — de eneste
+  gjenværende radene er de forventede, voksende anonymiserte
+  kontosletting-testresultatene (+6 per kjøring, spec-korrekt, urørt med
+  hensikt).
+
+### Neste økt
+
+Test-hygiene-opprydningen for `role='moderator'` (Økt 37/38),
+`role='admin'` (Økt 39) og nå den systemiske løsningen for ALLE
+`@example.invalid`-brukere uansett rolle (denne økten) anses FULLFØRT.
+Fremtidige testfiler som glemmer å rydde opp sine egne mottakere/
+journalister/moderatorer/administratorer trenger IKKE lenger egen
+oppmerksomhet — global-teardown.ts fanger dem uansett. Gjenstående
+kandidater, alle lav prioritet: (a) `countryCode`-visningshullet i
+admin/moderator-listene (digests, journalists, recipients), fortsatt
+bevisst utsatt til land nummer to faktisk legges til; (b) den avbrutte
+E2E-kjeden fra Økt 30 (respondentens godkjenn/avslå-sti) er fortsatt
+utestet LEVENDE, men lav prioritet gitt grundig eksisterende
+testdekning; (c) vurder om de 390+ voksende anonymiserte
+kontosletting-radene på et tidspunkt selv bør få en øvre grense i
+TESTDATABASEN spesifikt (ikke i produksjonskoden — der er permanent
+anonymisering korrekt per spec) — ikke prioritert nå, veksten er
+langsom (+6 per full kjøring) sammenlignet med hva som nettopp ble
+løst. Ellers uendret: de tre opprinnelige åpne spec-spørsmålene,
+fortsatt bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.
