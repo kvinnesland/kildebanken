@@ -11902,3 +11902,104 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 24: fant og rettet en reell fremmednøkkel-krasj i retensjonsjobbens avviste-journalistsøknad-kategori (17.4)
+
+Startet med det API-fokuserte punktet fra selve den (stort sett utdaterte)
+stående rutine-teksten: verifiserte at ALLE endepunktene i SPEC-V1.md
+seksjon 20 faktisk finnes som `route.ts`-filer, inkludert at
+flermetode-filer (`/me`, `/journalists/me`, `/requests/:id`,
+`/admin/countries`) faktisk implementerer HVER metode spec-en lister.
+Alle 57 endepunkter (pluss de seks lagt til under tidligere økter,
+dokumentert direkte under seksjon 20-tabellen) er på plass — ingen hull.
+
+Fortsatte deretter med en dypere gjennomlesing av `jobs/retention.ts`
+(17.4) — den mest sensitive jobben i kodebasen, siden den sletter/
+anonymiserer ekte persondata, og derfor verdt en ekstra grundig kontroll
+utover det som allerede er testet.
+
+**Reelt, tidligere udekket hull funnet**: `purgeRejectedJournalistApplications()`
+sin begrunnelseskommentar hevder at en avvist journalist ALDRI kan ha noe
+som refererer til kontoen (siden `pending_review` og `rejected` begge
+blokkerer innsending til moderering) — riktig for `requests`/`responses`/
+`contactRequests`, men jeg fant ett unntak kommentaren ikke tar høyde for:
+en avvist journalist er IKKE utestengt fra å LOGGE INN (8.1: kun
+`journalistProfiles.verification_status` settes ved avvisning, aldri
+`users.status`) — kontoen forblir fullt funksjonell. En slik bruker kan
+derfor, helt uavhengig av avvisningen, senere be om SELVBETJENT
+kontosletting (`/me/request-deletion` → `performAccountDeletion()`).
+`performAccountDeletion()` logger en `account.delete`-revisjonsrad med
+`actor_user_id` = brukerens EGEN id — men rører ALDRI `journalistProfiles`
+(kun `requests`/`emailSubscriptions`/kontostatus). Seks måneder etter den
+opprinnelige avvisningen finner denne jobben derfor den SAMME
+`journalistProfiles`-raden igjen (uendret `verification_status = rejected`),
+og forsøker `DELETE FROM users` — som krasjer med et fremmednøkkelbrudd
+mot `audit_logs.actor_user_id` (ingen `ON DELETE CASCADE`). Fanget av
+funksjonens egen try/catch (krasjer ikke resten av jobben), men
+kandidaten blir en PERMANENT "zombie" — jobben feiler mot nøyaktig samme
+bruker hver eneste dag, for alltid, og GDPR-retensjonsløftet (17.4)
+innfris ALDRI for denne spesifikke brukeren. Samme bug-KLASSE som
+`runPurgeUnverified()` hadde (task #54) — men til forskjell fra DEN
+(som IKKE har dette problemet: en ubekreftet konto kan aldri ha logget
+inn og dermed aldri ha trigget noen selvbetjent handling som logger
+`actor_user_id` = sin egen id) — feilen her forsvinner aldri av seg selv.
+
+**Fiks**: la til `await dbase.delete(auditLogs).where(eq(auditLogs.actorUserId,
+candidate.userId))` i sletterekkefølgen, FØR selve `journalistProfiles`/
+`users`-slettingen — samme "rydd alt som refererer til brukeren FØRST"-
+mønster som resten av funksjonen allerede fulgte for de andre tabellene.
+
+**Empirisk verifisert**: la til en ny test som setter opp en avvist
+søknad (7 måneder gammel, forbi fristen) OG en tilhørende
+`audit_logs`-rad med `actor_user_id` = brukeren (simulerer en tidligere
+selvbetjent sletting) — kjørt mot koden FØR fiksen: feilet med EKSAKT
+den forventede Postgres-feilmeldingen
+(`update or delete on table "users" violates foreign key constraint
+"audit_logs_actor_user_id_users_id_fk"`). Etter fiksen: alle 12 tester i
+filen grønne, inkludert den nye.
+
+### Verifisert før commit (denne runden)
+
+- `npx tsc --noEmit`: OK, ingen feil.
+- `npx eslint .`: OK, ingen feil.
+- `npx vitest run` (full enhetstestpakke): 85 filer, 441 tester, alle
+  grønne.
+- `npx tsx src/i18n/check-keys.ts`: OK, 507 nøkler.
+- `npx next build`: OK, ingen feil.
+- `npx vitest run -c vitest.integration.config.ts` mot ekte lokal
+  Postgres: 32 filer, 313 tester (312 + 1 ny), alle grønne — kjørt TO
+  ganger for å bekrefte stabilitet.
+- Empirisk før/etter-verifisering: bekreftet feil MED den eksakte
+  Postgres-feilteksten mot koden før fiksen, grønn etter (se over) — en
+  av de renere, mer deterministiske empiriske bekreftelsene i natt (til
+  forskjell fra flere av kveldens tidligere kappløps-funn, der selve
+  TIMINGEN gjorde reproduksjon upålitelig — denne bugen krever ingen
+  samtidighet i det hele tatt, bare en bestemt REKKEFØLGE av to
+  hendelser over tid, så den er 100 % deterministisk å sette opp).
+
+### Neste økt
+
+`runPurgeUnverified()` (`tick.ts`) ble vurdert for SAMME bug-klasse og
+bekreftet TRYGG (ikke bare antatt) — en ubekreftet konto kan aldri ha
+logget inn (økten opprettes først ETTER `verifyMagicLink()`), og kan
+derfor aldri ha trigget noen selvbetjent handling som logger
+`audit_logs.actor_user_id` = sin egen id. Ingen kodeendring der.
+
+Verdt å sjekke i en fremtidig økt: er det NOEN ANDRE steder i kodebasen
+som hard-sletter en `users`-rad uten å først rydde `audit_logs.actor_user_id`?
+`purgeOldAuditLogs()` (samme fil) sletter selve revisjonsloggen basert på
+ALDER — ingen risiko der. `performAccountDeletion()` selv sletter ALDRI
+`users`-raden (bare anonymiserer), så det er ikke et problem der heller.
+Disse to er nå de eneste stedene som hard-sletter en `users`-rad
+(`purgeRejectedJournalistApplications()` og `runPurgeUnverified()`) —
+begge nå bekreftet trygge.
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

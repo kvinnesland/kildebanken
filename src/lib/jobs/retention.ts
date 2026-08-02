@@ -187,6 +187,23 @@ async function purgeOldContactRequests(
  * bekreftelses-e-post til brukeren. En avvist, aldri-godkjent søknad har
  * ingen aktivitet å varsle om, og renskes STILLE — samme prinsipp som de
  * fire andre kategoriene i denne jobben, ingen av dem varsler noen.
+ *
+ * `auditLogs` (rader der `actor_user_id` peker på nettopp DENNE brukeren)
+ * må også ryddes FØR selve User-raden — reelt hull frem til nå: en avvist
+ * journalist er IKKE utestengt fra å logge inn (kun `verification_status`
+ * settes, aldri `users.status`, 8.1), og kan derfor senere, uavhengig av
+ * avvisningen, selv be om kontosletting (`performAccountDeletion()`, som
+ * ALDRI rører `journalistProfiles`) — det etterlater en
+ * `account.delete`-revisjonsrad med `actor_user_id` = nettopp denne
+ * brukeren, uten at noe noensinne rydder den. `journalistProfiles`-raden
+ * blir stående (`verification_status = rejected` er uendret av en
+ * selvbetjent sletting), og når denne jobben senere finner den samme
+ * kandidaten igjen, feiler selve `DELETE FROM users` med et
+ * fremmednøkkelbrudd mot `audit_logs.actor_user_id`, som ikke har
+ * `ON DELETE CASCADE` — samme bug-KLASSE som `runPurgeUnverified()` hadde
+ * (se `tick.ts`), men uten at feilen noensinne forsvinner av seg selv:
+ * søknaden ville forblitt en "zombie"-kandidat jobben feiler mot hver
+ * dag, for alltid.
  */
 async function purgeRejectedJournalistApplications(
   dbase: Database,
@@ -208,12 +225,13 @@ async function purgeRejectedJournalistApplications(
 
     if (!dryRun) {
       for (const candidate of candidates) {
-        // Rekkefølge: alt som refererer til user_id/journalist_id FØR selve
-        // User-raden, ellers feiler FK-constraint-en.
+        // Rekkefølge: alt som refererer til user_id/journalist_id/
+        // actor_user_id FØR selve User-raden, ellers feiler FK-constraint-en.
         await dbase.delete(requests).where(eq(requests.journalistId, candidate.userId));
         await dbase.delete(consentRecords).where(eq(consentRecords.userId, candidate.userId));
         await dbase.delete(authTokens).where(eq(authTokens.userId, candidate.userId));
         await dbase.delete(sessions).where(eq(sessions.userId, candidate.userId));
+        await dbase.delete(auditLogs).where(eq(auditLogs.actorUserId, candidate.userId));
         await dbase.delete(journalistProfiles).where(eq(journalistProfiles.id, candidate.id));
         await dbase.delete(users).where(eq(users.id, candidate.userId));
       }

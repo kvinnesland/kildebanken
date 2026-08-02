@@ -510,6 +510,99 @@ describe("runRetention mot ekte Postgres (17.4)", () => {
     });
   });
 
+  describe("avviste journalistsøknader — en journalist som OGSÅ har slettet kontoen sin selv (auditLogs.actor_user_id)", () => {
+    // Reelt hull: performAccountDeletion() (auth/account-deletion.ts) logger
+    // en "account.delete"-revisjonsrad med actorUserId = brukerens EGEN id
+    // ved selvbetjent sletting — men rører ALDRI journalistProfiles (kun
+    // requests/emailSubscriptions/etc). En journalist som FØRST fikk
+    // søknaden avvist, og SENERE (uavhengig) sletter kontoen sin selv via
+    // /me/request-deletion, etterlater derfor en journalistProfiles-rad med
+    // verification_status='rejected' som denne jobben fortsatt finner 6
+    // måneder senere — men nå med en auditLogs-rad som refererer
+    // users.id via actor_user_id, UTEN CASCADE/SET NULL. Uten å rydde den
+    // FØRST ville selve `DELETE FROM users` under feile med et
+    // fremmednøkkelbrudd, samme bug-KLASSE som runPurgeUnverified() hadde
+    // (task #54) — men her ville feilen aldri forsvinne av seg selv:
+    // søknaden ville forbli en "zombie"-kandidat jobben feiler mot hver
+    // dag, for alltid.
+    let userId: string;
+    let profileId: string;
+    let auditLogId: string;
+
+    beforeAll(async () => {
+      const sevenMonthsAgo = new Date();
+      sevenMonthsAgo.setUTCMonth(sevenMonthsAgo.getUTCMonth() - 7);
+
+      const [user] = await db
+        .insert(users)
+        .values({
+          email: `retention-rejected-selfdeleted-${Date.now()}-${Math.random()}@example.invalid`,
+          role: "journalist",
+          status: "deleted", // allerede slettet selv, se begrunnelse over
+          countryCode: TEST_COUNTRY_CODE,
+          locale: "nb-NO",
+          emailVerifiedAt: new Date(),
+        })
+        .returning({ id: users.id });
+      if (!user) throw new Error("Klarte ikke opprette testbruker");
+      userId = user.id;
+
+      const [profile] = await db
+        .insert(journalistProfiles)
+        .values({
+          userId,
+          fullName: "Avvist Og Selvslettet Journalist",
+          jobTitle: "Journalist",
+          organizationName: "Testavisen",
+          organizationUrl: "https://example.invalid",
+          verificationStatus: "rejected",
+          reviewedAt: sevenMonthsAgo,
+          reviewNote: "Avvist i test.",
+        })
+        .returning({ id: journalistProfiles.id });
+      if (!profile) throw new Error("Klarte ikke opprette test-journalistprofil");
+      profileId = profile.id;
+
+      const [log] = await db
+        .insert(auditLogs)
+        .values({
+          actorType: "user",
+          actorUserId: userId,
+          action: "account.delete",
+          entityType: "user",
+          entityId: userId,
+        })
+        .returning({ id: auditLogs.id });
+      if (!log) throw new Error("Klarte ikke opprette test-revisjonslogg");
+      auditLogId = log.id;
+    });
+
+    afterAll(async () => {
+      // Best-effort — forventet borte etter en vellykket fiks.
+      await db.delete(auditLogs).where(eq(auditLogs.id, auditLogId));
+      await db.delete(journalistProfiles).where(eq(journalistProfiles.id, profileId));
+      await db.delete(users).where(eq(users.id, userId));
+    });
+
+    it("ekte kjøring: sletter brukeren OG revisjonsloggen, uten et fremmednøkkelbrudd", async () => {
+      setDryRun("false");
+      const summary = await runRetention(db);
+
+      const category = summary.results.find((r) => r.category === "rejected_journalist_applications");
+      expect(category?.errors).toEqual([]);
+
+      const [userGone] = await db.select({ id: users.id }).from(users).where(eq(users.id, userId));
+      expect(userGone).toBeUndefined();
+      const [profileGone] = await db
+        .select({ id: journalistProfiles.id })
+        .from(journalistProfiles)
+        .where(eq(journalistProfiles.id, profileId));
+      expect(profileGone).toBeUndefined();
+      const [logGone] = await db.select({ id: auditLogs.id }).from(auditLogs).where(eq(auditLogs.id, auditLogId));
+      expect(logGone).toBeUndefined();
+    });
+  });
+
   describe("revisjonslogg — 3 år", () => {
     let oldLogId: string;
     let recentLogId: string;
