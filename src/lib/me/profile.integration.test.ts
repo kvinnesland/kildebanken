@@ -74,7 +74,6 @@ describe("getMyProfile mot ekte Postgres", () => {
 
     const profile = await getMyProfile(recipient.id);
     expect(profile?.email).toBe(recipient.email);
-    expect(profile?.role).toBe("recipient");
     expect(profile?.countryCode).toBe(TEST_COUNTRY_CODE);
     expect(profile?.availableLocales).toContain("nb-NO");
     expect(typeof profile?.countryNameKey).toBe("string");

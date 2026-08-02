@@ -5,7 +5,6 @@ import { isValidTimezone } from "./validate";
 
 export interface MyProfileView {
   email: string;
-  role: "recipient" | "journalist" | "moderator" | "admin";
   displayName: string | null;
   locale: string;
   timezone: string | null;
@@ -21,7 +20,6 @@ export async function getMyProfile(userId: string): Promise<MyProfileView | null
   const [row] = await db
     .select({
       email: users.email,
-      role: users.role,
       displayName: users.displayName,
       locale: users.locale,
       timezone: users.timezone,

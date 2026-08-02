@@ -12846,3 +12846,59 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 33: ren opprydning fra forrige økts sveip — fjernet det døde
+`role`-feltet fra `MyProfileView`
+
+Forrige økts felt-vs-visning-sveip (Økt 30/31, task #99) fant to reelle
+manglende-visning-hull (`sharedEmail`, `geographicNote`) og ett ANNET
+mønster: `getMyProfile()` (`src/lib/me/profile.ts`) velger `users.role`
+inn i `MyProfileView.role`, men verken `me/page.tsx` eller
+`me/bytt-land/page.tsx` — de eneste to kallerne — leser den noensinne;
+begge forgrener seg på `session.role` fra økt-laget i stedet. Motsatt av
+de to forrige funnene: ikke et manglende-visning-hull (feltet var aldri
+ment å bli vist et sted det ikke ble), bare død vekt uten funksjonell
+konsekvens. Bekreftet ved å grep'e alle `profile.`-tilgangar i begge
+sidene — ingen `.role` noe sted.
+
+**Fiks**: fjernet `role` fra `MyProfileView`-interfacet, fra
+`getMyProfile()`s spørring, og den tilsvarende påstanden i
+`profile.integration.test.ts`. Ingen andre kallere finnes (bekreftet med
+et prosjektomfattende søk etter `getMyProfile`) — trygg fjerning, ingen
+funksjonell endring.
+
+### Verifisert før commit (denne runden)
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 85 filer, 441 tester, alle
+  bestod.
+- `npx tsx src/i18n/check-keys.ts`: OK — 509 kall-steder funnet, alle
+  finnes i nb-NO (uendret fra forrige økt, ingen i18n-berøring her).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts` (full
+  integrasjonstestpakke mot ekte lokal Postgres): 32 filer, 320 tester,
+  alle bestod — kjørt TO ganger for stabilitet, identisk resultat begge
+  ganger.
+
+### Neste økt
+
+Gjenstående kandidater fra Økt 31s sveip, i prioritert rekkefølge: (a)
+vurder om `countryCode`-visningshullet i admin/moderator-listene
+(digests, journalists, recipients) bør rettes NÅ eller fortsatt utsettes
+til land nummer to faktisk legges til — samme avveining som
+retensjonsjobbens TODO (`src/lib/jobs/retention.ts`); (b) den avbrutte
+E2E-kjeden fra Økt 30 (respondentens godkjenn/avslå-sti) er fortsatt
+utestet LEVENDE, men lav prioritet gitt grundig eksisterende
+testdekning; (c) vurder om det er verdt å utvide "felt-vs-visning"-
+sveipen til IKKE-side-filer også (e-postmaler, PDF-/eksport-generering
+om noen finnes) — kun `page.tsx`-filer ble gjennomgått i Økt 31. Ellers
+uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt bevisst
+latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.
