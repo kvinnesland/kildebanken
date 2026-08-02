@@ -3,6 +3,7 @@ import { db } from "@/db/client";
 import { auditLogs, countries, legalDocuments, moderatorCountries, users } from "@/db/schema";
 import { isUniqueViolation } from "@/db/errors";
 import { requireAdmin } from "@/lib/auth/authorize";
+import { isSupportedLocale } from "@/i18n/config";
 
 export type CountryActionResult = { ok: true } | { ok: false; error: string };
 
@@ -41,6 +42,13 @@ export async function createCountry(input: CreateCountryInput): Promise<CountryA
 
   if (!input.availableLocales.includes(input.defaultLocale)) {
     return { ok: false, error: "errors.validation_failed" };
+  }
+  // 19.1 (lagt til natt til 2026-08-02, se NATTLOGG.md): en tagg plattformen
+  // ikke har oversettelser for ville krasjet ingenting (alle forbrukere av
+  // en locale faller allerede tilbake til nb-NO), men ville latt en bruker
+  // "velge" et språk som stille aldri faktisk ble brukt noe sted.
+  if (!input.availableLocales.every(isSupportedLocale)) {
+    return { ok: false, error: "errors.unsupported_locale" };
   }
 
   const [existing] = await db
@@ -110,6 +118,10 @@ export async function updateCountry(
   const nextAvailableLocales = input.availableLocales ?? existing.availableLocales;
   if (!nextAvailableLocales.includes(nextDefaultLocale)) {
     return { ok: false, error: "errors.validation_failed" };
+  }
+  // Samme begrunnelse som createCountry() (se der).
+  if (!nextAvailableLocales.every(isSupportedLocale)) {
+    return { ok: false, error: "errors.unsupported_locale" };
   }
 
   await db

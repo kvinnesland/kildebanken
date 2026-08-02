@@ -546,6 +546,7 @@
   "errors.consent_required": "You must tick all the consent boxes.",
   "errors.invalid_country": "This country isn't available.",
   "errors.invalid_locale": "This language isn't available in the selected country.",
+  "errors.unsupported_locale": "One or more of the languages isn't supported by the platform.",
   "errors.legal_documents_unavailable": "This country and language combination isn't ready for registration yet.",
   "errors.email_already_registered": "This email address is already registered.",
   "errors.journalist_not_pending_review": "This application has already been decided.",

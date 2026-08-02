@@ -546,6 +546,7 @@
   "errors.consent_required": "Du må krysse av for alle samtykkene.",
   "errors.invalid_country": "Dette landet er ikke tilgjengelig.",
   "errors.invalid_locale": "Dette språket er ikke tilgjengelig i valgt land.",
+  "errors.unsupported_locale": "Ett eller flere av språkene er ikke støttet av plattformen.",
   "errors.legal_documents_unavailable": "Denne kombinasjonen av land og språk er ikke klar for registrering ennå.",
   "errors.email_already_registered": "Denne e-postadressen er allerede registrert.",
   "errors.journalist_not_pending_review": "Denne søknaden er allerede behandlet.",

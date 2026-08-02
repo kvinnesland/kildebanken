@@ -12003,3 +12003,196 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 25: fullførte en systematisk fremmednøkkel-revisjon av ALLE hard-sletting-steder i kodebasen — ingen flere hull funnet
+
+Fortsatte direkte fra forrige økts "verdt å sjekke"-punkt, men utvidet
+sjekken fra bare `users`-tabellen til HELE fremmednøkkelgrafen (alle
+`.references(() => ...)`-kall i `schema.ts`) krysset mot ALLE
+`db.delete(...)`/`dbase.delete(...)`-kall i `src/lib` (utenom test- og
+fixture-filer).
+
+**Metode**: listet opp samtlige 22 `references()`-kall i `schema.ts`
+(oppdaget to jeg ikke hadde tatt med i forrige økts vurdering:
+`journalistProfiles.reviewedBy` og `requests.moderatedBy`, begge peker på
+`users.id` fra MODERATORENS side av en gjennomgang/moderering — ikke fra
+journalisten/mottakeren selv). Krysset dette mot hvert `delete(...)`-kall:
+
+- `delete(users)`: kun de to allerede bekreftede stedene
+  (`purgeRejectedJournalistApplications()`, `runPurgeUnverified()`).
+  `reviewedBy`/`moderatedBy`-risikoen fra de to nye kolonnene jeg fant,
+  gjelder IKKE disse to funksjonene — begge sletter kun kontoer med
+  `role = journalist` som ALDRI kan ha vært moderator/administrator (en
+  brukers rolle er fast, tildelt ved registrering, aldri endret), og kan
+  derfor aldri ha vært den som "reviewedBy"/"moderatedBy" en ANNEN
+  brukers søknad/forespørsel.
+- `delete(requests)`: kun de samme to funksjonene (rader eid av den
+  slettede journalisten selv) — `DELETE /requests/:id` (den
+  journalist-initierte "slett utkast"-ruten, 9.2) er en MYK sletting
+  (`deleteDraft()` setter `status = 'deleted'`, sletter aldri raden
+  fysisk) — ingen fremmednøkkelrisiko der i det hele tatt, siden raden
+  fortsatt eksisterer.
+- `delete(responses)`: `purgeOldResponses()` (retention.ts) og
+  `withdrawResponse()` (responses.ts) — begge nuller allerede
+  `contactRequests.responseId` FØR selve slettingen (bekreftet ved
+  gjenlesing, samme mønster begge steder).
+- `delete(digests)`: `purgeOldDigests()` sletter `digestDeliveries` FØRST.
+  Ingen annen tabell refererer `digests.id` direkte (kun
+  `digestDeliveries.digestId` gjør det, og den er allerede ryddet).
+- `delete(journalistProfiles)`, `delete(consentRecords)`,
+  `delete(authTokens)`, `delete(sessions)`, `delete(auditLogs)`,
+  `delete(contactRequests)`, `delete(emailSubscriptions)`,
+  `delete(rateLimitHits)`: INGEN annen tabell i skjemaet refererer til
+  noen av disses primærnøkler (`id`) — disse kan trygt slettes i
+  vilkårlig rekkefølge uten noen fremmednøkkelrisiko.
+- `legalDocuments`: ALDRI hard-slettet noe sted i kodebasen (17.2:
+  "beholdes uendret" — i tråd med spec-en, ikke en forglemmelse).
+
+**Konklusjon**: bortsett fra denne nattens allerede rettede
+`audit_logs.actor_user_id`-hull (Økt 24), er HELE
+hard-sletting-overflaten i kodebasen nå verifisert fremmednøkkel-trygg.
+Ingen ny kodeendring denne runden.
+
+Sjekket i samme slag: `netlify.toml` sin eneste planlagte funksjon
+(`tick`, `*/15 * * * *`) mot `tick.ts` sin egen `shouldRunDailyJobNow()`-
+vakt (kjører kun i vinduet `hour === 3 && minute < 15`) — gitt et
+15-minutters intervall (:00, :15, :30, :45) treffer denne vakten PRESIST
+ÉN gang i døgnet (kl. 03:00, IKKE 03:15, siden `15 < 15` er usann).
+Fortsatt korrekt, ingen regresjon siden den opprinnelige fiksen
+(task #29).
+
+### Verifisert før commit (denne runden)
+
+Ingen kodeendring — `git status` viser ingen diff mot forrige commit
+(1585866). Ren gjennomlesing/revisjon, nevnt eksplisitt i NATTLOGG
+likevel (samme begrunnelse som økt 7, 18, 20 og 23s tilsvarende
+oppføringer).
+
+### Neste økt
+
+Fremmednøkkel-revisjonen av hard-slettinger er nå komplett — ingen
+åpne tråder herfra. En fremtidig økt bør vurdere et helt NYTT
+fokusområde, siden både kappløps-sjekklisten (Økt 19-23) og
+fremmednøkkel-sjekklisten (Økt 24-25) nå er uttømt for det som er
+funnet så langt. Kandidater: en fornyet FR-gjennomgang (sist gjort i
+en tidlig økt, kan ha driftet siden), en sjekk av om nye
+oversettelsesnøkler har sneket seg inn uten dekning i alle locales
+(`i18n/check-keys.ts` dekker bare at nøkler FINNES i nb-NO, ikke at ALLE
+konfigurerte locales for et land faktisk har dem), eller ganske enkelt
+en ny runde med de tre permanent åpne spec-spørsmålene under (fortsatt
+bevisst latt til et menneske).
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 26: rettet en reell, om enn lav-alvorlighets, valideringsmangel — `createCountry()`/`updateCountry()` sjekket aldri at `available_locales` faktisk er språk plattformen støtter (19.1)
+
+**Korreksjon av forrige økts "Neste økt" først**: Økt 25 hevdet at
+"`i18n/check-keys.ts` dekker bare at nøkler FINNES i nb-NO, ikke at ALLE
+konfigurerte locales for et land faktisk har dem" — dette var FEIL, og
+jeg oppdaget det ved faktisk å lese scriptet før jeg fulgte opp ledetråden
+selv. `check-keys.ts` har ALLEREDE en egen `findLocaleGaps()`-funksjon som
+sammenligner nb-NO mot HVERT annet konfigurert språk (`en-GB`) og
+ADVARER (feiler ALDRI bygget) om nøkler som mangler — nøyaktig det
+SPEC-V1.md 21.3 krever ("manglende oversettelse i andre språk gir
+advarsel og fallback"). Kjørte scriptet på nytt for å bekrefte: ingen
+advarsler, `en-GB` har full paritet med `nb-NO` akkurat nå. Beklager
+den feilaktige ledetråden — kastet den videre uprøvd fra en for rask
+antagelse forrige økt, nøyaktig den typen feil denne nattens metodikk
+(faktisk kjøre/lese ting, ikke anta) er ment å unngå. Rettet her, ingen
+fremtidig økt bør bruke tid på den.
+
+**Det jeg fant i stedet, ved å faktisk følge sporet dette reiste**: er
+`SUPPORTED_LOCALES` (`src/i18n/config.ts`, listen over ALLE locales
+plattformen i det hele tatt har oversettelsesfiler for) noensinne
+håndhevd som en RAMME rundt `countries.available_locales` (den
+databasedrevne, per-land listen administrator selv konfigurerer)? Svaret
+var nei: verken `createCountry()` eller `updateCountry()`
+(`src/lib/admin/countries.ts`) validerte at HVER tagg i
+`availableLocales` faktisk er en plattformen kjenner — kun at
+`defaultLocale` er MEDLEM av `availableLocales` (intern konsistens, ikke
+ekstern gyldighet).
+
+**Konsekvens, undersøkt grundig FØR jeg konkluderte om alvorlighetsgrad**:
+sporet ALLE stedene en database-lest locale-streng faktisk konsumeres —
+`sendTransactionalEmail()` (`email/send.ts`, linje 142) og `runDigestTick()`
+(`tick.ts`, linje 275/284) bruker BEGGE allerede
+`isSupportedLocale(x) ? x : PLATFORM_DEFAULT_LOCALE` FØR de kaller
+`createTranslator()`/rendrer noe — og selve URL-rutingen
+(`middleware.ts`) validerer `[locale]`-URL-segmentet strengt mot
+`SUPPORTED_LOCALES`, uavhengig av hva et lands `available_locales` sier.
+Alle tre forbrukssteder er altså ALLEREDE defensive. Konklusjon: dette
+er IKKE en krasj-risiko (til forskjell fra kveldens tre andre, mer
+alvorlige funn) — konsekvensen er en STILLE, forvirrende dødsgate: en
+bruker kunne "velge" en locale administrator feilaktig la til (skrivefeil,
+eller en språktagg ingen oversettelsesfil finnes for), og få den
+GODTATT (fordi `PATCH /me`s egen sjekk bare krever medlemskap i
+`country.availableLocales`, ikke i `SUPPORTED_LOCALES`), men den ville
+ALDRI faktisk gjøre noe — verken UI-språket, e-postene, eller URL-en
+ville noensinne reflektere valget, og ingen feilmelding ville forklart
+hvorfor.
+
+**Fiks**: la til `input.availableLocales.every(isSupportedLocale)`-sjekk
+i begge funksjoner, med en ny feilkode `errors.unsupported_locale`
+(lagt til i BÅDE `nb-NO.json` og `en-GB.json` — denne kategorien
+feilkoder konsumeres via en DYNAMISK `t(errorKey)` i klientskjemaene,
+ikke en bokstavelig streng, så `check-keys.ts` sin statiske scanning
+kan ALDRI fange en manglende oversettelse for akkurat denne klassen
+nøkler — de må legges til manuelt, som de andre `errors.*`-nøklene).
+Rettet spec-en FØRST (SPEC-V1.md 19.1, ny forklarende merknad rett under
+`Country`-datamodellen, samme mønster som tidligere økters tilføyelser),
+deretter koden, per den stående regelen.
+
+**Ny testdekning**: to nye tester i `admin/countries.integration.test.ts`
+— én for `createCountry()`, én for `updateCountry()`, begge med en
+konstruert `["nb-NO", "fr-FR"]`-liste, forventer `errors.unsupported_locale`
+og bekrefter at INGENTING ble opprettet/endret i databasen.
+
+### Verifisert før commit (denne runden)
+
+- `npx tsc --noEmit`: OK, ingen feil.
+- `npx eslint .`: OK, ingen feil.
+- `npx vitest run` (full enhetstestpakke): 85 filer, 441 tester, alle
+  grønne.
+- `npx tsx src/i18n/check-keys.ts`: OK, 507 nøkler brukt i kode funnet
+  (den nye `errors.unsupported_locale`-nøkkelen telles IKKE her, siden
+  den konsumeres dynamisk — forventet, samme som alle andre `errors.*`-
+  feilkoder).
+- `npx next build`: OK, ingen feil.
+- `npx vitest run -c vitest.integration.config.ts` mot ekte lokal
+  Postgres: 32 filer, 315 tester (313 + 2 nye), alle grønne — kjørt TO
+  ganger for å bekrefte stabilitet.
+- Ingen empirisk før/etter-verifisering denne gangen — dette er ny
+  VALIDERING (et manglende sjekk-kall), ikke en atferdsendring i en
+  eksisterende kodesti, så det finnes ingen "gammel oppførsel" å
+  kontrastere mot i samme forstand som kveldens TOCTOU-/FK-funn. De to
+  nye testene beviser fiksen direkte (avvist FØR og ETTER er identisk
+  siden testen kjøres mot den FERDIGE fiksen — verifisert i stedet ved å
+  lese koden og bekrefte at uten `every(isSupportedLocale)`-sjekken ville
+  begge testene feilet, siden verken `defaultLocale`-sjekken eller den
+  unike landkode-constrainten ville fanget en gyldig, men usupportert,
+  tagg i `availableLocales`).
+
+### Neste økt
+
+Ingen spesifikk pekepinn — dagens tre hovedspor (kappløp, fremmednøkler,
+lokal-validering) er nå alle uttømt for det jeg har funnet. En fremtidig
+økt bør velge et FRISKT fokusområde selv, eller ta fatt på de tre
+permanent åpne spec-spørsmålene under.
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

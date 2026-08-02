@@ -1070,6 +1070,17 @@ created_at
 updated_at
 ```
 
+`available_locales` (og `default_locale`, som må være et av dem) må være en
+delmengde av settet plattformen faktisk har oversettelsesfiler for (`src/
+i18n/config.ts` sin `SUPPORTED_LOCALES` — natt til 2026-08-02, se
+`NATTLOGG.md`, lagt til fordi verken `createCountry()` eller
+`updateCountry()` håndhevde dette). En BCP-47-tagg plattformen ikke har
+oversettelser for ville ikke krasjet noe sted (alle forbrukere av en
+brukers/lands locale — transaksjonell e-post, digest-rendring,
+URL-ruting — faller allerede defensivt tilbake til `nb-NO` for en ukjent
+tagg), men ville latt en bruker "velge" et språk som stille ALDRI faktisk
+ble brukt noe sted, uten noen feilmelding som forklarer hvorfor.
+
 ### 19.2 LegalDocument
 
 ```

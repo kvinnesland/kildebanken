@@ -137,6 +137,24 @@ describe("admin/countries.ts mot ekte Postgres", () => {
     expect(result).toEqual({ ok: false, error: "errors.validation_failed" });
   });
 
+  it("createCountry(): avviser en language-tagg plattformen ikke har oversettelser for (19.1)", async () => {
+    // Ingen forbruker av en locale ville krasjet på dette (alle faller
+    // defensivt tilbake til nb-NO for en ukjent tagg — se
+    // src/i18n/get-messages.ts og tick.ts), men uten denne sperren kunne en
+    // administrator konfigurert et land der en bruker "velger" et språk som
+    // stille aldri faktisk ble brukt noe sted.
+    await ensureTestCountry();
+    const admin = await createAdmin(TEST_COUNTRY_CODE);
+    await loginAs(admin.id);
+    const input = testCountryInput({ availableLocales: ["nb-NO", "fr-FR"] });
+
+    const result = await createCountry(input);
+
+    expect(result).toEqual({ ok: false, error: "errors.unsupported_locale" });
+    const [notCreated] = await db.select().from(countries).where(eq(countries.code, input.code));
+    expect(notCreated).toBeUndefined();
+  });
+
   it("createCountry(): avviser en kode som allerede finnes", async () => {
     await ensureTestCountry();
     const admin = await createAdmin(TEST_COUNTRY_CODE);
@@ -206,6 +224,22 @@ describe("admin/countries.ts mot ekte Postgres", () => {
     const result = await updateCountry(input.code, { availableLocales: ["en-GB"] });
 
     expect(result).toEqual({ ok: false, error: "errors.validation_failed" });
+
+    await deleteTestCountry(input.code);
+  });
+
+  it("updateCountry(): avviser en language-tagg plattformen ikke har oversettelser for (19.1)", async () => {
+    await ensureTestCountry();
+    const admin = await createAdmin(TEST_COUNTRY_CODE);
+    await loginAs(admin.id);
+    const input = testCountryInput();
+    await createCountry(input);
+
+    const result = await updateCountry(input.code, { availableLocales: ["nb-NO", "fr-FR"] });
+
+    expect(result).toEqual({ ok: false, error: "errors.unsupported_locale" });
+    const [after] = await db.select().from(countries).where(eq(countries.code, input.code));
+    expect(after?.availableLocales).toEqual(["nb-NO"]);
 
     await deleteTestCountry(input.code);
   });
