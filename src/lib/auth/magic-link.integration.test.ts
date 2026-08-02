@@ -141,6 +141,24 @@ describe("requestMagicLink mot ekte Postgres (SPEC-V1.md 6.1)", () => {
     expect(await countTokensFor(recipient.id)).toBe(5);
     expect(warnSpy).not.toHaveBeenCalled();
   });
+
+  it("hastighetsgrensen holder OGSÅ mot mange SAMTIDIGE forespørsler (TOCTOU)", async () => {
+    // Tellingen (linje 39-42 i magic-link.ts) og selve innsettingen av et
+    // nytt token er to SEPARATE spørringer uten noen atomisk sperre mellom
+    // dem — til forskjell fra security/rate-limit.ts sin egen
+    // checkRateLimit(), som løser NØYAKTIG dette samme problemet med en
+    // per-bucket pg_advisory_xact_lock (task #42). Mange samtidige
+    // forespørsler for SAMME e-postadresse kunne alle lese samme (for lave)
+    // antall og alle bestå 5-grensen.
+    await ensureTestCountry();
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const recipient = await createActiveRecipient();
+
+    await Promise.all(Array.from({ length: 10 }, () => requestMagicLink(recipient.email)));
+
+    expect(await countTokensFor(recipient.id)).toBeLessThanOrEqual(5);
+  });
 });
 
 describe("verifyMagicLink mot ekte Postgres", () => {

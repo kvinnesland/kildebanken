@@ -12317,3 +12317,82 @@ allerede fanger denne unike-constraint-feilen korrekt via
 (`errors.already_responded`/`errors.contact_request_already_sent`) i
 stedet for å krasje med en uhåndtert 23505. Ingen kodeendring — begge
 bekreftet trygge.
+
+## Økt 28: fant og rettet et reelt kappløp i innloggingslenkens hastighetsgrense — samme klasse hull som checkRateLimit() selv hadde (task #42), men aldri migrert dit
+
+Fortsatte den systematiske sveipen fra Økt 27 (`count()`-bruk i
+applikasjonskoden) på jakt etter FLERE tellingsbaserte grenser i SAMME
+klasse som FR-029s bug. Grep etter `count()` på tvers av `src/lib` fant
+`src/lib/auth/magic-link.ts`.
+
+`requestMagicLink()` håndhever SPEC-V1.md 6.1s "maks 5 forespørsler per
+e-postadresse per 15 minutter" med sin EGEN, hånd-rullede
+"SELECT COUNT så INSERT"-logikk — nøyaktig samme mønster `checkRateLimit()`
+(`security/rate-limit.ts`) allerede LØSTE ATOMISK tidligere i natt
+(task #42, med en per-bucket `pg_advisory_xact_lock`), og som allerede
+brukes andre steder (`createDraft()` i `requests/requests.ts`,
+rate-limiting i `responses.ts`). Denne ene funksjonen hadde bare aldri
+blitt migrert til å bruke den delte, korrekte primitiven — den beholdt
+sin egen, parallelle, USIKREDE variant.
+
+**Empirisk bekreftet, PÅLITELIG med én gang** (10 samtidige kall, samme
+skala som FR-029-testen i Økt 27, siden 2 samtidige kall trolig ikke
+ville reprodusert kappløpet pålitelig i dette miljøet — se etablert
+mønster i natt): en test som fyrer 10 samtidige `requestMagicLink()`-kall
+for SAMME e-postadresse ga 8-10 opprettede tokens (skulle vært maks 5) i
+alle 3 kjøringer mot koden FØR fiksen.
+
+**Fiks**: erstattet den hånd-rullede tellingen med et enkelt kall til
+`checkRateLimit()`, med bucket-navnet `magic-link:<user.id>` — samme
+bucket-navngivningsmønster (`<domene>:<id>`) som `createDraft()`
+allerede etablerte. Fjernet de nå ubrukte `count`/`gt`-importene.
+Funksjonens egen kontrakt (returnerer `void`, avslører aldri om
+rate-grensen er nådd — 6.1: "avslører ALDRI om
+e-postadressen faktisk finnes") er UENDRET, bare selve
+implementasjonen av sjekken er byttet ut.
+
+**Testendring**: utvidet den eksisterende sekvensielle
+"nekter en sjette forespørsel"-testen med en ny, egen test som fyrer 10
+samtidige `requestMagicLink()`-kall via `Promise.all` og forventer at
+antall opprettede tokens ALDRI overstiger 5.
+
+### Verifisert før commit (denne runden)
+
+- `npx tsc --noEmit`: OK, ingen feil.
+- `npx eslint .`: OK, ingen feil.
+- `npx vitest run` (full enhetstestpakke): 85 filer, 441 tester, alle
+  grønne.
+- `npx tsx src/i18n/check-keys.ts`: OK, 507 nøkler.
+- `npx next build`: OK, ingen feil.
+- `npx vitest run -c vitest.integration.config.ts` mot ekte lokal
+  Postgres: 32 filer, 317 tester (316 + 1 ny). Første kjøring viste én
+  urelatert feil i en digest-test (samme kjente, tidligere dokumenterte
+  flakete testhygiene i den delte, aldri ryddede sandkasse-databasen —
+  IKKE forårsaket av denne endringen, en `magic-link.ts`-fiks kan
+  logisk ikke påvirke en digest-test). Kjørt TO påfølgende ganger til
+  for å bekrefte: begge 100 % grønne (317/317).
+- Empirisk før/etter-verifisering: 3/3 deterministiske feil (8-10
+  tokens) mot koden før fiksen, 3/3 grønne kjøringer mot fiksen.
+
+### Neste økt
+
+Fortsett samme sveip: er det FLERE steder i kodebasen som burde brukt
+`checkRateLimit()` men har sin egen, parallelle tellelogikk? Filene med
+`count()`-bruk sjekket så langt: `moderation/requests.ts` (FR-029,
+rettet Økt 27), `requests/requests.ts` (samme grense, sjekket samtidig),
+`auth/magic-link.ts` (rettet denne runden). IKKE eksplisitt sjekket ennå
+for SAMME mønster: `admin/dashboard.ts`, `moderation/journalists.ts`
+(brukes der `count()` bare til visning, eller til en grense?),
+`digests/digests.ts`, `journalist-inbox/journalist-inbox.ts` (så langt
+antatt rene visningstellinger, ikke grense-håndhevelse, men ikke
+eksplisitt dobbeltsjekket linje for linje).
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

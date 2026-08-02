@@ -1,8 +1,9 @@
 import { db } from "@/db/client";
 import { users, authTokens } from "@/db/schema";
-import { eq, and, gt, count, isNull } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { generateToken, hashToken } from "./tokens";
 import { sendTransactionalEmail } from "@/lib/email/send";
+import { checkRateLimit } from "@/lib/security/rate-limit";
 
 // SPEC-V1.md 6.1: 15 minutters gyldighet, engangsbruk, maks 5 forespørsler
 // per e-postadresse per 15 minutter (samme seksjon + INFRASTRUCTURE.md 18).
@@ -35,13 +36,16 @@ export async function requestMagicLink(email: string): Promise<void> {
   if (!user) return;
   if (user.status === "suspended" || user.status === "deleted") return;
 
-  const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MS);
-  const [row] = await db
-    .select({ value: count() })
-    .from(authTokens)
-    .where(and(eq(authTokens.userId, user.id), gt(authTokens.createdAt, windowStart)));
-
-  if (row && row.value >= MAX_REQUESTS_PER_WINDOW) return;
+  // Bruker den delte, allerede atomisk-sikrede checkRateLimit()
+  // (security/rate-limit.ts, samme mønster som createDraft() i
+  // src/lib/requests/requests.ts) i stedet for en egen "SELECT COUNT så
+  // INSERT" her — den forrige, hånd-rullede varianten var et REELT kappløp:
+  // mange samtidige forespørsler for SAMME e-postadresse kunne alle lese
+  // samme (for lave) antall og alle bestå 5-grensen (SPEC-V1.md 6.1), siden
+  // ingen per-bucket advisory-lås serialiserte dem (se checkRateLimit() sin
+  // egen kommentar, task #42, for hvorfor det trengs).
+  const allowed = await checkRateLimit(db, `magic-link:${user.id}`, RATE_LIMIT_WINDOW_MS, MAX_REQUESTS_PER_WINDOW);
+  if (!allowed) return;
 
   const rawToken = generateToken();
   await db.insert(authTokens).values({
