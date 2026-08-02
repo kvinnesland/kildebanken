@@ -2,7 +2,7 @@ import { and, count, eq, ilike, inArray, notInArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { auditLogs, journalistProfiles, requests, users } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
-import { requireModeratorForCountry, getAssignedCountryCodes } from "@/lib/auth/authorize";
+import { checkModeratorForCountry, getAssignedCountryCodes } from "@/lib/auth/authorize";
 import type { CurrentSession } from "@/lib/auth/session";
 
 export type ModerationResult = { ok: true } | { ok: false; error: string };
@@ -42,8 +42,13 @@ export async function approveJournalist(journalistUserId: string): Promise<Moder
     return { ok: false, error: "errors.journalist_not_pending_review" };
   }
 
-  const session = await requireModeratorForCountry(journalist.countryCode);
-  if (!session) return { ok: false, error: "errors.not_authorized" };
+  // FR-023: en moderator tildelt et ANNET land skal få errors.not_found
+  // (404), ikke errors.not_authorized (403) — se checkModeratorForCountry()
+  // i auth/authorize.ts for hvorfor.
+  const check = await checkModeratorForCountry(journalist.countryCode);
+  if (check.status === "unauthorized") return { ok: false, error: "errors.not_authorized" };
+  if (check.status === "wrong_country") return { ok: false, error: "errors.not_found" };
+  const session = check.session;
 
   // status="pending_review" i WHERE-betingelsen (ikke bare i sjekken over)
   // lukker TOCTOU-vinduet mellom sjekken og denne skrivingen — to
@@ -99,8 +104,11 @@ export async function rejectJournalist(
     return { ok: false, error: "errors.journalist_not_pending_review" };
   }
 
-  const session = await requireModeratorForCountry(journalist.countryCode);
-  if (!session) return { ok: false, error: "errors.not_authorized" };
+  // FR-023: se approveJournalist() over.
+  const check = await checkModeratorForCountry(journalist.countryCode);
+  if (check.status === "unauthorized") return { ok: false, error: "errors.not_authorized" };
+  if (check.status === "wrong_country") return { ok: false, error: "errors.not_found" };
+  const session = check.session;
 
   // Samme TOCTOU-lukking som i approveJournalist() over.
   const [rejected] = await db

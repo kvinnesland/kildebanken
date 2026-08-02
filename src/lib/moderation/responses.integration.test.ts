@@ -115,7 +115,7 @@ describe("hideResponse mot ekte Postgres (SPEC-V1.md 12.5)", () => {
     expect(result).toEqual({ ok: false, error: "errors.not_found" });
   });
 
-  it("nekter en moderator tildelt et ANNET land", async () => {
+  it("en moderator tildelt et ANNET land får errors.not_found (FR-023, 404 ikke 403)", async () => {
     await ensureTestCountry();
     await ensureSecondTestCountry();
     const { responseId } = await createPublishedRequestWithResponse();
@@ -124,7 +124,7 @@ describe("hideResponse mot ekte Postgres (SPEC-V1.md 12.5)", () => {
 
     const result = await hideResponse(responseId);
 
-    expect(result).toEqual({ ok: false, error: "errors.not_authorized" });
+    expect(result).toEqual({ ok: false, error: "errors.not_found" });
     const [row] = await db.select().from(responses).where(eq(responses.id, responseId));
     expect(row?.lifecycleStatus).toBe("submitted");
   });

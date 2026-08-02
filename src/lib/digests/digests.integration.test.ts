@@ -285,7 +285,7 @@ describe("retryFailedDigestDeliveries mot ekte Postgres (SPEC-V1.md 16.2, FR-050
     if (!result.ok) expect(result.error).toBe("errors.not_found");
   });
 
-  it("avviser en moderator som ikke er tildelt digestens land", async () => {
+  it("avviser en moderator som ikke er tildelt digestens land med errors.not_found (FR-023, 404 ikke 403)", async () => {
     await ensureTestCountry();
     await ensureSecondTestCountry();
     vi.stubEnv("BREVO_API_KEY", "");
@@ -305,7 +305,7 @@ describe("retryFailedDigestDeliveries mot ekte Postgres (SPEC-V1.md 16.2, FR-050
     const result = await retryFailedDigestDeliveries(digest!.id);
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toBe("errors.not_authorized");
+    if (!result.ok) expect(result.error).toBe("errors.not_found");
 
     await db.delete(digests).where(eq(digests.id, digest!.id));
   });

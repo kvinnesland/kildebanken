@@ -120,7 +120,7 @@ describe("approveJournalist/rejectJournalist mot ekte Postgres", () => {
     );
   });
 
-  it("approveJournalist(): en moderator tildelt et ANNET land nektes (SPEC-V1.md 4)", async () => {
+  it("approveJournalist(): en moderator tildelt et ANNET land får errors.not_found (FR-023, 404 ikke 403)", async () => {
     await ensureTestCountry();
     await ensureSecondTestCountry();
     const journalist = await createPendingJournalist(TEST_COUNTRY_CODE);
@@ -129,7 +129,24 @@ describe("approveJournalist/rejectJournalist mot ekte Postgres", () => {
 
     const result = await approveJournalist(journalist.id);
 
-    expect(result).toEqual({ ok: false, error: "errors.not_authorized" });
+    expect(result).toEqual({ ok: false, error: "errors.not_found" });
+    const [profile] = await db
+      .select()
+      .from(journalistProfiles)
+      .where(eq(journalistProfiles.userId, journalist.id));
+    expect(profile?.verificationStatus).toBe("pending_review");
+  });
+
+  it("rejectJournalist(): en moderator tildelt et ANNET land får errors.not_found (FR-023, 404 ikke 403)", async () => {
+    await ensureTestCountry();
+    await ensureSecondTestCountry();
+    const journalist = await createPendingJournalist(TEST_COUNTRY_CODE);
+    const moderator = await createModerator(TEST_COUNTRY_CODE_2);
+    await loginAs(moderator.id);
+
+    const result = await rejectJournalist(journalist.id, "Kunne ikke bekrefte redaksjonstilknytning.");
+
+    expect(result).toEqual({ ok: false, error: "errors.not_found" });
     const [profile] = await db
       .select()
       .from(journalistProfiles)

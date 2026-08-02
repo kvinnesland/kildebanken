@@ -193,7 +193,7 @@ describe("suspendUser/unsuspendUser mot ekte Postgres", () => {
     expect(result).toEqual({ ok: true });
   });
 
-  it("suspendUser(): en moderator tildelt et ANNET land nektes (SPEC-V1.md 4)", async () => {
+  it("suspendUser(): en moderator tildelt et ANNET land får errors.not_found (FR-023, 404 ikke 403)", async () => {
     await ensureTestCountry();
     await ensureSecondTestCountry();
     const recipient = await createActiveRecipient();
@@ -202,9 +202,24 @@ describe("suspendUser/unsuspendUser mot ekte Postgres", () => {
 
     const result = await suspendUser(recipient.id, "Misbruk rapportert.");
 
-    expect(result).toEqual({ ok: false, error: "errors.not_authorized" });
+    expect(result).toEqual({ ok: false, error: "errors.not_found" });
     const [after] = await db.select().from(users).where(eq(users.id, recipient.id));
     expect(after?.status).toBe("active");
+  });
+
+  it("unsuspendUser(): en moderator tildelt et ANNET land får errors.not_found (FR-023, 404 ikke 403)", async () => {
+    await ensureTestCountry();
+    await ensureSecondTestCountry();
+    const recipient = await createActiveRecipient();
+    await db.update(users).set({ status: "suspended" }).where(eq(users.id, recipient.id));
+    const moderator = await createModerator(TEST_COUNTRY_CODE_2);
+    await loginAs(moderator.id);
+
+    const result = await unsuspendUser(recipient.id);
+
+    expect(result).toEqual({ ok: false, error: "errors.not_found" });
+    const [after] = await db.select().from(users).where(eq(users.id, recipient.id));
+    expect(after?.status).toBe("suspended");
   });
 
   it("unsuspendUser(): setter en suspendert bruker tilbake til active", async () => {
@@ -332,7 +347,7 @@ describe("suppressUserEmail mot ekte Postgres (SPEC-V1.md 12.5)", () => {
     expect(result).toEqual({ ok: false, error: "errors.not_found" });
   });
 
-  it("en moderator tildelt et ANNET land nektes (SPEC-V1.md 4)", async () => {
+  it("en moderator tildelt et ANNET land får errors.not_found (FR-023, 404 ikke 403)", async () => {
     await ensureTestCountry();
     await ensureSecondTestCountry();
     const recipient = await createActiveRecipient();
@@ -341,7 +356,7 @@ describe("suppressUserEmail mot ekte Postgres (SPEC-V1.md 12.5)", () => {
 
     const result = await suppressUserEmail(recipient.id, "Gjentatt misbruk.");
 
-    expect(result).toEqual({ ok: false, error: "errors.not_authorized" });
+    expect(result).toEqual({ ok: false, error: "errors.not_found" });
     const rows = await db
       .select()
       .from(suppressions)
@@ -497,7 +512,7 @@ describe("adminDeleteUser mot ekte Postgres (SPEC-V1.md 16.2, 18.2)", () => {
     expect(after?.status).not.toBe("deleted");
   });
 
-  it("en moderator tildelt et ANNET land nektes", async () => {
+  it("en moderator tildelt et ANNET land får errors.not_found (FR-023, 404 ikke 403)", async () => {
     await ensureTestCountry();
     await ensureSecondTestCountry();
     const recipient = await createActiveRecipient();
@@ -506,7 +521,7 @@ describe("adminDeleteUser mot ekte Postgres (SPEC-V1.md 16.2, 18.2)", () => {
 
     const result = await adminDeleteUser(recipient.id);
 
-    expect(result).toEqual({ ok: false, error: "errors.not_authorized" });
+    expect(result).toEqual({ ok: false, error: "errors.not_found" });
     const [after] = await db.select().from(users).where(eq(users.id, recipient.id));
     expect(after?.status).not.toBe("deleted");
   });

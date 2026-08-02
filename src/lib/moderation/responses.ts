@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { auditLogs, contactRequests, requests, responses } from "@/db/schema";
-import { requireModeratorForCountry } from "@/lib/auth/authorize";
+import { checkModeratorForCountry } from "@/lib/auth/authorize";
 
 export type ResponseModerationResult = { ok: true } | { ok: false; error: string };
 
@@ -54,8 +54,13 @@ export async function hideResponse(responseId: string): Promise<ResponseModerati
     return { ok: false, error: "errors.response_not_visible" };
   }
 
-  const session = await requireModeratorForCountry(response.countryCode);
-  if (!session) return { ok: false, error: "errors.not_authorized" };
+  // FR-023: en moderator tildelt et ANNET land skal få errors.not_found
+  // (404), ikke errors.not_authorized (403) — se checkModeratorForCountry()
+  // i auth/authorize.ts for hvorfor.
+  const check = await checkModeratorForCountry(response.countryCode);
+  if (check.status === "unauthorized") return { ok: false, error: "errors.not_authorized" };
+  if (check.status === "wrong_country") return { ok: false, error: "errors.not_found" };
+  const session = check.session;
 
   // lifecycleStatus="submitted" i WHERE-betingelsen (ikke bare i sjekken
   // over) lukker samme TOCTOU-vindu som approveJournalist()/rejectJournalist()

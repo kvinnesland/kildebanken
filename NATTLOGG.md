@@ -13681,3 +13681,93 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 41: løste den permanente kandidaten (c) — utvidet FR-023s
+403→404-presisjonsfiks til de fire gjenstående filene
+
+Dette spørsmålet har stått uendret som kandidat (c)/(b) i "Neste
+økt"-notatet i så godt som HVER økt siden det først ble reist (rundt Økt
+24, fiksen selv i requests.ts kom i Økt 25/task #71) — aldri løftet ut av
+listen over "permanente, bevisst utsatte" spørsmål, men heller aldri
+undersøkt i dybden for å avgjøre om det FAKTISK krevde et skjønnsspørsmål,
+eller bare var en mekanisk utvidelse ingen hadde tatt seg tid til. Brukte
+en Explore-underagent til å undersøke dette konkret (uten å gjøre noen
+kodeendringer selv) før jeg bestemte meg for å gå videre — svaret var
+entydig: en lav-risiko, ren copy-paste-utvidelse av et allerede bygget,
+allerede testet mønster, ikke et skjønnsspørsmål.
+
+**Mønsteret** (fra `auth/authorize.ts`, bygget i Økt 25 sammen med selve
+requests.ts-fiksen): `checkModeratorForCountry()` finnes ALLEREDE ved
+siden av den opprinnelige, ikke-skillende `requireModeratorForCountry()`
+— returnerer et 3-veis resultat (`"unauthorized"` for ingen/ugyldig økt,
+`"wrong_country"` for en gyldig moderatorøkt tildelt et ANNET land,
+`"ok"` med økten ellers) i stedet for å slå de to feilårsakene sammen til
+én `null`. `moderation/requests.ts` bruker den allerede; de fire andre
+filene brukte fortsatt den gamle, ikke-skillende funksjonen.
+
+**Anvendt i 8 funksjoner på tvers av 4 filer**, alle strukturelt
+identiske til det allerede fiksede mønsteret (ett enkelt ressursoppslag
+per ID, landsjekk via `requireModeratorForCountry`, ruten mapper allerede
+`errors.not_found`→404/`errors.not_authorized`→403 uendret):
+- `moderation/users.ts`: `suspendUser`, `unsuspendUser`,
+  `suppressUserEmail`, `adminDeleteUser`.
+- `moderation/journalists.ts`: `approveJournalist`, `rejectJournalist`.
+- `moderation/responses.ts`: `hideResponse`.
+- `digests/digests.ts`: `retryFailedDigestDeliveries`.
+
+(Liste-operasjoner som `searchUsersByEmail()`/`listJournalists()`/
+`listDigests()` er BEVISST ikke berørt — der finnes ingen enkelt-ressurs
+hvis eksistens kan lekkes, FR-023s "404 i stedet for 403"-poeng gjelder
+ikke en liste som uansett bare filtreres på tildelte land.)
+
+**Verifiserte at API-rutene ALLEREDE håndterte begge feilkodene riktig**
+FØR jeg rørte lib-funksjonene — alle åtte rutene
+(`admin/users/:id/{suspend,unsuspend,suppress-email,delete}`,
+`admin/journalists/:id/{approve,reject}`, `admin/responses/:id/hide`,
+`admin/digests/:id/retry`) mappet allerede `errors.not_found`→404 OG
+`errors.not_authorized`→403 — selve HTTP-laget trengte ingen endring,
+kun hvilken feilstreng lib-funksjonen returnerer.
+
+**Testoppdatering**: fem eksisterende "moderator tildelt et ANNET
+land"-tester (`suspendUser`, `suppressUserEmail`, `adminDeleteUser`,
+`approveJournalist`, `hideResponse`, `retryFailedDigestDeliveries` — seks
+faktisk) endret forventet feil fra `errors.not_authorized` til
+`errors.not_found`. To NYE tester lagt til for parity, siden forskningen
+fant at `unsuspendUser()` og `rejectJournalist()` manglet en tilsvarende
+test fra før (ingen av dem hadde noen "annet land"-test i det hele tatt,
+uansett feilkode).
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 451 tester, alle
+  bestod.
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- De fire endrede testfilene kjørt sammen: 55/55 bestod.
+- `npx vitest run -c vitest.integration.config.ts`: 32 filer, 328
+  tester (326 + 2 nye) — TO rene påfølgende kjøringer, 328/328 bestått
+  begge ganger. Global-opprydningen (Økt 40) fyrte automatisk og fjernet
+  228 testbrukere begge ganger, uendret oppførsel.
+
+### Neste økt
+
+De tre GENUINE åpne spørsmålene er nå de eneste gjenstående — samtlige
+lav-hengende, mekaniske forbedringskandidater fra Økt 24-40s sveip er nå
+enten løst eller bevisst, begrunnet utsatt (`countryCode`-visningshullet
+til land nummer to, E2E-kjeden til lav prioritet gitt eksisterende
+dekning). Fremtidige økter bør derfor sannsynligvis gå bredere — en ny
+sveip av en annen del av kodebasen (f.eks. en frisk gjennomgang av
+DESIGN.md 9s resterende akseptansekriterier 2/3/6/7, som IKKE er
+eksplisitt bekreftet i noen tidligere økt selv om automatiserte sjekker
+for flere av dem — `check-tokens.ts`, `contrast-pairs.test.ts` — ser ut
+til allerede å finnes) i stedet for å fortsette å lete i de samme,
+allerede grundig gjennomgåtte modulene. Ellers uendret: de tre
+opprinnelige åpne spec-spørsmålene, fortsatt bevisst latt åpne for
+menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) [LØST denne økten — se over, ikke lenger et åpent spørsmål].

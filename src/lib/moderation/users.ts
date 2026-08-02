@@ -2,7 +2,7 @@ import { and, desc, eq, ilike, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { auditLogs, consentRecords, contactRequests, suppressions, users } from "@/db/schema";
 import { revokeAllSessionsForUser } from "@/lib/auth/session";
-import { getAssignedCountryCodes, requireModeratorForCountry } from "@/lib/auth/authorize";
+import { checkModeratorForCountry, getAssignedCountryCodes } from "@/lib/auth/authorize";
 import { hashToken } from "@/lib/auth/tokens";
 import { performAccountDeletion } from "@/lib/auth/account-deletion";
 import type { CurrentSession } from "@/lib/auth/session";
@@ -117,8 +117,13 @@ export async function suspendUser(userId: string, reason: string): Promise<Suspe
     .limit(1);
   if (!user) return { ok: false, error: "errors.not_found" };
 
-  const session = await requireModeratorForCountry(user.countryCode);
-  if (!session) return { ok: false, error: "errors.not_authorized" };
+  // FR-023: en moderator tildelt et ANNET land skal få errors.not_found
+  // (404), ikke errors.not_authorized (403) — se checkModeratorForCountry()
+  // i auth/authorize.ts for hvorfor.
+  const check = await checkModeratorForCountry(user.countryCode);
+  if (check.status === "unauthorized") return { ok: false, error: "errors.not_authorized" };
+  if (check.status === "wrong_country") return { ok: false, error: "errors.not_found" };
+  const session = check.session;
 
   if (user.status === "deleted") return { ok: false, error: "errors.not_found" };
   if (user.status === "suspended") return { ok: true }; // idempotent
@@ -163,8 +168,11 @@ export async function unsuspendUser(userId: string): Promise<SuspendUserResult> 
     .limit(1);
   if (!user) return { ok: false, error: "errors.not_found" };
 
-  const session = await requireModeratorForCountry(user.countryCode);
-  if (!session) return { ok: false, error: "errors.not_authorized" };
+  // FR-023: se suspendUser() over.
+  const check = await checkModeratorForCountry(user.countryCode);
+  if (check.status === "unauthorized") return { ok: false, error: "errors.not_authorized" };
+  if (check.status === "wrong_country") return { ok: false, error: "errors.not_found" };
+  const session = check.session;
 
   if (user.status !== "suspended") return { ok: false, error: "errors.validation_failed" };
 
@@ -219,8 +227,11 @@ export async function suppressUserEmail(userId: string, reason: string): Promise
     .limit(1);
   if (!user) return { ok: false, error: "errors.not_found" };
 
-  const session = await requireModeratorForCountry(user.countryCode);
-  if (!session) return { ok: false, error: "errors.not_authorized" };
+  // FR-023: se suspendUser() over.
+  const check = await checkModeratorForCountry(user.countryCode);
+  if (check.status === "unauthorized") return { ok: false, error: "errors.not_authorized" };
+  if (check.status === "wrong_country") return { ok: false, error: "errors.not_found" };
+  const session = check.session;
 
   if (user.status === "deleted") return { ok: false, error: "errors.not_found" };
 
@@ -269,8 +280,11 @@ export async function adminDeleteUser(userId: string): Promise<SuspendUserResult
 
   if (user.role !== "recipient") return { ok: false, error: "errors.validation_failed" };
 
-  const session = await requireModeratorForCountry(user.countryCode);
-  if (!session) return { ok: false, error: "errors.not_authorized" };
+  // FR-023: se suspendUser() over.
+  const check = await checkModeratorForCountry(user.countryCode);
+  if (check.status === "unauthorized") return { ok: false, error: "errors.not_authorized" };
+  if (check.status === "wrong_country") return { ok: false, error: "errors.not_found" };
+  const session = check.session;
 
   if (user.status === "deleted") return { ok: false, error: "errors.not_found" };
 

@@ -19,7 +19,7 @@ import {
   type DigestRequestItem,
   type RenderedDigest,
 } from "@/lib/email/digest";
-import { getAssignedCountryCodes, requireModeratorForCountry } from "@/lib/auth/authorize";
+import { checkModeratorForCountry, getAssignedCountryCodes } from "@/lib/auth/authorize";
 import type { CurrentSession } from "@/lib/auth/session";
 
 export interface DigestListItem {
@@ -108,8 +108,13 @@ export async function retryFailedDigestDeliveries(digestId: string): Promise<Ret
   const [digest] = await db.select().from(digests).where(eq(digests.id, digestId)).limit(1);
   if (!digest) return { ok: false, error: "errors.not_found" };
 
-  const session = await requireModeratorForCountry(digest.countryCode);
-  if (!session) return { ok: false, error: "errors.not_authorized" };
+  // FR-023: en moderator tildelt et ANNET land skal få errors.not_found
+  // (404), ikke errors.not_authorized (403) — se checkModeratorForCountry()
+  // i auth/authorize.ts for hvorfor.
+  const check = await checkModeratorForCountry(digest.countryCode);
+  if (check.status === "unauthorized") return { ok: false, error: "errors.not_authorized" };
+  if (check.status === "wrong_country") return { ok: false, error: "errors.not_found" };
+  const session = check.session;
 
   const failedDeliveries = await db
     .select({
