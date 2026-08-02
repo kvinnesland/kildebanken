@@ -403,7 +403,15 @@ describe("runPurgeUnverified mot ekte Postgres (FR-004)", () => {
 
     const result = await runPurgeUnverified(db);
 
-    expect(result.errors).toEqual([]);
+    // Filtrert på VÅR brukers ID, ikke `toEqual([])` på hele arrayet —
+    // `runPurgeUnverified` skanner bevisst ALLE ubekreftede kontoer globalt
+    // (ikke skopet til noe land eller noen enkelt test), så en samtidig
+    // kjørende testfils EGEN 14+-dagers-gamle testbruker kan i prinsippet
+    // dukke opp i samme resultat uten at det sier noe om DENNE testens
+    // egen bruker (samme mønster som `runDigestTick`, se NATTLOGG.md Økt
+    // 47/49/50). Hver feilmelding er prefikset med kandidatens egen ID
+    // (`tick.ts`), så filtreringen er presis.
+    expect(result.errors.filter((e) => e.includes(user.id))).toEqual([]);
     const [after] = await db.select().from(users).where(eq(users.id, user.id));
     expect(after).toBeUndefined();
   });
@@ -467,7 +475,15 @@ describe("runPurgeUnverified mot ekte Postgres (FR-004)", () => {
 
     const result = await runPurgeUnverified(db);
 
-    expect(result.errors).toEqual([]);
+    // Filtrert på VÅR brukers ID, ikke `toEqual([])` på hele arrayet —
+    // `runPurgeUnverified` skanner bevisst ALLE ubekreftede kontoer globalt
+    // (ikke skopet til noe land eller noen enkelt test), så en samtidig
+    // kjørende testfils EGEN 14+-dagers-gamle testbruker kan i prinsippet
+    // dukke opp i samme resultat uten at det sier noe om DENNE testens
+    // egen bruker (samme mønster som `runDigestTick`, se NATTLOGG.md Økt
+    // 47/49/50). Hver feilmelding er prefikset med kandidatens egen ID
+    // (`tick.ts`), så filtreringen er presis.
+    expect(result.errors.filter((e) => e.includes(user.id))).toEqual([]);
     const [after] = await db.select().from(users).where(eq(users.id, user.id));
     expect(after).toBeUndefined();
   });

@@ -14494,3 +14494,75 @@ bevisst latt åpne for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+---
+
+## Økt 50: fulgte opp forrige økts spor — sjekket de fire ANDRE
+jobb-describe-blokkene, fant SAMME flakebugklasse i `runPurgeUnverified`
+
+Forrige økt (49) foreslo å sjekke om `runExpireRequests`,
+`runExpireContactRequests`, `runDeadlineReminders` og
+`runStaleRequestReminders` hadde samme brede-assert-sårbarhet som
+`runDigestTick`. Gjennomgått alle fire `describe`-blokker i
+`tick.integration.test.ts` linje for linje:
+
+- Alle fire bruker ALLEREDE `toBeGreaterThanOrEqual(1)` for sine
+  `.processed`-sjekker (linje 96/176/237/297), ikke en eksakt verdi —
+  allerede trygt.
+- Ingen av de fire har noen `.errors`-assert i det hele tatt — de
+  bekrefter i stedet spesifikke rader via egen ID
+  (`eq(requests.id, expired.id)` osv.), som allerede er korrekt skopet.
+
+Disse fire var altså IKKE rammet. MEN gjennomgangen falt naturlig videre
+til den femte jobben i samme fil, `runPurgeUnverified` (dekket i en egen
+`describe`-blokk lenger opp, ikke eksplisitt nevnt i forrige økts liste)
+— og DER fantes nøyaktig samme mønster som `runDigestTick` hadde (Økt
+47): `runPurgeUnverified` skanner ALLE kontoer med status
+`pending_email_verification` og `createdAt` eldre enn 14 dager GLOBALT
+(ikke skopet til noe land eller noen enkelt test), og to tester
+("sletter en REALISTISK ubekreftet mottakerkonto..." og "...
+journalistsøknad...") asserterte `expect(result.errors).toEqual([])` på
+HELE dette globale resultatet.
+
+**Fiks**: samme mønster som Økt 47 — filtrerte begge på egen brukers ID
+FØR sammenligning med et tomt array. `tick.ts` sin
+`runPurgeUnverified()` prefikser allerede hver feilmelding med
+`${candidate.id}: ...`, så filtreringen (`e.includes(user.id)`) er
+presis, akkurat som for digest-tick sine forespørsels-ID-er.
+
+Ingen `git stash`-kontrast: samme begrunnelse som Økt 48/49 — dette er en
+herding av testens egen påstand mot en observert (ikke deterministisk
+reproduserbar) klasse av race, ikke en fiks for en feil i
+produksjonskode.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 458 tester,
+  uendret.
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: Postgres hadde igjen
+  stoppet mellom øktene — startet på nytt før kjøring. 32 filer, 328
+  tester, ALLE bestod (inkludert begge herdede tester). Global-
+  opprydningen fjernet 228 testbrukere, uendret oppførsel.
+
+### Neste økt
+
+Samtlige jobb-describe-blokker i `tick.integration.test.ts` er nå
+gjennomgått for denne spesifikke flakebugklassen (brede asserts mot
+globalt tellede/samlede felt i en jobbs resultat). Ingen kjent
+gjenstående handling i DENNE filen. Mulig neste spor, ingen hastende: de
+resterende `.integration.test.ts`-filene i `src/lib/jobs/` (om noen
+flere finnes utover `tick.integration.test.ts` og
+`retention.integration.test.ts` — sistnevnte er ALLEREDE bygget med
+"dry run"-forsiktighet fra starten, se Økt 53, og bruker trolig samme
+per-kategori-skoping som gjør den mindre utsatt, men ikke eksplisitt
+re-sjekket for akkurat DENNE flakebugklassen ennå). Ellers uendret: de
+to gjenværende GENUINE åpne spec-spørsmålene, fortsatt bevisst latt åpne
+for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
