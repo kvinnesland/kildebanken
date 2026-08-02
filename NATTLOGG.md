@@ -14410,3 +14410,87 @@ menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+---
+
+## Økt 49: fulgte opp forrige økts eget forslag — samme flakebugklasse
+fantes også i `result.processed`, ikke bare `result.errors`
+
+Forrige økt (48) foreslo eksplisitt å sjekke om FLERE brede asserts i
+`tick.integration.test.ts` mot `runDigestTick`-resultatet led av samme
+tvers-av-fil-race som `result.errors` (rettet i Økt 47). Svaret var ja.
+
+**Reelt funn**: `result.processed` (antall land faktisk behandlet i ETT
+tikk) telles GLOBALT på tvers av ALLE land som er forfalt akkurat da
+tikket kjører — IKKE skopet til én bestemt test sitt isolerte land, helt
+analogt med `result.errors`. Fire steder i filen asserterte likevel en
+EKSAKT verdi på hele dette globale tallet:
+- FR-034 (idempotens, andre tikk samme dag): `secondResult.processed`
+  forventet nøyaktig `0`.
+- FR-036 (ett lands leverandørfeil påvirker ikke et annet): forventet
+  nøyaktig `2` (kun codeA+codeB).
+- To "ingen digest skal opprettes"-tester (tom digest / suspendert
+  journalist): forventet nøyaktig `0`.
+
+Alle fire er sårbare for at en SAMTIDIG kjørende testfils eget isolerte
+land (med sin egen forfalte digest, uavhengig av denne testen) blåser
+opp — eller for `0`-tilfellene, i det hele tatt gjør ikke-null — det
+globale tallet, uten at det sier noe om DENNE testens egen påstand.
+Merkverdig nok fantes akkurat samme herding ALLEREDE på fem andre steder
+i samme fil (`toBeGreaterThanOrEqual(1)` i stedet for en eksakt verdi,
+linje 96/176/237/297/359, for andre jobber som også skanner globalt) —
+disse fire var altså en gjenværende inkonsistens, ikke et ukjent mønster.
+
+**Fiks**: for FR-036, byttet `toBe(2)` til `toBeGreaterThanOrEqual(2)`
+(samme retning som de fem eksisterende stedene) — den presise
+per-lands-sjekken (`digestA?.status === "failed"`,
+`digestB?.status === "sent"`) rett under er allerede den reelle,
+korrekt skopede invarianten. For de tre `toBe(0)`-tilfellene (FR-034 og
+de to "ingen digest"-testene): fjernet `.processed`-assertet helt i
+stedet for å svekke det til en løsere ulikhet — en forventning om
+"MINST 0" gir ingen informasjon, og den faktiske invarianten
+("nøyaktig én digest-rad for VÅRT land", henholdsvis "ingen digest-rad
+for VÅRT land") var allerede dekket presist av den påfølgende
+`db.select().from(digests).where(eq(digests.countryCode, code))`-
+spørringen i alle tre tilfeller.
+
+Ingen `git stash`-kontrast: dette er, som Økt 48s fiks, en herding av
+testens EGEN påstand mot en observert (ikke deterministisk
+reproduserbar) race i parallell fil-kjøring — ikke en fiks for en feil
+i produksjonskode.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: fanget faktisk en reell følgefeil under arbeidet — en
+  ubrukt `secondResult`-variabel etter at `.processed`-sjekken av den ble
+  fjernet (droppet fangst av selve tikk-kallet, `await runDigestTick(db)`
+  uten tildeling, i stedet for en unødvendig fanget variabel). Rettet
+  før commit, deretter ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 458 tester,
+  uendret (denne filen dekkes ikke av denne kommandoen).
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: Postgres hadde igjen
+  stoppet mellom øktene — startet på nytt før kjøring. 32 filer, 328
+  tester, ALLE bestod (inkludert alle fire herdede tester).
+  Global-opprydningen fjernet 228 testbrukere, uendret oppførsel.
+
+### Neste økt
+
+Begge de konkrete stedene forrige økt pekte på (i) og videreførte i
+denne økten (ii) er nå dekket. Ingen kjent gjenstående handling i denne
+testfilen — samtlige `runDigestTick`/`runPurgeUnverified`-baserte
+asserts mot globalt tellede felt (`processed`, `errors`) er nå enten
+skopet til egne rader/ID-er eller bevisst løsnet/fjernet. Mulig neste
+spor, ingen hastende: samme spørsmål kunne stilles til de ANDRE
+jobbtestene i filen (`runExpireRequests`, `runExpireContactRequests`,
+`runDeadlineReminders`, `runStaleRequestReminders`) — ikke undersøkt
+denne runden, men samme underliggende struktur (global skanning per
+tikk) gjør det sannsynlig at samme mønster kan gjenta seg der. Ellers
+uendret: de to gjenværende GENUINE åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.

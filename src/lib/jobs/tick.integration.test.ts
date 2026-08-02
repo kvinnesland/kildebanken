@@ -730,9 +730,16 @@ describe("runDigestTick mot ekte Postgres (FR-030 til FR-038, SPEC-V1.md 10, 23 
       await createIsolatedRecipient(code);
 
       await runDigestTick(db);
-      const secondResult = await runDigestTick(db);
+      await runDigestTick(db);
 
-      expect(secondResult.processed).toBe(0);
+      // Ingen `.processed`-assert på det andre tikket — `processed` telles
+      // GLOBALT på tvers av ALLE land som er forfalt i akkurat dette
+      // tikket, ikke bare denne testens isolerte land, så en samtidig
+      // kjørende testfils land som akkurat NÅ blir forfalt for FØRSTE gang
+      // kan i prinsippet gjøre det tallet > 0 uten at det sier noe om VÅR
+      // idempotens (se NATTLOGG.md, Økt 49). Selve invarianten — nøyaktig
+      // én digest-rad for VÅRT land, ikke duplisert av det andre tikket —
+      // er allerede dekket presist av spørringen under.
       const allDigests = await db.select().from(digests).where(eq(digests.countryCode, code));
       expect(allDigests).toHaveLength(1);
     } finally {
@@ -886,8 +893,13 @@ describe("runDigestTick mot ekte Postgres (FR-030 til FR-038, SPEC-V1.md 10, 23 
 
       // Landet som feilet stopper IKKE det andre landets behandling i
       // SAMME tikk (FR-036) — begge er "processed" (digest opprettet), selv
-      // om land A sin ble merket "failed" internt.
-      expect(result.processed).toBe(2);
+      // om land A sin ble merket "failed" internt. `toBeGreaterThanOrEqual`,
+      // ikke `toBe(2)`: `processed` telles GLOBALT på tvers av ALLE land
+      // forfalt i dette tikket, ikke bare codeA/codeB, så en samtidig
+      // kjørende testfils land kan i prinsippet øke tallet uten at det
+      // svekker DENNE testens egen påstand (se NATTLOGG.md, Økt 49) — de
+      // presise per-land-sjekkene under er selve invarianten.
+      expect(result.processed).toBeGreaterThanOrEqual(2);
 
       const [digestA] = await db.select().from(digests).where(eq(digests.countryCode, codeA));
       const [digestB] = await db.select().from(digests).where(eq(digests.countryCode, codeB));
@@ -919,9 +931,12 @@ describe("runDigestTick mot ekte Postgres (FR-030 til FR-038, SPEC-V1.md 10, 23 
       await createIsolatedRecipient(code);
       // Ingen forespørsel opprettet i det hele tatt.
 
-      const result = await runDigestTick(db);
+      await runDigestTick(db);
 
-      expect(result.processed).toBe(0);
+      // Ingen `result.processed`-assert her — samme begrunnelse som
+      // FR-034-testen over: telles globalt på tvers av ALLE forfalte land,
+      // ikke skopet til VÅRT land (se NATTLOGG.md, Økt 49). Selve
+      // invarianten er allerede dekket presist under.
       const allDigests = await db.select().from(digests).where(eq(digests.countryCode, code));
       expect(allDigests).toHaveLength(0);
     } finally {
@@ -939,9 +954,9 @@ describe("runDigestTick mot ekte Postgres (FR-030 til FR-038, SPEC-V1.md 10, 23 
       await createIsolatedRecipient(code);
       await db.update(users).set({ status: "suspended" }).where(eq(users.id, journalist.id));
 
-      const result = await runDigestTick(db);
+      await runDigestTick(db);
 
-      expect(result.processed).toBe(0);
+      // Se begrunnelsen ved forrige test over (Økt 49).
       const allDigests = await db.select().from(digests).where(eq(digests.countryCode, code));
       expect(allDigests).toHaveLength(0);
     } finally {
