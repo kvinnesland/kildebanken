@@ -409,8 +409,19 @@ tokens/primitives.css  ──build──→  tokens.json  ──→  e-postmaler
                        └─────────→  CSS-variabler (web)
 ```
 
-Et temabytte treffer dermed e-postene i samme operasjon. Endrer noen en farge
-direkte i en e-postmal, feiler CI.
+Denne fulle byggetids-eksportpipelinen er IKKE bygget ennå (bevisst utsatt,
+se `src/lib/email/colors.ts` sin egen kommentar) — et fullt tokenbytte krever
+derfor i dag også en manuell oppdatering av de literale fargeverdiene i
+`colors.ts`, ikke bare de tre filene i 1.1. Det som FINNES er den nærmeste
+tilnærmingen uten selve eksportsteget: `colors.ts` sine konstanter er
+beregnet FRA de faktiske OKLCH-primitivene med samme fargematematikk
+kontrasttesten bruker, og `colors.test.ts` sammenligner dem mot primitivene
+og **feiler CI ved avvik** (bekreftet empirisk under autonomt arbeid, natt
+til 2026-08-03, se NATTLOGG.md: en testendring av `--accent-600` fikk
+testen til å feile nøyaktig som forventet, og den faktisk rendrede
+e-post-HTML-en beholdt den GAMLE fargen inntil `colors.ts` ble oppdatert for
+hånd). Endrer noen en farge direkte i en e-postmal (ikke i `colors.ts`),
+feiler CI uansett.
 
 Videre krav:
 
@@ -456,8 +467,19 @@ Tonen er en del av designet, og den er en tillitsmekanisme.
 4. Hele mottakerflyten kan gjennomføres med tastatur alene, og med skjermleser.
 5. Hele mottakerflyten kan gjennomføres på en 360 px bred skjerm uten
    horisontal scroll.
-6. Testtemaet fra punkt 1 slår også gjennom i alle e-postmaler uten at noen
-   mal er redigert.
+6. Testtemaet fra punkt 1 slår gjennom i alle e-postmaler uten at noen
+   MAL (`src/lib/email/templates/*.ts`) redigeres. Selve fargeVERDIENE i
+   `src/lib/email/colors.ts` må i dag likevel oppdateres manuelt til å
+   matche — den fulle byggetids-eksportpipelinen seksjon 7 beskriver er
+   ikke bygget ennå (se `colors.ts` sin egen kommentar). `colors.test.ts`
+   er stedfortrederen: den sammenligner `colors.ts` sine konstanter mot
+   de faktiske OKLCH-primitivene og feiler CI umiddelbart ved avvik, slik
+   at et temabytte ALDRI kan la e-postene stille vise en utdatert farge —
+   men den utfører ikke selve oppdateringen. Bekreftet empirisk (natt til
+   2026-08-03, se NATTLOGG.md): en testendring av en primitiv fikk
+   `colors.test.ts` til å feile som forventet, og den faktisk rendrede
+   e-post-HTML-en viste den GAMLE fargen inntil `colors.ts` ble rettet
+   for hånd.
 7. Grensesnittet er lesbart og ubrutt med 40 % lengre tekststrenger.
 8. Ingen forespørsel til en ekstern vert ved sidelast. Verifiseres i
    nettverksfanen.

@@ -13869,3 +13869,87 @@ fortsatt bevisst latt åpne for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 43: fulgte opp forrige økts kandidat (a) — sjekket DESIGN.md 9
+kriterium 6 empirisk, og fant at seksjon 7s beskrevne arkitektur ALDRI
+ble bygget
+
+Kriterium 6: "Testtemaet fra punkt 1 slår også gjennom i alle
+e-postmaler uten at noen mal er redigert." Seksjon 7 beskriver
+LØSNINGEN som en byggetids-eksportpipeline (`tokens/primitives.css →
+tokens.json → e-postmaler`) og sier eksplisitt "Et temabytte treffer
+dermed e-postene i samme operasjon." `src/lib/email/colors.ts` sin egen
+kommentar innrømmer allerede at denne fulle pipelinen "IKKE er bygget
+ennå" — men frem til nå var det aldri faktisk BEKREFTET hva det betyr i
+praksis, kun notert som en akseptert forenkling.
+
+**Testet det samme empirisk som Økt 86 gjorde for kriterium 1** (en
+faktisk gjennomført testbytte, ikke bare lest kildekoden): endret
+`--accent-600` i `tokens/primitives.css` til en dramatisk annen farge
+(fra dempet blå til rødlig), og observerte to ting direkte:
+1. `colors.test.ts` FEILET nøyaktig som forventet, på nøyaktig ÉN test
+   (`accent matcher --accent-600`) — sikkerhetsnettet virker, CI ville
+   fanget avviket.
+2. Rendret en faktisk e-post (`renderSimpleCtaEmail()`) og inspiserte
+   den RESULTERENDE HTML-en direkte — knappens bakgrunnsfarge var
+   FORTSATT den GAMLE, utdaterte fargen (`#166f92`), IKKE den nye
+   testfargen. Kriterium 6s bokstavelige påstand ("temabytte slår
+   gjennom UTEN at noe redigeres") er dermed IKKE sant i dag — et reelt
+   temabytte krever i tillegg en manuell oppdatering av de literale
+   fargeverdiene i `colors.ts` for at e-postene faktisk skal endre seg.
+
+Tilbakestilte testendringen umiddelbart etter (bekreftet `git status`
+viste ingen gjenværende endring i `primitives.css`).
+
+**Fiks — spec-en rettet, ikke koden** (samme prinsipp som README.md/
+INFRASTRUCTURE.md 16.8 krever: spec-en er sannheten, men når KODEN
+faktisk representerer en bevisst, allerede dokumentert forenkling, og
+spec-en beskriver en arkitektur som aldri ble bygget, er det SPEC-en som
+er unøyaktig, ikke koden som er buggy). Vurderte å bygge selve
+eksport-pipelinen i stedet (parse `tokens/primitives.css` via
+`fs.readFileSync` ved kjøretid, gjenbruke `parsePrimitives()`/
+`oklchToSrgbHex()` fra `contrast-pairs.ts`/`oklch.ts` som allerede
+finnes) — men forkastet dette: `colors.ts` kjøres i FAKTISK
+produksjonskode (e-postutsending), og INFRASTRUCTURE.md 16.8s prinsipp
+om ingen vertsspesifikk kode utenfor netlify.toml/netlify/functions
+gjør en NY kjøretids-filsystemavhengighet i en Netlify Function
+(usikkert om `tokens/primitives.css` i det hele tatt følger med i en
+deployet funksjonsbunt) til en unødvendig ny risiko for en natts
+autonomt arbeid, sammenlignet med den beskjedne gevinsten. Rettet i
+stedet seksjon 7 og kriterium 6s ordlyd til å beskrive det som FAKTISK
+finnes og er verifisert: `colors.ts` sine literale verdier, beregnet med
+samme fargematematikk som kontrasttesten, og `colors.test.ts` som
+sammenligner dem mot de ekte primitivene og feiler CI umiddelbart ved
+avvik — en stedfortreder for selve eksportsteget, ikke selve steget.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil (ingen kildekode rørt — kun DESIGN.md).
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 453 tester, alle
+  bestod — inkludert `colors.test.ts` (bekrefter `primitives.css` er
+  korrekt tilbakestilt etter testbyttet).
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- Ingen integrasjonstester berørt (ren dokumentasjonsendring, ingen
+  kildekode) — `test:integration` ikke kjørt denne runden.
+- `git status` bekreftet KUN `DESIGN.md` endret ved commit-tidspunktet —
+  testbyttet i `primitives.css` fullstendig reversert, ingen
+  midlertidige skript liggende igjen.
+
+### Neste økt
+
+Fire av åtte DESIGN.md 9-kriterier er nå eksplisitt verifisert på tvers
+av Økt 41-43 (1: Økt 86, 2 og 3: Økt 42, 6: denne økten). Gjenstående:
+(a) kriterium 7 (grensesnittet lesbart/ubrutt med 40 % lengre
+tekststrenger) — den mest arbeidskrevende gjenstående, siden den
+krever enten en reell pseudo-lokaliseringstest eller en manuell
+gjennomgang av flere sider med kunstig forlenget tekst; (b) vurder en
+periodisk gjentakelse av Økt 42s systematiske CSS-kryssjekk (samme
+strukturelle risiko som ble notert der). Ellers uendret: de to
+gjenværende GENUINE åpne spec-spørsmålene, fortsatt bevisst latt åpne
+for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
