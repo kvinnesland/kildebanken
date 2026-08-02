@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { journalistProfiles, moderatorCountries, requests, sessions, users } from "@/db/schema";
 import {
@@ -195,6 +195,59 @@ describe("publishRequest/rejectRequest/requestChanges mot ekte Postgres", () => 
       expect(sixthResult).toEqual({ ok: false, error: "errors.too_many_published_requests" });
       const [after] = await db.select().from(requests).where(eq(requests.id, sixth.id));
       expect(after?.status).toBe("submitted");
+    } finally {
+      await db.delete(requests).where(eq(requests.journalistId, journalist.id));
+    }
+  });
+
+  it("publishRequest(): FR-029 holder OGSÅ når to ULIKE innsendte forespørsler godkjennes SAMTIDIG (TOCTOU)", async () => {
+    // publishRequest() sin egen atomiske WHERE-betingelse (status='submitted'
+    // i selve UPDATE-en) hindrer bare at SAMME rad publiseres to ganger — den
+    // sier ingenting om hvor mange AV JOURNALISTENS ANDRE forespørsler som
+    // publiseres i samme øyeblikk. Tellingen over (linje 62-69 i
+    // moderation/requests.ts) er en ren SELECT COUNT uten noen sperre — to
+    // moderatorer (eller to faner) som godkjenner to FORSKJELLIGE innsendte
+    // forespørsler fra SAMME journalist, akkurat idet journalisten allerede
+    // har 4 publiserte, kunne begge lese count=4, begge bestå sjekken, og
+    // begge lykkes — 6 publiserte, i strid med FR-029s harde 5-grense.
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await ensureTestCountry();
+    const journalist = await createActiveJournalistPlain(TEST_COUNTRY_CODE);
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    await loginAs(moderator.id);
+
+    try {
+      for (let i = 0; i < 4; i++) {
+        const submitted = await createSubmittedRequest(journalist.id, {
+          title: `Testforespørsel til moderering (allerede publisert) ${i}`,
+        });
+        const result = await publishRequest(submitted.id);
+        expect(result.ok).toBe(true);
+      }
+
+      const candidates = await Promise.all(
+        Array.from({ length: 8 }, (_, i) =>
+          createSubmittedRequest(journalist.id, { title: `Kappløps-kandidat ${i}` })
+        )
+      );
+
+      const raceResults = await Promise.all(candidates.map((c) => publishRequest(c.id)));
+
+      const [published] = await db
+        .select({ value: count() })
+        .from(requests)
+        .where(and(eq(requests.journalistId, journalist.id), eq(requests.status, "published")));
+      expect(published?.value ?? 0).toBeLessThanOrEqual(5);
+
+      // Nøyaktig ETT av de åtte samtidige kallene skal ha lyktes (4 → 5) —
+      // resten skal ha blitt avvist med FR-029s feilkode, IKKE stille
+      // sluppet gjennom.
+      const oks = raceResults.filter((r) => r.ok);
+      expect(oks).toHaveLength(1);
+      for (const r of raceResults) {
+        if (!r.ok) expect(r).toEqual({ ok: false, error: "errors.too_many_published_requests" });
+      }
     } finally {
       await db.delete(requests).where(eq(requests.journalistId, journalist.id));
     }

@@ -12196,3 +12196,105 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 27: fant og rettet et reelt, PÅLITELIG reproduserbart kappløp i FR-029s 5-grense — `publishRequest()` sin telling var ikke atomisk med selve publiseringen
+
+Fulgte Økt 26s eget forslag: en fornyet FR-gjennomgang (SPEC-V1.md
+seksjon 22), siden både kappløps-, fremmednøkkel- og lokal-validerings-
+sporene fra tidligere i natt var uttømt. Startet med FR-029 ("hindre en
+journalist i å ha mer enn 5 forespørsler med status `published`
+samtidig") — en tellingsbasert forretningsregel, akkurat den KLASSEN
+bug denne natten har funnet flest reelle eksempler av (soft_bounce-
+telleren, Økt 19).
+
+`submitRequest()` (`requests/requests.ts`) sin egen kommentar sa det
+rett ut: den re-håndhever grensen VED PUBLISERING (`moderation/
+requests.ts`, `publishRequest()`) "fordi tiden mellom submit og
+moderatorgodkjenning gjør at flere innsendte forespørsler i prinsippet
+kunne bli godkjent omtrent samtidig". Så etterpå på selve
+`publishRequest()`: den gjorde en ren `SELECT COUNT(*)` av allerede
+publiserte forespørsler, sjekket `< 5`, og skrev DERETTER — med en
+atomisk `WHERE status='submitted'`-betingelse på selve UPDATE-en (fra
+task #49) som bare hindrer at SAMME rad publiseres to ganger. Denne
+betingelsen sier INGENTING om hvor mange AV JOURNALISTENS ANDRE
+forespørsler som publiseres i akkurat samme øyeblikk — to FORSKJELLIGE
+innsendte forespørsler fra samme journalist, godkjent av to moderatorer
+(eller to faner) nesten samtidig, kunne begge lese samme (for lave)
+antall og begge bestå sjekken.
+
+**Empirisk bekreftet, PÅLITELIG denne gangen** (til forskjell fra flere
+av kveldens tidligere kappløpsfunn, der selve timingen gjorde
+reproduksjon upålitelig): skrev først en test med bare TO samtidige
+`publishRequest()`-kall — den reproduserte IKKE kappløpet i 5/5 forsøk
+(samme miljøbegrensning som soft_bounce-testen i Økt 19). Utvidet
+testen til ÅTTE samtidige kall (en journalist med 4 allerede publiserte,
+åtte NYE innsendte forespørsler godkjent samtidig) — dette reproduserte
+DETERMINISTISK i alle 3 kjøringer: 10, 11, og 10 publiserte forespørsler
+(skulle vært maks 5). Til forskjell fra soft_bounce-kappløpet (der flere
+samtidige kall kompliseres av eskaleringslogikken), er hvert
+`publishRequest()`-kall her på en HELT SEPARAT rad, så flere samtidige
+forsøk øker rett og slett sjansen for overlapp uten noen bivirkning å
+ta hensyn til.
+
+**Fiks**: pakket tellingen og selve status-overgangen inn i ÉN
+`db.transaction()`, låst med en per-journalist `pg_advisory_xact_lock`
+— nøyaktig samme mønster som `checkRateLimit()` (`security/
+rate-limit.ts`, fra task #42) allerede etablerte for akkurat denne
+KLASSEN problem (en tellingsbasert grense som må håndheves atomisk på
+tvers av flere rader, ikke bare én). Revisjonslogg-innsettingen flyttet
+INN i samme transaksjon (atomisk med selve publiseringen — FR-050s
+"logg ALLE moderator-/administratorhandlinger" bør aldri kunne skje
+uten den tilhørende tilstandsendringen, eller omvendt), mens selve
+e-postvarslingen til journalisten forblir UTENFOR transaksjonen (samme
+etablerte prinsipp som resten av kodebasen — ekstern I/O holder ikke en
+DB-transaksjon åpen).
+
+Omstrukturerte samtidig returtypen internt til en diskriminert
+`"published" | "too_many_published" | "not_submitted_anymore"`-verdi fra
+transaksjonen, i stedet for å måtte gjøre et EKSTRA oppslag etterpå for
+å skille de to feilutfallene fra hverandre — begge var allerede
+definerte, separate feilkoder (`errors.too_many_published_requests` vs.
+`errors.request_not_editable`), bare uten en ren måte å vite HVILKEN
+uten en telling til.
+
+**Testendring**: utvidet den eksisterende sekvensielle FR-029-testen med
+en ny, egen test som fyrer ÅTTE samtidige `publishRequest()`-kall via
+`Promise.all` og forventer nøyaktig ÉN suksess, resten avvist med
+`errors.too_many_published_requests`, og `SELECT COUNT(*)` aldri over 5
+etterpå.
+
+### Verifisert før commit (denne runden)
+
+- `npx tsc --noEmit`: OK, ingen feil.
+- `npx eslint .`: OK, ingen feil.
+- `npx vitest run` (full enhetstestpakke): 85 filer, 441 tester, alle
+  grønne.
+- `npx tsx src/i18n/check-keys.ts`: OK, 507 nøkler.
+- `npx next build`: OK, ingen feil.
+- `npx vitest run -c vitest.integration.config.ts` mot ekte lokal
+  Postgres: 32 filer, 316 tester (315 + 1 ny), alle grønne — kjørt TO
+  ganger for å bekrefte stabilitet.
+- Empirisk før/etter-verifisering: 3/3 DETERMINISTISKE feil (10, 11, 10
+  publiserte) mot koden før fiksen, 3/3 grønne kjøringer mot fiksen.
+
+### Neste økt
+
+Fortsett den fornyede FR-gjennomgangen (seksjon 22) — kun FR-029 er
+grundig re-verifisert denne runden. Andre tellingsbaserte/grense-
+regler verdt å sjekke spesifikt for SAMME klasse kappløp: FR-041 (én
+aktivt svar per person per forespørsel — allerede beskyttet av en unik
+databaseindeks, ikke en tellesjekk, så sannsynligvis trygt, men ikke
+eksplisitt re-bekreftet i natt), FR-043 (én kontaktforespørsel per svar
+— sannsynligvis også indeksbeskyttet). Ellers: resten av FR-001 til
+FR-054 er ikke eksplisitt re-lest med denne nattens spesifikke
+kappløps-sjekkliste.
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

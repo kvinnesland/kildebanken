@@ -1,4 +1,4 @@
-import { and, count, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { auditLogs, journalistProfiles, requests, users } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
@@ -40,6 +40,8 @@ async function notifyJournalist(
   }
 }
 
+type PublishAttemptOutcome = "published" | "too_many_published" | "not_submitted_anymore";
+
 /**
  * `submitted → published` (9.2). Re-håndhever FR-029 HER, ikke bare ved
  * `submit` (se TODO fjernet fra src/lib/requests/requests.ts, NATTLOGG.md
@@ -59,38 +61,49 @@ export async function publishRequest(requestId: string): Promise<ModerationActio
   if (check.status === "wrong_country") return { ok: false, error: "errors.not_found" };
   const session = check.session;
 
-  const [publishedRow] = await db
-    .select({ value: count() })
-    .from(requests)
-    .where(and(eq(requests.journalistId, request.journalistId), eq(requests.status, "published")));
+  // FR-029: tellingen av allerede publiserte forespørsler og selve
+  // publiseringen må skje ATOMISK sammen, låst per journalist
+  // (`pg_advisory_xact_lock`, samme mønster som `checkRateLimit()` i
+  // security/rate-limit.ts) — en ren SELECT COUNT etterfulgt av en separat
+  // UPDATE (som det sto her tidligere) lukker bare TOCTOU-vinduet for at
+  // SAMME rad publiseres to ganger (via status="submitted" i selve
+  // UPDATE-ens WHERE), ikke for at to FORSKJELLIGE innsendte forespørsler
+  // fra SAMME journalist godkjennes nesten samtidig — begge kunne da lese
+  // samme (for lave) antall og begge bestå 5-grensen. Reelt hull, bekreftet
+  // empirisk: 8 samtidige godkjenninger av forskjellige forespørsler fra én
+  // journalist med 4 allerede publiserte ga opptil 11 publiserte FØR denne
+  // fiksen (se NATTLOGG.md).
+  const outcome: PublishAttemptOutcome = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${request.journalistId}))`);
 
-  if ((publishedRow?.value ?? 0) >= MAX_CONCURRENT_PUBLISHED) {
-    return { ok: false, error: "errors.too_many_published_requests" };
-  }
+    const [publishedRow] = await tx
+      .select({ value: count() })
+      .from(requests)
+      .where(and(eq(requests.journalistId, request.journalistId), eq(requests.status, "published")));
+    if ((publishedRow?.value ?? 0) >= MAX_CONCURRENT_PUBLISHED) return "too_many_published";
 
-  // status="submitted" i WHERE-betingelsen (ikke bare i sjekken over) lukker
-  // TOCTOU-vinduet mellom sjekken og denne skrivingen — flere moderatorer
-  // tildelt samme land ser samme moderasjonskø samtidig (4), og uten denne
-  // betingelsen kunne to av dem rekke å passere sjekken før noen skrev, og
-  // siden overskrive hverandre (én publiserer, én avviser), med tilhørende
-  // motstridende e-post og revisjonslogg til begge utfall (samme mønster
-  // som moderation/journalists.ts).
-  const now = new Date();
-  const [publishedResult] = await db
-    .update(requests)
-    .set({ status: "published", publishedAt: now, moderatedBy: session.userId, moderatedAt: now, updatedAt: now })
-    .where(and(eq(requests.id, requestId), eq(requests.status, "submitted")))
-    .returning({ id: requests.id });
-  if (!publishedResult) return { ok: false, error: "errors.request_not_editable" };
+    const now = new Date();
+    const [updated] = await tx
+      .update(requests)
+      .set({ status: "published", publishedAt: now, moderatedBy: session.userId, moderatedAt: now, updatedAt: now })
+      .where(and(eq(requests.id, requestId), eq(requests.status, "submitted")))
+      .returning({ id: requests.id });
+    if (!updated) return "not_submitted_anymore";
 
-  await db.insert(auditLogs).values({
-    actorType: "user",
-    actorUserId: session.userId,
-    countryCode: request.countryCode,
-    action: "request.publish",
-    entityType: "request",
-    entityId: requestId,
+    await tx.insert(auditLogs).values({
+      actorType: "user",
+      actorUserId: session.userId,
+      countryCode: request.countryCode,
+      action: "request.publish",
+      entityType: "request",
+      entityId: requestId,
+    });
+
+    return "published";
   });
+
+  if (outcome === "too_many_published") return { ok: false, error: "errors.too_many_published_requests" };
+  if (outcome === "not_submitted_anymore") return { ok: false, error: "errors.request_not_editable" };
 
   await notifyJournalist(request.journalistId, "request_approved_published", {
     requestId,
