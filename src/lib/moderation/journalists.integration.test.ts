@@ -189,6 +189,10 @@ describe("approveJournalist/rejectJournalist mot ekte Postgres", () => {
       })
       .returning({ id: users.id });
     if (!admin) throw new Error("Klarte ikke opprette test-administrator");
+    // Ryddes i SAMME afterAll som moderatorene nederst i filen (inkl.
+    // journalistProfiles.reviewedBy-nullingen — approveJournalist() setter
+    // den til administratorens id akkurat som for en moderator).
+    createdModeratorIds.push(admin.id);
     await loginAs(admin.id);
 
     const result = await approveJournalist(journalist.id);

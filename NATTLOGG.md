@@ -13463,3 +13463,113 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 39: fulgte opp forrige økts egen kandidat (c) — samme
+opprydningshull for `role='admin'`, ikke bare `role='moderator'`
+
+Forrige økt (38) foreslo som en "vurder"-kandidat å bruke samme
+`role='moderator'`-DB-spørring proaktivt for andre roller. Kjørte den
+mot `role='admin'` som en rask sjekk FØR jeg valgte neste hovedoppgave
+— og fant nøyaktig samme mønster, i nøyaktig samme filer: **2404**
+opphopede `role='admin'`-testbrukere, aldri ryddet bort.
+
+En `createAdmin()`-hjelpefunksjon (eller et rått innsatt administrator-
+kall) eksisterte parallelt med `createModerator()`/`createActiveUser()`
+i de SAMME åtte testfilene som allerede hadde fått moderator-fiksen —
+men ingen av dem sporet administratorenes IDer, så `afterAll`-en fra
+Økt 37/38 ryddet aldri disse radene.
+
+**Filer rettet** (alle 8 via samme `createdAdminIds`-mønster, slått
+sammen med den eksisterende `createdModeratorIds`-opprydningen der en
+allerede fantes):
+- `auth/authorize.ts`, `digests/digests.ts`: egen `createAdmin()`-
+  hjelper, lagt til i samme `afterAll` som moderatorene (kombinert
+  `allIds`-array for auditLogs/sessions/users; moderatorCountries
+  fortsatt kun for moderator-IDene, siden administratorer ikke har
+  noen slik rad).
+- `admin/responses.ts`, `admin/legal-documents.ts`: hadde INGEN delt
+  moderator-opprydning fra før (bruker try/finally-stil) — la til en
+  egen, ny fil-nivå `createdAdminIds`/`afterAll` for disse to.
+- `admin/countries.ts`: `createActiveUser(role, ...)` — samme dynamiske
+  hjelper som allerede sporet `role === "moderator"` — fikk en
+  tilsvarende `if (role === "admin") createdAdminIds.push(...)`-linje.
+  Denne filen alene stod for 18 av `createAdmin()`-kallestedene.
+- `moderation/requests.ts`, `moderation/journalists.ts`,
+  `moderation/responses.ts`: hver hadde ÉN rått innsatt administrator i
+  én enkelt test ("en administrator kan ... UANSETT land") — disse
+  IDene pushes rett inn i den EKSISTERENDE `createdModeratorIds`-
+  arrayen (den delte `afterAll`-en tåler en administrator-ID uten
+  endring, siden moderatorCountries-slettingen for en slik ID ganske
+  enkelt ikke treffer noen rad).
+- I `moderation/journalists.ts` spesifikt: administratoren i
+  "godkjenne UANSETT land"-testen kaller `approveJournalist()`, som
+  setter `journalistProfiles.reviewedBy` til administratorens id på
+  nøyaktig samme måte som en moderator — dekket av filens eksisterende
+  `reviewedBy`-nulling, ingen ekstra endring nødvendig utover selve
+  push()-kallet.
+
+**Ingen nye filer utover disse åtte** — et avsluttende bredt søk
+(`role: "admin"` uavhengig av `createAdmin`, dynamiske
+`uniqueTestEmail(...)`-kall, og rå template-strenger à la
+`auth/session.ts` sitt moderator-mønster) bekreftet at ALLE reelle
+databaseinnsettinger med `role: "admin"` lå i disse åtte filene.
+`admin/dashboard.ts` og `moderation/users.ts` bruker begge kun
+`makeSession({ role: "admin" })` — en fabrikkert øktobjekt uten noen
+tilhørende databaserad — så ingen opprydning var nødvendig der.
+
+**Målt effekt**: 2404 opphopede `role='admin'`-rader ned til 0 etter
+opprydning, bekreftet 0 for BÅDE `role='admin'` og `role='moderator'`
+FØR og ETTER to påfølgende fulle kjøringer av hele
+integrasjonstestpakken (326/326 begge ganger).
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 451 tester, alle
+  bestod.
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret (ingen
+  i18n-berøring).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 32 filer, 326
+  tester — TO rene påfølgende kjøringer, 326/326 bestått begge ganger.
+  Bekreftet 0 rader for BÅDE `role='admin'` og `role='moderator'` FØR
+  og ETTER hver av de to kjøringene.
+- Alle 8 filene kjørt enkeltvis under selve rettingen:
+  `auth/authorize.ts` 11/11, `digests/digests.ts` 8/8,
+  `admin/responses.ts` 4/4, `admin/legal-documents.ts` 11/11,
+  `admin/countries.ts` 19/19, og en samlet kjøring av
+  `moderation/requests.ts` (21/21), `moderation/journalists.ts`
+  (13/13) og `moderation/responses.ts` (7/7) — alle 41 bestod sammen.
+- Ryddet bort alle midlertidige diagnose-/opprydningsskript
+  (`scratch-*.mjs`) fra disk før commit.
+
+### Neste økt
+
+Test-hygiene-opprydningen for BÅDE `role='moderator'` (Økt 37/38) og
+`role='admin'` (denne økten) anses nå FULLFØRT for disse to rollene.
+Gjenstående kandidater: (a) samme prinsipp kunne i teorien gjelde
+`role='recipient'`/`role='journalist'` også — sett noen isolerte
+eksempler underveis denne økten (f.eks. `existingRecipient` i
+`admin/countries.ts`, `recipient`-brukere i
+`admin/legal-documents.ts`) som ikke ryddes opp, men disse rollene
+brukes i SÅ stort volum i den normale test-flyten (hver forespørsel/
+respondent-test oppretter minst én) at samme "opphopet over natten"-
+risiko sannsynligvis IKKE gjelder på samme måte — de fleste slike
+tester bruker allerede egen per-test-opprydning av forespørsler/svar
+som kaskaderer naturlig. Vurder en egen, avgrenset sjekk av dette FØR
+neste gang testdatabasen vokser urovekkende stort, men ikke antas
+prioritert nå; (b) `countryCode`-visningshullet i admin/moderator-
+listene (digests, journalists, recipients), fortsatt bevisst utsatt
+til land nummer to faktisk legges til; (c) den avbrutte E2E-kjeden fra
+Økt 30 (respondentens godkjenn/avslå-sti) er fortsatt utestet LEVENDE,
+men lav prioritet gitt grundig eksisterende testdekning. Ellers
+uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt bevisst
+latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

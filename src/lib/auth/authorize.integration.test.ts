@@ -31,6 +31,7 @@ async function loginAs(userId: string): Promise<void> {
 
 // Ryddes samlet i én afterAll nederst i filen — se createdModeratorIds.
 const createdModeratorIds: string[] = [];
+const createdAdminIds: string[] = [];
 
 async function createModerator(countryCode: string): Promise<{ id: string }> {
   const [moderator] = await db
@@ -63,6 +64,7 @@ async function createAdmin(): Promise<{ id: string }> {
     })
     .returning({ id: users.id });
   if (!admin) throw new Error("Klarte ikke opprette test-administrator");
+  createdAdminIds.push(admin.id);
   return admin;
 }
 
@@ -230,13 +232,15 @@ describe("getAssignedCountryCodes mot ekte Postgres", () => {
   });
 });
 
-// Rydder ALLE moderatorer opprettet av createModerator() på tvers av
-// HELE filen (tre describe-blokker) — se createdModeratorIds sin egen
+// Rydder ALLE moderatorer/administratorer opprettet av
+// createModerator()/createAdmin() på tvers av HELE filen (tre
+// describe-blokker) — se createdModeratorIds/createdAdminIds sin egen
 // kommentar. sessions FØRST: loginAs() setter inn en økt for de fleste
-// av disse moderatorene, og users.id har ingen kaskadesletting.
+// av disse, og users.id har ingen kaskadesletting.
 afterAll(async () => {
-  if (createdModeratorIds.length === 0) return;
-  await db.delete(sessions).where(inArray(sessions.userId, createdModeratorIds));
+  const allIds = [...createdModeratorIds, ...createdAdminIds];
+  if (allIds.length === 0) return;
+  await db.delete(sessions).where(inArray(sessions.userId, allIds));
   await db.delete(moderatorCountries).where(inArray(moderatorCountries.moderatorUserId, createdModeratorIds));
-  await db.delete(users).where(inArray(users.id, createdModeratorIds));
+  await db.delete(users).where(inArray(users.id, allIds));
 });

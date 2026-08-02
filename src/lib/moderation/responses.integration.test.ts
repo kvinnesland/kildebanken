@@ -203,6 +203,10 @@ describe("hideResponse mot ekte Postgres (SPEC-V1.md 12.5)", () => {
       })
       .returning({ id: users.id });
     if (!admin) throw new Error("Klarte ikke opprette test-administrator");
+    // Ryddes i SAMME afterAll som moderatorene nederst i filen — en
+    // administrator har ingen moderator_countries-rad, så den delete er
+    // et trygt no-op for denne IDen.
+    createdModeratorIds.push(admin.id);
     await loginAs(admin.id);
 
     const result = await hideResponse(responseId);

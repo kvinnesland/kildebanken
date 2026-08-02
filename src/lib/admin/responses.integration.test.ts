@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { auditLogs, requests, responses, sessions, users } from "@/db/schema";
 import {
@@ -28,6 +28,10 @@ async function loginAs(userId: string): Promise<void> {
   } as unknown as Awaited<ReturnType<typeof cookies>>);
 }
 
+// Ryddes samlet i én afterAll nederst i filen — se createdAdminIds sin
+// egen kommentar der.
+const createdAdminIds: string[] = [];
+
 async function createAdmin(): Promise<{ id: string }> {
   const [admin] = await db
     .insert(users)
@@ -41,6 +45,7 @@ async function createAdmin(): Promise<{ id: string }> {
     })
     .returning({ id: users.id });
   if (!admin) throw new Error("Klarte ikke opprette test-administrator");
+  createdAdminIds.push(admin.id);
   return admin;
 }
 
@@ -219,4 +224,16 @@ describe("getResponseForAdmin mot ekte Postgres (SPEC-V1.md 16.2, FR-051)", () =
 
     expect(result).toEqual({ ok: false, error: "errors.not_found" });
   });
+});
+
+// Rydder ALLE administratorer opprettet av createAdmin() på tvers av
+// HELE filen — samme opprydningshull som ble funnet og rettet for den
+// enkeltstående moderatoren over (se "Reelt hull frem til nå"). auditLogs
+// FØRST: getResponseForAdmin() logger administratorens oppslag med
+// actorUserId, og users.id har ingen kaskadesletting.
+afterAll(async () => {
+  if (createdAdminIds.length === 0) return;
+  await db.delete(auditLogs).where(inArray(auditLogs.actorUserId, createdAdminIds));
+  await db.delete(sessions).where(inArray(sessions.userId, createdAdminIds));
+  await db.delete(users).where(inArray(users.id, createdAdminIds));
 });

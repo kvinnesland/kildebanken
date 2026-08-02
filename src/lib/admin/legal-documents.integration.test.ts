@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { auditLogs, countries, emailSubscriptions, legalDocuments, sessions, users } from "@/db/schema";
 import { ensureTestCountry, TEST_COUNTRY_CODE, uniqueTestEmail } from "@/db/integration/fixtures";
@@ -37,6 +37,10 @@ async function loginAs(userId: string): Promise<void> {
   } as unknown as Awaited<ReturnType<typeof cookies>>);
 }
 
+// Ryddes samlet i én afterAll nederst i filen — se createdAdminIds sin
+// egen kommentar der.
+const createdAdminIds: string[] = [];
+
 async function createAdmin(): Promise<{ id: string }> {
   const [admin] = await db
     .insert(users)
@@ -50,6 +54,7 @@ async function createAdmin(): Promise<{ id: string }> {
     })
     .returning({ id: users.id });
   if (!admin) throw new Error("Klarte ikke opprette test-administrator");
+  createdAdminIds.push(admin.id);
   return admin;
 }
 
@@ -337,4 +342,17 @@ describe("listLegalDocumentsForCountry mot ekte Postgres", () => {
     if (!result.ok) return;
     expect(result.documents.some((d) => d.version === otherVersion)).toBe(false);
   });
+});
+
+// Rydder ALLE administratorer opprettet av createAdmin() på tvers av
+// HELE filen (to describe-blokker) — samme opprydningshull som ble
+// funnet og rettet for enkeltstående testbrukere over (se "Reelt hull
+// frem til nå"-kommentaren). auditLogs FØRST: publishLegalDocument()
+// logger administratorens publisering med actorUserId, og users.id har
+// ingen kaskadesletting.
+afterAll(async () => {
+  if (createdAdminIds.length === 0) return;
+  await db.delete(auditLogs).where(inArray(auditLogs.actorUserId, createdAdminIds));
+  await db.delete(sessions).where(inArray(sessions.userId, createdAdminIds));
+  await db.delete(users).where(inArray(users.id, createdAdminIds));
 });

@@ -42,6 +42,11 @@ async function loginAs(userId: string): Promise<void> {
 // hadde — derfor ble den ikke fanget opp av det første søket som
 // oppdaget mønsteret.
 const createdModeratorIds: string[] = [];
+// Administratorer opprettet via createAdmin() (som selv kaller
+// createActiveUser("admin", ...)) ryddes samlet i SAMME afterAll —
+// samme opprydningshull, oppdaget ved en full-database-måling som viste
+// 2404 opphopede role='admin'-rader på tvers av filene (se NATTLOGG.md).
+const createdAdminIds: string[] = [];
 
 async function createActiveUser(
   role: "recipient" | "journalist" | "moderator" | "admin",
@@ -60,6 +65,7 @@ async function createActiveUser(
     .returning({ id: users.id, email: users.email });
   if (!user) throw new Error(`Klarte ikke opprette test-${role}`);
   if (role === "moderator") createdModeratorIds.push(user.id);
+  if (role === "admin") createdAdminIds.push(user.id);
   return user;
 }
 
@@ -444,15 +450,16 @@ describe("admin/countries.ts mot ekte Postgres", () => {
   });
 });
 
-// Rydder ALLE moderatorer opprettet i denne filen (via createActiveUser
-// og via assignModeratorToCountry(), begge sporet i createdModeratorIds)
-// — se dens egen kommentar. auditLogs/sessions FØRST, av samme grunn
-// som de andre testfilene denne natten (users.id har ingen kaskade-
-// sletting).
+// Rydder ALLE moderatorer/administratorer opprettet i denne filen (via
+// createActiveUser, createAdmin() og assignModeratorToCountry(), alle
+// sporet i createdModeratorIds/createdAdminIds) — se deres egne
+// kommentarer. auditLogs/sessions FØRST, av samme grunn som de andre
+// testfilene denne natten (users.id har ingen kaskadesletting).
 afterAll(async () => {
-  if (createdModeratorIds.length === 0) return;
-  await db.delete(auditLogs).where(inArray(auditLogs.actorUserId, createdModeratorIds));
-  await db.delete(sessions).where(inArray(sessions.userId, createdModeratorIds));
+  const allIds = [...createdModeratorIds, ...createdAdminIds];
+  if (allIds.length === 0) return;
+  await db.delete(auditLogs).where(inArray(auditLogs.actorUserId, allIds));
+  await db.delete(sessions).where(inArray(sessions.userId, allIds));
   await db.delete(moderatorCountries).where(inArray(moderatorCountries.moderatorUserId, createdModeratorIds));
-  await db.delete(users).where(inArray(users.id, createdModeratorIds));
+  await db.delete(users).where(inArray(users.id, allIds));
 });

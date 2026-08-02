@@ -67,6 +67,7 @@ async function loginAs(userId: string): Promise<void> {
 
 // Ryddes samlet i én afterAll nederst i filen — se createdModeratorIds.
 const createdModeratorIds: string[] = [];
+const createdAdminIds: string[] = [];
 
 async function createModerator(countryCode: string): Promise<{ id: string }> {
   const [moderator] = await db
@@ -99,6 +100,7 @@ async function createAdmin(): Promise<{ id: string }> {
     })
     .returning({ id: users.id });
   if (!admin) throw new Error("Klarte ikke opprette test-administrator");
+  createdAdminIds.push(admin.id);
   return admin;
 }
 
@@ -449,14 +451,16 @@ describe("retryFailedDigestDeliveries mot ekte Postgres (SPEC-V1.md 16.2, FR-050
   });
 });
 
-// Rydder ALLE moderatorer opprettet av createModerator() på tvers av
-// HELE filen (to describe-blokker) — se createdModeratorIds sin egen
+// Rydder ALLE moderatorer/administratorer opprettet av
+// createModerator()/createAdmin() på tvers av HELE filen (to
+// describe-blokker) — se createdModeratorIds/createdAdminIds sin egen
 // kommentar. auditLogs/sessions FØRST: retryFailedDigestDeliveries()
-// logger moderatorens handling, og loginAs() setter inn en økt.
+// logger utøverens handling, og loginAs() setter inn en økt.
 afterAll(async () => {
-  if (createdModeratorIds.length === 0) return;
-  await db.delete(auditLogs).where(inArray(auditLogs.actorUserId, createdModeratorIds));
-  await db.delete(sessions).where(inArray(sessions.userId, createdModeratorIds));
+  const allIds = [...createdModeratorIds, ...createdAdminIds];
+  if (allIds.length === 0) return;
+  await db.delete(auditLogs).where(inArray(auditLogs.actorUserId, allIds));
+  await db.delete(sessions).where(inArray(sessions.userId, allIds));
   await db.delete(moderatorCountries).where(inArray(moderatorCountries.moderatorUserId, createdModeratorIds));
-  await db.delete(users).where(inArray(users.id, createdModeratorIds));
+  await db.delete(users).where(inArray(users.id, allIds));
 });
