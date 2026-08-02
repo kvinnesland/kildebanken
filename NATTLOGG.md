@@ -14030,3 +14030,75 @@ for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 45: fulgte opp forrige økts kandidat — verifiserte DESIGN.md 9
+kriterium 8 med faktisk nettverkslogging, siste av de åtte
+akseptansekriteriene
+
+Kriterium 8: "Ingen forespørsel til en ekstern vert ved sidelast.
+Verifiseres i nettverksfanen." Den siste av DESIGN.md 9s åtte
+akseptansekriterier som ikke var eksplisitt bekreftet i noen tidligere
+økt.
+
+**Forundersøkelse i kildekoden**: søkte etter kjente eksterne
+mønstre (`fonts.googleapis`, `fonts.gstatic`, CDN-er,
+Google Analytics/Tag Manager, `unpkg`/`jsdelivr`) — ingen treff. Sjekket
+`next/font`-bruk — ingen. Leste `tokens/typography.css`: fontene
+(`"Inter var"`, `"Source Serif 4"`) er BEVISST planlagt selvhostet
+(DESIGN.md 3: "Ingen Google Fonts, ingen ekstern CDN"), men de faktiske
+`@font-face`-erklæringene og fontfilene er ikke lagt til ennå (kjent,
+tidligere notert hull i skjelettet) — nettleseren faller derfor tilbake
+til systemfontene i samme `font-family`-liste, og laster ingenting
+eksternt for fontene i dag, nettopp FORDI funksjonen ikke er ferdig
+bygget ennå, ikke fordi noen bevisst løsning finnes.
+
+**Faktisk verifisering, ikke bare kildekodelesing**: satte opp minimal
+ekte testdata (aktivt testland, en godkjent journalist, en publisert
+forespørsel), startet `npm run dev`, og brukte det forhåndsinstallerte
+Playwright-CLI-et sin `--save-har`-funksjon (samme verktøy som
+kriterium 7-verifiseringen forrige økt) til å fange ALL nettverkstrafikk
+under en ekte sidelasting — for fem representative, offentlige sider
+(forside, mottakerregistrering, journalistsøknad, innlogging, en
+publisert forespørsels detaljside). Parset de fem resulterende
+HAR-filene (38 forespørsler totalt på tvers av alle fem sidene) og
+listet ut HVER unike vert forespørslene faktisk gikk til.
+
+**Resultat**: samtlige 38 forespørsler, på tvers av alle fem sidene,
+gikk KUN til `localhost:3000` — appens egen opprinnelse. Ingen ekstern
+vert kontaktet noe sted. Kriterium 8 holder, empirisk bekreftet.
+
+**Ryddet grundig opp etterpå**: testforespørselen/-journalisten slettet
+fra databasen, utviklingsserveren stoppet, alle midlertidige skript OG
+de fem HAR-filene (betydelig størrelse — 15-20 MB hver, ~90 MB totalt)
+slettet fra scratch-katalogen. `git status` bekreftet et helt rent
+arbeidsområde — ingen kildekodeendring var nødvendig denne runden,
+siden ingen brudd ble funnet.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil (ingen kildekode rørt).
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 86 filer, 453 tester, alle bestod.
+- Den faktiske nettverksloggingen (se over) ER selve verifiseringen
+  kriterium 8 krever — ikke en erstatning for den.
+- Ingen integrasjonstester berørt (all testdata opprettet/slettet via
+  engangsskript utenfor selve testpakken) — `test:integration`,
+  `npx tsx src/i18n/check-keys.ts` og `npx next build` ikke kjørt denne
+  runden siden ingen kildekode ble endret (kun `NATTLOGG.md`).
+
+### Neste økt
+
+Samtlige ÅTTE akseptansekriterier i DESIGN.md 9 er nå eksplisitt
+verifisert på tvers av Økt 41, 42, 43, 44 og denne økten (1: Økt 86, 2
+og 3: Økt 42, 4: Økt 88, 5: Økt 87, 6: Økt 43, 7: Økt 44, 8: denne
+økten). Denne bølgen av design-systemverifisering anses FULLFØRT.
+Fremtidige økter bør gå bredere igjen — vurder en ny gjennomgang av
+SPEC-V1.md seksjon 21 (ikke-funksjonelle krav, sist revidert Økt 85) for
+å se om noe har driftet siden den runden, eller se etter helt nye
+kandidatområder som ikke er dekket av noen tidligere sveip. Ellers
+uendret: de to gjenværende GENUINE åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
