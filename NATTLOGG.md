@@ -12409,3 +12409,127 @@ en skriving som en (for lav) telling kunne latt gjennom. Dette lukker
 innloggingslenkens hastighetsgrense, Økt 28) er nå bekreftet å være de
 ENESTE to stedene i kodebasen der en tellingsbasert grense faktisk
 håndheves uten en databasebegrensning bak seg. Ingen kodeendring.
+
+## Økt 29: sveip for uhåndterte unike-constraint-krasj — ingen nye funn, sannsynligvis uttømt for i natt
+
+Fortsatte med en beslektet, men litt annerledes sjekk enn kappløps- og
+FK-sveipene: er det NOEN `INSERT`-steder som skriver til en UNIKT
+begrenset kolonne uten å fange en potensiell `23505`
+(unik-constraint-brudd) via `isUniqueViolation()` — samme klasse feil
+som tidligere i natt (økt 7-tiden) ble funnet og rettet i
+`createCountry()`/`assignModeratorToCountry()`, men denne gangen lette
+jeg systematisk etter GJENSTÅENDE, ikke-verifiserte tilfeller.
+
+Listet opp samtlige `.unique()`/`uniqueIndex()`-kolonner i `schema.ts`
+(11 stykker) og krysset dem mot de faktiske INSERT-stedene:
+
+- `users.email`: `registerRecipient()`/`applyAsJournalist()` fanger
+  begge allerede `isUniqueViolation()` → `errors.email_already_registered`
+  (bekreftet — dekket av task #89s tidligere gjennomlesing).
+- `requests_slug_idx`: `updateDraft()` allerede rettet (task #64).
+  `createDraft()` selv setter ALDRI en slug (feltet er nullable og
+  forblir tomt til `updateDraft()` — bekreftet ved lesing, ingen risiko
+  der i det hele tatt).
+- `contact_requests.response_id`: `createContactRequest()` fanger
+  allerede `isUniqueViolation()` → `errors.contact_request_already_sent`
+  (bekreftet tidligere i natt, Økt 27s tillegg).
+- `digests_country_scheduled_for_idx` og
+  `digest_deliveries_digest_user_idx`: begge håndtert med
+  `onConflictDoNothing()` i `tick.ts` (den første) — og for den andre,
+  `retryFailedDigestDeliveries()` (`digests/digests.ts`) setter ALDRI inn
+  en NY `DigestDelivery`-rad i det hele tatt, bare en atomisk
+  `UPDATE ... WHERE status='failed'` på en EKSISTERENDE rad (samme
+  gjennomgang som bekreftet TOCTOU-fiksen fra task #50 fortsatt står seg)
+  — ingen ny INSERT betyr ingen unik-constraint-risiko å snuble i.
+- `suppressions.email_hash`: bekreftet tidligere i natt, alle tre
+  stedene (`unsubscribe.ts`, `email-events.ts`,
+  `moderation/users.ts` sin `suppressUserEmail()`) bruker allerede
+  `onConflictDoNothing()`.
+- `auth_tokens.token_hash`/`sessions.token_hash`: genereres av
+  `generateToken()` (kryptografisk tilfeldig) — en reell kollisjon her
+  er astronomisk usannsynlig, ikke en praktisk kappløpsrisiko å bygge en
+  sperre mot.
+- `journalist_profiles.user_id`/`email_subscriptions.user_id`: settes
+  KUN via de allerede sjekkede registreringsfunksjonene (samme
+  try/catch-blokk som fanger `users.email`-krasjet).
+
+**Konklusjon**: ingen gjenstående uhåndterte unik-constraint-krasj
+funnet. Sjekket i tillegg (som en liten sidesjekk, siden
+`publishRequest()` ble skrevet om denne natten, Økt 27) at selve API-
+ruten (`POST /admin/requests/:id/publish`) fortsatt kobler riktig mot
+den UENDREDE `ModerationActionResult`-returtypen — ruten videresender
+`result.error` generisk via en `statusFor()`-oppslagstabell, uendret av
+refaktoreringen (som bare endret den INTERNE implementasjonen, ikke den
+offentlige kontrakten). Ingen kodeendring denne runden.
+
+**Ærlig vurdering av natten som helhet**: de fem hovedsporene forfulgt i
+natt (kappløp/TOCTOU — Økt 19-23; fremmednøkkel-foreldreløshet ved
+hard-sletting — Økt 24-25; lokal-validering — Økt 26; tellingsbaserte
+grenser — Økt 27-28; uhåndterte unike-constraint-krasj — denne runden)
+har nå alle kjørt til null nye funn i sin siste runde. Dette er ikke
+nødvendigvis et signal om at kodebasen er fullstendig feilfri — bare at
+disse SPESIFIKKE, systematiske søkemønstrene er uttømt for denne natten.
+En fremtidig økt bør vurdere et grunnleggende ANNET perspektiv (f.eks.
+en ny brukerreise gjennom selve appen i nettleseren, snarere enn
+statisk kodelesning) fremfor å gjenta de samme grep-mønstrene på nytt.
+
+**Tillegg samme økt — fulgte selv opp anbefalingen over i stedet for
+bare å skrive den ned**: startet `npm run dev` mot en ekte lokal
+Postgres og kjørte to LEVENDE smoke-tester over ekte HTTP, ikke bare
+vitest-testkjøring, for kveldens to mest sentrale, nylig omskrevne
+funksjoner:
+
+1. **Innloggingslenkens hastighetsgrense** (Økt 28): satte opp en ekte
+   mottakerkonto, fyrte 8 SAMTIDIGE `POST /auth/request-link`-kall (via
+   ekte parallelle `curl`-prosesser, ikke `Promise.all` i samme
+   Node-prosess) mot den kjørende serveren, alle 200 OK (ruten avslører
+   aldri rate-grensen — riktig, uendret oppførsel). Telte faktiske
+   `auth_tokens`-rader i databasen etterpå: NØYAKTIG 5, aldri mer, til
+   tross for i alt 9 forespørsler totalt (1 sekvensiell + 8 samtidige).
+   Bekrefter fiksen holder gjennom HELE Next.js-forespørselsløpet, ikke
+   bare i den isolerte test-harnessen.
+2. **FR-029s 5-grense** (Økt 27): satte opp en ekte journalist med 4
+   allerede publiserte forespørsler og 8 nye innsendte, en ekte
+   moderator-økt (satt inn direkte i `sessions`-tabellen, samme mønster
+   som integrasjonstestenes egen `loginAs()`-hjelper), og fyrte 8
+   SAMTIDIGE `POST /admin/requests/:id/publish`-kall via åtte parallelle
+   `curl`-prosesser MED en ekte `kb_session`-informasjonskapsel. Resultat:
+   NØYAKTIG én `200 {"ok":true}`, de syv andre `422
+   {"error":"errors.too_many_published_requests"}` — og en etterfølgende
+   database-telling bekreftet nøyaktig 5 publiserte, aldri mer.
+
+Begge smoke-testene ga IDENTISK resultat til de tilsvarende
+vitest-integrasjonstestene, men via en helt annen kjørevei (ekte HTTP
+mot en ekte kjørende Next.js-server, ekte parallelle OS-prosesser i
+stedet for Node sin egen event loop-baserte `Promise.all`) — en
+sterkere, mer troverdig bekreftelse enn testsuiten alene, siden den også
+verifiserer selve rute-/informasjonskapsel-/sesjonslaget, ikke bare
+biblioteksfunksjonene isolert. All testdata (brukere, forespørsler,
+økter, revisjonslogger, auth-tokens) ryddet bort umiddelbart etterpå via
+et engangsskript (aldri commitet — slettet før denne oppføringen ble
+skrevet). Utviklingsserveren stoppet. `git status` bekreftet ingen
+gjenværende endringer i selve kodebasen fra denne verifiseringsrunden —
+kun denne NATTLOGG-oppføringen.
+
+### Neste økt
+
+Ingen konkret kodeledetråd igjen fra denne nattens systematiske sveiper
+ELLER fra smoke-testrunden over (begge bekreftet grønne). Anbefaler
+enten (a) en TREDJE kjede å smoke-teste levende hvis en fremtidig økt
+vil fortsette samme metode (f.eks. hele
+"journalist sender inn → moderator publiserer → mottaker svarer →
+journalist ber om kontakt → respondent godkjenner"-kjeden i én
+sammenhengende gjennomkjøring, ikke bare de to isolerte punktene testet
+her), (b) de tre permanent åpne spec-spørsmålene under, som fortsatt
+venter på et menneske, eller (c) at brukeren selv gir en ny retning når
+hen våkner.
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.
