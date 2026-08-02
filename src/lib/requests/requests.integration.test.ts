@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { auditLogs, moderatorCountries, requests, responses, users } from "@/db/schema";
+import { auditLogs, journalistProfiles, moderatorCountries, requests, responses, users } from "@/db/schema";
 import {
   createActiveJournalist,
   createActiveRecipient,
@@ -12,7 +12,7 @@ import {
   uniqueTestEmail,
 } from "@/db/integration/fixtures";
 import { submitResponse } from "@/lib/responses/responses";
-import { closeRequest, createDraft, getPublicRequest, listMineRequests, updateDraft } from "./requests";
+import { closeRequest, createDraft, getPublicRequest, listMineRequests, submitRequest, updateDraft } from "./requests";
 
 describe("getPublicRequest mot ekte Postgres", () => {
   let journalistId: string;
@@ -416,5 +416,187 @@ describe("listMineRequests mot ekte Postgres", () => {
     expect(result.map((r) => r.id)).toEqual(
       expect.arrayContaining([submitted.id, published.id])
     );
+  });
+});
+
+describe("submitRequest mot ekte Postgres (draft/changes_requested → submitted, SPEC-V1.md 9.2, 15) — ingen testdekning fantes for denne funksjonen før nå (se NATTLOGG.md)", () => {
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  async function createSubmittableDraft(journalistId: string): Promise<string> {
+    const created = await createDraft(journalistId);
+    if (!created.ok) throw new Error("Klarte ikke opprette utkast");
+    const updated = await updateDraft(created.id, journalistId, {
+      title: "En testforespørsel til innsending",
+      summary: "Sammendrag.",
+      description: "Full beskrivelse.",
+      targetPersonDescription: "Hvem som helst.",
+      responseDeadline: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+      allowsAnonymousParticipation: true,
+      mayBeRecorded: false,
+      mayInvolvePhotoVideo: false,
+    });
+    if (!updated.ok) throw new Error(`Klarte ikke fylle ut utkastet: ${JSON.stringify(updated)}`);
+    return created.id;
+  }
+
+  it("returnerer errors.not_found for en forespørsel journalisten ikke eier", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+    const otherJournalist = await createActiveJournalist();
+    const requestId = await createSubmittableDraft(journalist.id);
+
+    try {
+      const result = await submitRequest(requestId, otherJournalist.id);
+      expect(result).toEqual({ ok: false, error: "errors.not_found" });
+    } finally {
+      await db.delete(requests).where(eq(requests.id, requestId));
+    }
+  });
+
+  it("returnerer errors.request_not_editable for en forespørsel som allerede er submitted", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+    const requestId = await createSubmittableDraft(journalist.id);
+
+    try {
+      const first = await submitRequest(requestId, journalist.id);
+      expect(first.ok).toBe(true);
+
+      const result = await submitRequest(requestId, journalist.id);
+      expect(result).toEqual({ ok: false, error: "errors.request_not_editable" });
+    } finally {
+      await db.delete(requests).where(eq(requests.id, requestId));
+    }
+  });
+
+  it("returnerer errors.not_authorized når journalistens søknad ikke er godkjent ennå (verificationStatus != 'approved')", async () => {
+    await ensureTestCountry();
+    const email = uniqueTestEmail("journalist-pending");
+    const [user] = await db
+      .insert(users)
+      .values({
+        email,
+        role: "journalist",
+        status: "active",
+        countryCode: TEST_COUNTRY_CODE,
+        locale: "nb-NO",
+        emailVerifiedAt: new Date(),
+      })
+      .returning({ id: users.id });
+    if (!user) throw new Error("Klarte ikke opprette test-journalist");
+    await db.insert(journalistProfiles).values({
+      userId: user.id,
+      fullName: "Ventende Journalist",
+      jobTitle: "Journalist",
+      organizationName: "Testavisen",
+      organizationUrl: "https://example.invalid",
+      verificationStatus: "pending_review",
+    });
+    const requestId = await createSubmittableDraft(user.id);
+
+    try {
+      const result = await submitRequest(requestId, user.id);
+      expect(result).toEqual({ ok: false, error: "errors.not_authorized" });
+    } finally {
+      await db.delete(requests).where(eq(requests.id, requestId));
+      await db.delete(journalistProfiles).where(eq(journalistProfiles.userId, user.id));
+      await db.delete(users).where(eq(users.id, user.id));
+    }
+  });
+
+  it("returnerer errors.validation_failed med feltfeil når obligatoriske felter mangler", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+    const created = await createDraft(journalist.id);
+    if (!created.ok) throw new Error("Klarte ikke opprette utkast");
+
+    try {
+      const result = await submitRequest(created.id, journalist.id);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toBe("errors.validation_failed");
+      expect(result.fieldErrors).toContain("title_required");
+    } finally {
+      await db.delete(requests).where(eq(requests.id, created.id));
+    }
+  });
+
+  it("avviser med errors.too_many_published_requests når journalisten allerede har 5 PUBLISERTE (FR-029, tidlig sjekk ved submit — re-sjekkes uansett ved selve publiseringen)", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+    const publishedIds: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const [row] = await db
+        .insert(requests)
+        .values({
+          journalistId: journalist.id,
+          countryCode: TEST_COUNTRY_CODE,
+          contentLanguage: "nb-NO",
+          title: `Allerede publisert ${i}`,
+          summary: "sum",
+          description: "desc",
+          targetPersonDescription: "target",
+          responseDeadline: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+          status: "published",
+          allowsAnonymousParticipation: true,
+          mayBeRecorded: false,
+          mayInvolvePhotoVideo: false,
+          publishedAt: new Date(),
+        })
+        .returning({ id: requests.id });
+      if (row) publishedIds.push(row.id);
+    }
+    const requestId = await createSubmittableDraft(journalist.id);
+
+    try {
+      const result = await submitRequest(requestId, journalist.id);
+      expect(result).toEqual({ ok: false, error: "errors.too_many_published_requests" });
+      const [after] = await db.select().from(requests).where(eq(requests.id, requestId));
+      expect(after?.status).toBe("draft");
+    } finally {
+      await db.delete(requests).where(inArray(requests.id, [...publishedIds, requestId]));
+    }
+  });
+
+  it("setter status til submitted og varsler ALLE moderatorer tildelt landet (SPEC-V1.md 15: 'Ny forespørsel til moderering')", async () => {
+    await ensureTestCountry();
+    const journalist = await createActiveJournalist();
+    const [moderator] = await db
+      .insert(users)
+      .values({
+        email: uniqueTestEmail("moderator-for-submit"),
+        role: "moderator",
+        status: "active",
+        countryCode: TEST_COUNTRY_CODE,
+        locale: "nb-NO",
+        emailVerifiedAt: new Date(),
+      })
+      .returning({ id: users.id });
+    if (!moderator) throw new Error("Klarte ikke opprette test-moderator");
+    await db.insert(moderatorCountries).values({ moderatorUserId: moderator.id, countryCode: TEST_COUNTRY_CODE });
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const requestId = await createSubmittableDraft(journalist.id);
+
+    try {
+      const result = await submitRequest(requestId, journalist.id);
+
+      expect(result.ok).toBe(true);
+      const [after] = await db.select().from(requests).where(eq(requests.id, requestId));
+      expect(after?.status).toBe("submitted");
+      expect(
+        warnSpy.mock.calls.some((call) => String(call[0]).includes("new_request_for_moderation"))
+      ).toBe(true);
+      expect(
+        warnSpy.mock.calls.some((call) => String(call[0]).includes("En testforespørsel til innsending"))
+      ).toBe(true);
+    } finally {
+      await db.delete(requests).where(eq(requests.id, requestId));
+      await db.delete(moderatorCountries).where(eq(moderatorCountries.moderatorUserId, moderator.id));
+      await db.delete(users).where(eq(users.id, moderator.id));
+    }
   });
 });

@@ -13141,3 +13141,103 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 36: undersøkte forrige økts svakere kandidat (a) — `requestId` i
+`new-request-for-moderation.ts` er bevisst død vekt, IKKE et hull —
+men undersøkelsen avdekket noe mer verdifullt: `submitRequest()` hadde
+INGEN testdekning noe sted i kodebasen
+
+Leste `renderNewRequestForModerationEmail()` og fant at filens egen
+kommentar allerede forklarer NØYAKTIG hvorfor `requestId` ikke brukes:
+"Lenker til modereringskøen (/admin/requests), IKKE til en egen
+detaljside for forespørselen — det finnes ingen slik rute, køen viser og
+behandler forespørslene direkte." Dette er en bevisst, riktig
+dokumentert designbeslutning — ikke samme bugklasse som Økt 30/31/34/35s
+funn (data beregnet men aldri vist). Ingen kodeendring nødvendig her.
+
+Gravde likevel videre i kalleren (`submitRequest()`,
+`src/lib/requests/requests.ts`) for å bekrefte `requestId`s status som
+død vekt, og fant i prosessen at funksjonen — som håndhever
+eierskap/redigerbarhet, journalistgodkjenning (`verificationStatus`),
+full feltvalidering (`validateForSubmit()`), FR-029s tidlige 5-grense-
+sjekk, OG varsler alle moderatorer tildelt landet — ikke hadde EN ENESTE
+test noe sted, verken direkte eller indirekte (bekreftet med et
+prosjektomfattende søk etter `submitRequest`). Samme kategori som
+tidligere økters "Add integration tests for..."-oppgaver (#17-23, #81).
+
+**Lagt til**: en ny testblokk i `requests.integration.test.ts` med seks
+tester som dekker `submitRequest()`s fulle feilrom: `errors.not_found`
+(ikke-eier), `errors.request_not_editable` (allerede submitted),
+`errors.not_authorized` (journalist med `verificationStatus:
+"pending_review"`), `errors.validation_failed` med `fieldErrors`
+(tomt utkast), `errors.too_many_published_requests` (FR-029s tidlige
+sjekk — journalisten har allerede 5 publiserte), og selve
+lykkeveien (status → `submitted`, ALLE moderatorer tildelt landet
+varslet med `new_request_for_moderation`).
+
+**Test-hygienefeil oppdaget og rettet underveis** (før commit, ikke en
+egen separat runde): de første versjonene av disse testene ryddet ikke
+opp etter seg — testforespørslene FR-029-testen oppretter (5 stk), OG
+særlig moderatoren+`moderatorCountries`-raden lykkeveitesten oppretter,
+ble aldri slettet. Kjørte testfilen flere ganger under utvikling og
+observerte selv konsekvensen: stadig FLERE moderator-e-poster i loggen
+for hver kjøring — et konkret bevis på akkurat det andre describe-
+blokker i SAMME fil allerede unngår med `try/finally`-opprydding
+(se `createDraft — hastighetsgrense` og
+`updateDraft() — slug-genereringen` lenger opp i filen). Rettet ved å
+legge til `try/finally` rundt hver test som sletter egne opprettede
+`requests`/`moderatorCountries`/`users`-rader, matchet mot filens
+etablerte mønster. Ryddet også bort de allerede opphopede radene fra
+utviklingsrundene via et engangsskript (aldri commitet), og bekreftet
+0 gjenværende rader både før OG etter en full kjøring av HELE
+integrasjonstestpakken.
+
+**Sidefunn, ikke rettet denne runden**: `moderation/requests.integration.test.ts`s
+egen `createModerator()`-hjelpefunksjon (brukt av mange eksisterende
+tester i DEN filen) rydder ALDRI opp sine egne moderator-/
+`moderatorCountries`-rader — kun forespørsler ryddes i dens `afterEach`.
+Dette er en pre-eksisterende hygienemangel i en ANNEN fil, oppdaget som
+en bivirkning av å observere gjentatte "moderator-*"-e-postadresser i
+loggen under denne øktens utvikling — ikke noe MIN nye kode skapte, og
+utenfor denne øktens avgrensede oppgave å rette.
+
+### Verifisert før commit (denne runden)
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 451 tester, alle
+  bestod (uendret — nye tester ligger i en `.integration.test.ts`-fil,
+  utenfor denne pakken).
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 kall-steder funnet
+  (uendret — ingen i18n-berøring denne runden).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts` (full
+  integrasjonstestpakke mot ekte lokal Postgres): 32 filer, 326 tester
+  (320 + 6 nye), alle bestod — kjørt TO ganger for stabilitet, identisk
+  resultat begge ganger.
+- Bekreftet 0 gjenværende testdata-rader (`moderator-for-submit%`-prefiks)
+  både rett etter denne øktens egne tester OG etter en full kjøring av
+  HELE integrasjonstestpakken (andre filers tester rører ikke disse
+  radene).
+
+### Neste økt
+
+Gjenstående kandidater, i prioritert rekkefølge: (a) den nyoppdagede
+opprydningsmangelen i `moderation/requests.integration.test.ts`s
+`createModerator()`-hjelpefunksjon (se over) — lav alvorlighet (påvirker
+kun testdatabasens størrelse over tid, ingen produksjonskonsekvens),
+men brytert filens eget etablerte mønster; (b) `countryCode`-
+visningshullet i admin/moderator-listene (digests, journalists,
+recipients), fortsatt bevisst utsatt til land nummer to faktisk legges
+til; (c) den avbrutte E2E-kjeden fra Økt 30 (respondentens
+godkjenn/avslå-sti) er fortsatt utestet LEVENDE, men lav prioritet gitt
+grundig eksisterende testdekning. Ellers uendret: de tre opprinnelige
+åpne spec-spørsmålene, fortsatt bevisst latt åpne for menneskelig
+gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.
