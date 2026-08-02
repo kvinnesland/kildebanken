@@ -57,10 +57,21 @@ export async function hideResponse(responseId: string): Promise<ResponseModerati
   const session = await requireModeratorForCountry(response.countryCode);
   if (!session) return { ok: false, error: "errors.not_authorized" };
 
-  await db
+  // lifecycleStatus="submitted" i WHERE-betingelsen (ikke bare i sjekken
+  // over) lukker samme TOCTOU-vindu som approveJournalist()/rejectJournalist()
+  // og publishRequest() (moderation/journalists.ts, moderation/requests.ts).
+  // Reelt hull frem til nå: `withdrawResponse()` (responses/responses.ts)
+  // HARD-SLETTER raden når respondenten trekker svaret sitt — skjer det
+  // samtidig med et moderatorkall her, ville UPDATE-en uten denne
+  // betingelsen stille truffet 0 rader (svaret allerede borte), men koden
+  // la likevel inn en `response.hide`-revisjonsrad og returnerte {ok:true}
+  // for en handling som aldri fant sted.
+  const [updated] = await db
     .update(responses)
     .set({ lifecycleStatus: "hidden_by_moderator", updatedAt: new Date() })
-    .where(eq(responses.id, responseId));
+    .where(and(eq(responses.id, responseId), eq(responses.lifecycleStatus, "submitted")))
+    .returning({ id: responses.id });
+  if (!updated) return { ok: false, error: "errors.response_not_visible" };
 
   await db
     .update(contactRequests)

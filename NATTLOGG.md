@@ -11753,3 +11753,85 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 22: fant og rettet en manglende atomisk re-sjekk i hideResponse() (12.5, FR-050)
+
+Fortsatte den fornyede kritisk-lesing-runden. `moderation/journalists.ts`
+er korrekt — `approveJournalist()`/`rejectJournalist()` har allerede den
+etablerte atomiske WHERE-re-sjekken (task #48), og `listJournalists()` er
+en ren lesning.
+
+`moderation/responses.ts` sin `hideResponse()` hadde derimot samme KLASSE
+hull som `performAccountDeletion()` denne natten, bare med lavere
+alvorlighetsgrad: den gjorde en innledende SELECT for å sjekke
+`lifecycleStatus === "submitted"`, men selve UPDATE-en under hadde INGEN
+tilsvarende betingelse i WHERE-en (bare `eq(responses.id, responseId)`) —
+til forskjell fra `approveJournalist()`/`rejectJournalist()` og
+`publishRequest()`, som alle re-sjekker statusen direkte i selve
+skrive-setningen (task #48/#49). `withdrawResponse()`
+(`responses/responses.ts`) HARD-SLETTER svar-raden når respondenten
+trekker den (12.4, 17.4) — skjer det nesten samtidig som et
+moderatorkall til `hideResponse()`, kunne UPDATE-en stille truffet 0
+rader (svaret allerede borte), men koden sjekket aldri det, og logget
+likevel en `response.hide`-revisjonsrad og returnerte `{ok:true}` for en
+handling som aldri fant sted — en MISVISENDE revisjonslogg-oppføring
+(FR-050, 19.12), ikke datakorrupsjon (selve responsen forsvinner uansett,
+siden `withdrawResponse()` sletter ubetinget).
+
+**Fiks**: la til `eq(responses.lifecycleStatus, "submitted")` i UPDATE-ens
+WHERE, pluss `.returning()` med en eksplisitt sjekk av at en rad faktisk
+ble truffet — akkurat samme mønster som søskenfunksjonene. Får ikke
+UPDATE-en noen rad, avbrytes hele funksjonen med
+`errors.response_not_visible` FØR den rekker å skrive noen revisjonslogg.
+
+**Ærlig om den empiriske verifiseringen — lavere alvorlighet enn de to
+foregående fiksene i natt**: la til en ny test som fyrer `hideResponse()`
+og `withdrawResponse()` samtidig via `Promise.all`, og verifiserte
+konsistens (en `response.hide`-revisjonsrad finnes hvis og bare hvis
+`hideResponse()` selv rapporterte `ok:true`). Kjørt 5 ganger mot BÅDE
+den nye OG (via `git stash`) den gamle koden: i dette miljøet vinner
+`hideResponse()` sin egen lese-til-skrive-vei ALLTID kappløpet mot
+`withdrawResponse()` sin lengre kjede av databasekall (flere sekvensielle
+spørringer FØR selve slettingen) — testen traff derfor aldri den smale
+race-vinduet (mellom `hideResponse()`s EGEN SELECT og dens EGEN UPDATE)
+som selve bugen krever, verken i gammel eller ny kode, samme kategori
+begrensning som soft_bounce-kappløpet i Økt 19. Fiksen er likevel korrekt
+og nødvendig ut fra ren kodelesning — den er strukturelt IDENTISK med det
+allerede empirisk beviste mønsteret i `approveJournalist()`/
+`rejectJournalist()` (task #48, DER reproduserte kappløpet pålitelig).
+Alvorlighetsgraden her er lavere enn kveldens to andre TOCTOU-funn (ingen
+datakorrupsjon eller sikkerhetsbrudd — bare en potensielt misvisende
+revisjonslogg-oppføring i et allerede smalt vindu), så en full
+lås-basert deterministisk rigg for å tvinge frem racet ble vurdert som
+disproporsjonal innsats for denne konkrete fiksen.
+
+### Verifisert før commit (denne runden)
+
+- `npx tsc --noEmit`: OK, ingen feil.
+- `npx eslint .`: OK, ingen feil.
+- `npx vitest run` (full enhetstestpakke): 85 filer, 441 tester, alle
+  grønne.
+- `npx tsx src/i18n/check-keys.ts`: OK, 507 nøkler.
+- `npx next build`: OK, ingen feil.
+- `npx vitest run -c vitest.integration.config.ts` mot ekte lokal
+  Postgres: 32 filer, 312 tester (311 + 1 ny), alle grønne — kjørt TO
+  ganger for å bekrefte stabilitet.
+- Empirisk git-stash-verifisering forsøkt (se ærlig avsnitt over) — ingen
+  observerbar kontrast i dette miljøet, av grunner forklart der.
+
+### Neste økt
+
+Gjenstår fortsatt fra den fornyede kritisk-lesing-runden:
+`admin/responses.ts`, `admin/legal-documents.ts`,
+`journalist-inbox/journalist-inbox.ts`, `email/digest.ts` (selve
+render-logikken).
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

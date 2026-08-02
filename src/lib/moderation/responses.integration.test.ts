@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { contactRequests, moderatorCountries, requests, responses, sessions, users } from "@/db/schema";
+import {
+  auditLogs,
+  contactRequests,
+  moderatorCountries,
+  requests,
+  responses,
+  sessions,
+  users,
+} from "@/db/schema";
 import {
   createActiveJournalist,
   createActiveRecipient,
@@ -12,7 +20,7 @@ import {
   uniqueTestEmail,
 } from "@/db/integration/fixtures";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
-import { submitResponse } from "@/lib/responses/responses";
+import { submitResponse, withdrawResponse } from "@/lib/responses/responses";
 import { hideResponse } from "./responses";
 
 // hideResponse() kaller requireModeratorForCountry() → getCurrentSession()
@@ -196,5 +204,43 @@ describe("hideResponse mot ekte Postgres (SPEC-V1.md 12.5)", () => {
     const result = await hideResponse(responseId);
 
     expect(result).toEqual({ ok: true });
+  });
+
+  it("en SAMTIDIG trekking (hard-sletting) gjør IKKE at skjuling logger en revisjonsrad for en handling som aldri skjedde (TOCTOU)", async () => {
+    // withdrawResponse() (responses/responses.ts) HARD-SLETTER raden
+    // UBETINGET (den sjekker aldri responsens egen lifecycleStatus, bare at
+    // forespørselen er åpen) — uten lifecycleStatus="submitted" i selve
+    // hideResponse()-UPDATE-ens WHERE-betingelse (ikke bare i den innledende
+    // sjekken) kunne hideResponse() stille truffet 0 rader her og likevel
+    // logget "response.hide" og returnert {ok:true} for en handling som
+    // aldri fant sted. Raden ender UANSETT hard-slettet av withdraw — det
+    // som faktisk testes er om hideResponse()s SVAR og REVISJONSLOGG stemmer
+    // overens med om den selv genuint rakk å skrive FØR withdraw slettet.
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await ensureTestCountry();
+    const { responseId, respondentId } = await createPublishedRequestWithResponse();
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    await loginAs(moderator.id);
+
+    const [hideResult, withdrawResult] = await Promise.all([
+      hideResponse(responseId),
+      withdrawResponse(responseId, respondentId),
+    ]);
+
+    // hideResponse() endrer aldri requests.status — withdrawResponse() sin
+    // eneste betingelse — så trekkingen lykkes alltid, uavhengig av utfallet
+    // av kappløpet mot hideResponse().
+    expect(withdrawResult.ok).toBe(true);
+
+    const logs = await db.select().from(auditLogs).where(eq(auditLogs.entityId, responseId));
+    const hideWasLogged = logs.some((l) => l.action === "response.hide");
+
+    if (hideResult.ok) {
+      expect(hideWasLogged).toBe(true);
+    } else {
+      expect(["errors.response_not_visible", "errors.not_found"]).toContain(hideResult.error);
+      expect(hideWasLogged).toBe(false);
+    }
   });
 });
