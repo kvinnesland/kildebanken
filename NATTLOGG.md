@@ -11835,3 +11835,70 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 23: fullførte den fornyede kritisk-lesing-runden — resten av listen, ingen flere kodeendringer
+
+Leste de fire siste filene fra Økt 22s liste: `admin/responses.ts`,
+`admin/legal-documents.ts`, `journalist-inbox/journalist-inbox.ts`,
+`email/digest.ts`.
+
+`getResponseForAdmin()` (`admin/responses.ts`) er ren lesning pluss en
+revisjonslogg-innsetting — ingen skriving til selve entiteten, ingen
+kappløp mulig. `publishLegalDocument()` (`admin/legal-documents.ts`) har
+allerede riktig beskyttelse mot dobbel-publisering (den unike indeksen
+`legal_documents_country_locale_type_version_idx` fanges eksplisitt via
+`isUniqueViolation()`, samme mønster som `createCountry()`). `email/
+digest.ts` er ren rendringslogikk uten noen databasetilgang i det hele
+tatt — ingen kappløp mulig per definisjon.
+
+`journalist-inbox.ts` hadde to kandidater, begge vurdert og forkastet som
+reelle bugs:
+1. `getResponseDetailForJournalist()`s "sett `viewed_at` FØRSTE gang"-
+   mønster har et kappløpsvindu (ingen `IS NULL`-re-sjekk i selve
+   UPDATE-en), men konsekvensen er harmløs — to nesten samtidige
+   sidevisninger ville begge skrive en tidsstempel-verdi som uansett betyr
+   "nå", uavhengig av hvilken av dem som faktisk vinner.
+2. `updateResponseMarking()` har STRUKTURELT samme hull som `hideResponse()`
+   hadde før denne nattens Økt 22-fiks (ingen `lifecycleStatus`-re-sjekk i
+   selve UPDATE-ens WHERE) — men til forskjell fra `hideResponse()` skriver
+   denne INGEN revisjonslogg og har INGEN spec-krav om nøyaktig telling.
+   Verste konsekvens av et kappløp er et stille no-op (0 rader truffet,
+   ingen feil, ingen synlig skade) på et felt (`journalistMarking`/
+   `journalistNote`) som uansett ikke er synlig for respondenten (13.1) og
+   ikke lekker eller korrumperer noe. Vurdert som for lav alvorlighet til å
+   rettferdiggjøre en kodeendring i natt — notert her i tilfelle en
+   fremtidig økt uenig seg.
+
+Ingen kodeendring denne runden. Dette avslutter den fornyede
+kritisk-lesing-runden startet i Økt 21 — alle filene identifisert der er
+nå gjennomgått, med tre reelle funn rettet (Økt 19, 21, 22).
+
+### Verifisert før commit (denne runden)
+
+Ingen kodeendring — `git status` viser ingen diff mot forrige commit
+(52ae95c). Ren gjennomlesing, nevnt eksplisitt i NATTLOGG likevel (samme
+begrunnelse som økt 7, 18 og 20s tilsvarende oppføringer).
+
+### Neste økt
+
+Den fornyede kritisk-lesing-runden (startet Økt 21) er nå komplett for
+ALLE filene identifisert i Økt 21/22s lister. Gjenstående, aldri
+eksplisitt kritisk-lest moduler er nå bare små, rene hjelpefunksjoner
+uten databasetilgang (`requests/slug.ts`, `requests/topics.ts`,
+`*/status-badge.ts`, `datetime/timezone.ts`, `email/colors.ts`,
+`email/escape-html.ts`, `forms/focus-first-invalid.ts`) — lav
+sannsynlighet for TOCTOU-klassen bugs siden de ikke skriver til databasen
+i det hele tatt. En fremtidig økt bør vurdere å skifte fokus fra
+"kritisk lesing for kappløp" til noe annet — f.eks. en fornyet
+FR-gjennomgang, eller de tre permanent åpne spec-spørsmålene under (som
+fortsatt venter på et menneske).
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.
