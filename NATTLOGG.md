@@ -13953,3 +13953,80 @@ for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 44: fulgte opp forrige økts kandidat (a) — verifiserte DESIGN.md 9
+kriterium 7 med en faktisk pseudo-lokaliseringstest, ingen brudd funnet
+
+Kriterium 7: "Grensesnittet er lesbart og ubrutt med 40 % lengre
+tekststrenger." Ikke undersøkt i noen tidligere økt — den mest
+arbeidskrevende av de gjenstående DESIGN.md 9-kriteriene, siden den
+krever faktisk visuell inspeksjon av gjengitte sider, ikke bare lesing
+av kildekode eller en beregning.
+
+**Metode**: skrev et engangsskript som blåste opp HVER strengverdi i
+`src/i18n/messages/nb-NO.json` til ~140 % av original lengde (repeterte
+ord fra samme streng til lengdemålet var nådd), med eksplisitt
+bevaring av ICU-plassholdersyntaks (`{termsLink}`, `{minimumAge,
+number}` osv. — splittet strengen på `{...}`-blokker og blåste KUN opp
+de bokstavelige tekstbitene mellom dem, aldri selve plassholderne).
+Bekreftet gyldig JSON og at antall `{`-tegn var uendret (50 = 50) etter
+oppblåsingen — ingen ICU-syntaks korrumpert.
+
+Satte opp minimal ekte testdata (et aktivt testland, en godkjent
+journalist, en publisert forespørsel) og startet `npm run dev` mot
+ekte lokal Postgres. Brukte det forhåndsinstallerte Playwright-CLI-et
+(`/opt/pw-browsers`, samme oppsett miljøet allerede tilbyr) til å ta
+FAKTISKE skjermbilder — ikke bare hente rå HTML via `curl`, som ikke
+kan avsløre visuell overflow/klipping — av fem representative,
+offentlige sider (forside, registrering som mottaker, journalist-
+søknad, innlogging, og en publisert forespørsels detaljside) ved BÅDE
+1280px (desktop) og 360px (samme bredde som kriterium 5s egen
+verifisering, Økt 87) — ti skjermbilder totalt.
+
+**Resultat**: ingen brudd funnet på noen av de ti skjermbildene. Tekst
+brytes naturlig over flere linjer der den blir for lang (bl.a.
+knappeteksten på innloggingssiden, som går over to linjer ved 360px),
+ingen horisontal overflow, ingen klipt eller kuttet tekst, ingen
+overlappende elementer. Den eneste "rariteten" i skjermbildene er
+kosmetisk støy fra selve testskriptets naive ord-repetisjon (f.eks.
+"Publisert Publisert2. august 2026" der oppblåsingen limte et repetert
+ord rett inntil en påfølgende plassholderverdi uten mellomrom) — ikke
+et layoutproblem, bare et artefakt av en enkel pseudo-oversettelses-
+algoritme, uten betydning for selve kriteriet.
+
+**Ryddet grundig opp etterpå**: `nb-NO.json` tilbakestilt fra en
+sikkerhetskopi tatt FØR oppblåsingen, bekreftet byte-for-byte identisk
+med `diff`. Testforespørselen/-journalisten slettet fra databasen.
+Utviklingsserveren stoppet. Alle midlertidige skript slettet. `git
+status` bekreftet et HELT rent arbeidsområde før denne NATTLOGG-
+oppføringen ble lagt til — ingen kildekodeendring var nødvendig denne
+runden, siden ingen reelt brudd ble funnet.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil (ingen kildekode rørt).
+- `npx eslint .`, `npx vitest run`, `npx tsx src/i18n/check-keys.ts`,
+  `npx next build`: kjørt på nytt etter opprydding for å bekrefte
+  arbeidsområdet er tilbake i en fullt grønn, uendret tilstand.
+- Ti skjermbilder (5 sider × 2 viewport-bredder) inspisert visuelt (se
+  over) — dette ER selve verifiseringen kriterium 7 krever, ikke en
+  erstatning for den.
+- Ingen integrasjonstester berørt (all testdata opprettet/slettet via
+  engangsskript utenfor selve testpakken) — `test:integration` ikke
+  kjørt denne runden.
+
+### Neste økt
+
+Fem av åtte DESIGN.md 9-kriterier er nå eksplisitt verifisert (1, 2, 3,
+5, 6, 7 — faktisk seks om man teller 5 fra tidligere økt 87). Kriterium
+4 (tastatur/skjermleser) ble også verifisert tidligere (økt 88).
+Gjenstående: kriterium 8 (ingen forespørsel til ekstern vert ved
+sidelast) — ikke eksplisitt bekreftet i noen økt ennå, verifiseres i
+praksis ved å faktisk inspisere nettverksfanen/-trafikken under en reell
+sidelasting, tilsvarende disiplin som denne økten. Ellers uendret: de to
+gjenværende GENUINE åpne spec-spørsmålene, fortsatt bevisst latt åpne
+for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
