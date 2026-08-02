@@ -11651,3 +11651,105 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 21: fant og rettet et reelt tapt-oppdatering-kappløp i performAccountDeletion() (adminDeleteUser, 18.2)
+
+Fulgte forrige økts alternativ (a): en fornyet kritisk-lesing-runde mot
+moduler bygget TIDLIG i natt, før dagens sjekk-så-skriv-sjekkliste var
+etablert. Startet med `src/lib/moderation/users.ts` (suspendUser,
+unsuspendUser, suppressUserEmail, adminDeleteUser).
+
+`suspendUser()`/`unsuspendUser()`/`suppressUserEmail()` er alle korrekte —
+et kappløpsvindu finnes teknisk (ikke-atomisk lese-så-skriv), men enhver
+konsekvens av to nesten samtidige kall er idempotent (samme sluttstatus,
+`onConflictDoNothing()` på sperrelisteinnsettingen) — samme aksepterte
+klasse som `unsubscribeByToken()`.
+
+`adminDeleteUser()` var derimot et REELT hull: den kaller
+`performAccountDeletion()` (`src/lib/auth/account-deletion.ts`) — en
+funksjon DELT med den selvbetjente to-stegs slettelenken
+(`confirmAccountDeletion()`). Den selvbetjente veien er selv trygg, fordi
+SELVE TOKENET har en atomisk engangsbruk-sperre (`UPDATE ... WHERE
+usedAt IS NULL`, rettet i en tidligere økt, task #51). `adminDeleteUser()`
+har derimot INGEN tilsvarende sperre — bare en tidligere, ikke-atomisk
+sjekk av `user.status !== "deleted"` FØR den kaller
+`performAccountDeletion()`, som selv heller ikke hadde noen egen sperre.
+To nesten samtidige `POST /admin/users/:id/delete`-kall for SAMME bruker
+(dobbeltklikk fra en moderator, eller en nettverksgjenforsøk) kunne derfor
+begge passere sjekken og begge kjøre HELE slettelogikken — duplikate
+"kontoen din er slettet"-e-poster, duplikate revisjonslogg-rader for én
+og samme irreversible handling (18.2), og i verste fall (avhengig av
+nøyaktig rekkefølge) et forsøk på å hashe en allerede anonymisert
+"e-post"-verdi, som ville korrumpert `email_hash`.
+
+**Fiks**: la den atomiske sperren inn i `performAccountDeletion()` selv
+(der begge kallerne møtes), som en enkelt `UPDATE users SET email =
+emailHash, ... WHERE id = userId AND status != 'deleted' RETURNING id` —
+flyttet FREMST i funksjonen, rett etter den innledende SELECT-en som
+henter den ekte e-postadressen. Får ikke UPDATE-en noen rad tilbake, har
+et annet, samtidig kall allerede "vunnet kappløpet" — funksjonen avbryter
+umiddelbart, uten duplikate e-poster, uten duplikate revisjonsrader.
+Måtte flytte selve anonymiseringsskrivingen (tidligere sist i funksjonen,
+med kommentaren "funksjonene over trenger fortsatt e-post/locale for
+varsler") fremover — verifiserte at dette er trygt: hverken
+`anonymizeRecipientContent()` eller `closeJournalistContentOnDeletion()`
+leser den SLETTEDE brukerens egen e-post/locale fra `users`-tabellen på
+nytt (de sender bare varsler til ANDRE parter — journalisten som eier en
+kontaktforespørsel, respondenter på en lukket forespørsel — slått opp via
+egne joins), og selve bekreftelses-e-posten til brukeren bruker den
+allerede JS-fangede `user.email`/`user.locale`-verdien fra den
+innledende SELECT-en, ikke et nytt oppslag.
+
+**Ny test, empirisk verifisert MED en deterministisk før/etter-kontrast**
+(til forskjell fra forrige økts soft_bounce-kappløp, som IKKE reproduserte
+pålitelig): la til "to SAMTIDIGE slettekall for SAMME bruker kjører den
+irreversible slettingen bare ÉN gang" i
+`moderation/users.integration.test.ts`, som fyrer to `adminDeleteUser()`-
+kall via `Promise.all` og forventer nøyaktig ÉN `account.delete`-
+revisjonsrad etterpå (testen aksepterer at rekkefølgen de to kallene
+FAKTISK fullfører i ikke er garantert lik array-rekkefølgen, og at det
+andre kallet enten no-oper stille eller avvises med
+`errors.not_found` — begge er trygge utfall). Kjørte deretter
+`git stash` på KUN `account-deletion.ts` og gjentok testen 3 ganger mot
+den gamle koden: feilet DETERMINISTISK alle 3 gangene (2 revisjonsrader,
+ikke 1) — en mye renere empirisk kontrast enn forrige økts kappløp, siden
+selve SELECT-lese-vinduet her (én enkelt innledende SELECT i
+`adminDeleteUser()`, IKKE inni selve `performAccountDeletion()`) er bredt
+nok til å pålitelig overlappe mellom to samtidige kall selv over en rask
+lokal unix-socket-forbindelse. `git stash pop` gjenopprettet fiksen,
+bekreftet grønn igjen.
+
+### Verifisert før commit (denne runden)
+
+- `npx tsc --noEmit`: OK, ingen feil.
+- `npx eslint .`: OK, ingen feil.
+- `npx vitest run` (full enhetstestpakke): 85 filer, 441 tester, alle
+  grønne.
+- `npx tsx src/i18n/check-keys.ts`: OK, 507 nøkler.
+- `npx next build`: OK, ingen feil.
+- `npx vitest run -c vitest.integration.config.ts` mot ekte lokal
+  Postgres: 32 filer, 311 tester (310 + 1 ny), alle grønne — kjørt TO
+  ganger for å bekrefte stabilitet.
+- Empirisk git-stash-verifisering: 3/3 deterministiske feil mot gammel
+  kode, grønn igjen mot fiksen (se over).
+
+### Neste økt
+
+Fortsatte den fornyede kritisk-lesing-runden fra tidlig-natt-moduler —
+`moderation/users.ts` er nå dekket. Gjenstår fortsatt (ikke påbegynt):
+`moderation/journalists.ts` (utover den allerede rettede TOCTOU i
+approveJournalist/rejectJournalist, task #48 — resten av filen er ikke
+eksplisitt re-lest), `moderation/responses.ts`, `admin/responses.ts`,
+`admin/legal-documents.ts`, `journalist-inbox/journalist-inbox.ts`,
+`email/digest.ts` (selve render-logikken, til forskjell fra
+`digests/digests.ts` og `jobs/tick.ts` som ble dekket i task #63).
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

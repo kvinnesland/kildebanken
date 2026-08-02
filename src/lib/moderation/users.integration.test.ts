@@ -536,4 +536,45 @@ describe("adminDeleteUser mot ekte Postgres (SPEC-V1.md 16.2, 18.2)", () => {
 
     expect(result).toEqual({ ok: false, error: "errors.not_found" });
   });
+
+  it("to SAMTIDIGE slettekall for SAMME bruker kjører den irreversible slettingen bare ÉN gang (TOCTOU)", async () => {
+    // adminDeleteUser() sin egen `status !== "deleted"`-sjekk er IKKE atomisk
+    // — begge samtidige kall kan i PRINSIPPET passere den. Den faktiske
+    // sperren ligger i performAccountDeletion() selv (`WHERE status !=
+    // 'deleted'` på selve anonymiseringsskrivingen, se account-deletion.ts).
+    // Uten DEN ville begge kallene sendt en "account_deletion_confirmed"-
+    // e-post OG logget hver sin `account.delete`-revisjonsrad for samme
+    // sletting. Hvilket av de to kallene som faktisk blir avvist, avhenger av
+    // nøyaktig timing (mot lokal Postgres kan adminDeleteUser() sin EGEN,
+    // ikke-atomiske SELECT-sjekk noen ganger selv rekke å se den andre
+    // skrivingen — se samme observasjon for soft_bounce-kappløpet i
+    // NATTLOGG.md, Økt 19) — testen godtar derfor begge utfall for kall nr.
+    // to, og verifiserer i stedet det som FAKTISK betyr noe: nøyaktig ÉN
+    // fullført sletting, uansett.
+    await ensureTestCountry();
+    const recipient = await createActiveRecipient();
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    await loginAs(moderator.id);
+
+    const results = await Promise.all([
+      adminDeleteUser(recipient.id),
+      adminDeleteUser(recipient.id),
+    ]);
+    // Rekkefølgen de to promisene faktisk fullfører i er ikke garantert lik
+    // array-rekkefølgen — påstå derfor ikke HVILKEN av de to som lykkes, bare
+    // at minst én gjør det, og at en eventuell avvisning er nøyaktig den
+    // forventede (idempotent "allerede slettet"), ikke en uventet feil.
+    expect(results.some((r) => r.ok)).toBe(true);
+    for (const r of results) {
+      if (!r.ok) expect(r).toEqual({ ok: false, error: "errors.not_found" });
+    }
+
+    const logs = await db.select().from(auditLogs).where(eq(auditLogs.entityId, recipient.id));
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.action).toBe("account.delete");
+
+    const [after] = await db.select().from(users).where(eq(users.id, recipient.id));
+    expect(after?.status).toBe("deleted");
+    expect(after?.emailHash).toBe(hashToken(recipient.email));
+  });
 });

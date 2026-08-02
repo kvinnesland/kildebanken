@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   auditLogs,
@@ -117,7 +117,33 @@ export async function performAccountDeletion(
     .limit(1);
   if (!user) return;
 
-  // Sendes FØR anonymisering, mens vi fortsatt har den ekte adressen.
+  // Atomisk "krav" på selve slettingen, FØR noe annet gjøres — 18.2, samme
+  // prinsipp som `confirmAccountDeletion()` sin engangsbruk-lukking over.
+  // `confirmAccountDeletion()` er selv trygg (tokenet kan bare brukes én
+  // gang), men `adminDeleteUser()` (src/lib/moderation/users.ts) har INGEN
+  // slik atomisk sperre — bare en tidligere, ikke-atomisk sjekk av
+  // `status !== "deleted"`. To nesten samtidige
+  // `POST /admin/users/:id/delete`-kall for SAMME bruker (dobbeltklikk, eller
+  // en nettverksgjenforsøk) kunne derfor begge passere den sjekken og begge
+  // kjøre HELE denne funksjonen — duplikate e-poster til brukeren selv, til
+  // journalister/respondenter, OG (hvis det andre kallets SELECT over skjedde
+  // ETTER det første kallets skriving her) et forsøk på å hashe en allerede
+  // hashet "e-post", som ville korrumpert `email_hash`. `WHERE status !=
+  // 'deleted'` gjør at bare ett av de to kallene faktisk fullfører — det
+  // andre får `affected.length === 0` og avbryter umiddelbart, uten
+  // bivirkninger. Beregner `emailHash` fra den FERSKE `user.email` lest over,
+  // ikke fra en potensielt allerede anonymisert verdi.
+  const emailHash = hashToken(user.email);
+  const claimed = await db
+    .update(users)
+    .set({ email: emailHash, emailHash, displayName: null, status: "deleted", deletedAt: new Date() })
+    .where(and(eq(users.id, userId), ne(users.status, "deleted")))
+    .returning({ id: users.id });
+  if (claimed.length === 0) return;
+
+  // Sendes FØR anonymisering — bruker den ekte adressen fanget i `user`
+  // over, ikke et nytt oppslag (users-raden er allerede anonymisert av
+  // skrivingen over).
   await sendTransactionalEmail({
     template: "account_deletion_confirmed",
     to: { email: user.email, locale: user.locale },
@@ -136,14 +162,6 @@ export async function performAccountDeletion(
   } else if (role === "journalist") {
     await closeJournalistContentOnDeletion(userId);
   }
-
-  // Anonymiser selve kontoen sist — funksjonene over trenger fortsatt
-  // e-post/locale for varsler.
-  const emailHash = hashToken(user.email);
-  await db
-    .update(users)
-    .set({ email: emailHash, emailHash, displayName: null, status: "deleted", deletedAt: new Date() })
-    .where(eq(users.id, userId));
 
   await db.insert(auditLogs).values({
     actorType: "user",
