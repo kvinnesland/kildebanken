@@ -25,7 +25,32 @@ export interface RenderedDigest {
 // domene ved deploy. Se .env.example. Eksportert (ikke bare brukt her) slik
 // at tick.ts kan bygge List-Unsubscribe-headeren (FR-038) fra samme
 // opprinnelse, uten å duplisere fallback-verdien to steder.
-export const SITE_ORIGIN = process.env.NEXT_PUBLIC_SITE_ORIGIN ?? "https://kildebanken.example";
+//
+// Plassholderdomenet under er BEVISST et ikke-oppløsbart eksempeldomene
+// (RFC 2606, samme konvensjon som testenes @example.invalid) for lokal
+// utvikling/tester uten `.env`-oppsett — MEN uten sperren under ville et
+// glemt `NEXT_PUBLIC_SITE_ORIGIN` i en EKTE driftsatt miljø stille bakt
+// dette plassholderdomenet inn i HVER lenke i HVER utsendte e-post
+// (innloggingslenke, e-postbekreftelse, kontosletting-bekreftelse,
+// kontaktforespørsel-godkjenning, digest-lenker — alle 15+ malene som
+// importerer `SITE_ORIGIN`), og gjort samtlige e-post-baserte handlinger
+// ubrukelige uten noen synlig feil noe sted (selve sendingen ville
+// lykkes, bare med en lenke som ikke fører noe sted). Samme bugklasse
+// som `BREVO_API_KEY`-sperren i `send.ts` (se NATTLOGG.md) — men
+// alvorligere, siden DENNE feilen aldri ville vist seg som en logget
+// feilmelding i det hele tatt.
+export function resolveSiteOrigin(): string {
+  const configured = process.env.NEXT_PUBLIC_SITE_ORIGIN;
+  if (configured) return configured;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "NEXT_PUBLIC_SITE_ORIGIN mangler i produksjon — nekter å falle tilbake til plassholderdomenet https://kildebanken.example, som ville gjort ALLE lenker i utsendte e-poster ubrukelige (se INFRASTRUCTURE.md 9 og NATTLOGG.md)."
+    );
+  }
+  return "https://kildebanken.example";
+}
+
+export const SITE_ORIGIN = resolveSiteOrigin();
 
 // To ULIKE plassholdere, ikke én — de to lenkene bærer to ulike tokens med
 // ulikt formål (SPEC-V1.md 6.2 vs. 10.3):

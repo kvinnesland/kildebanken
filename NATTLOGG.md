@@ -14198,3 +14198,122 @@ fortsatt bevisst latt åpne for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+---
+
+## Økt 47: fulgte opp forrige økts spor (a) — fant SAMME bugklasse i
+`digest.ts`, denne gangen alvorligere fordi den feiler HELT stille
+
+Forrige økt (46) foreslo eksplisitt å sjekke om det finnes en TILSVARENDE
+oppstartsvalidering som burde legges til for andre påkrevde
+hemmeligheter, utover selve `BREVO_API_KEY`-funnet. Gjorde samme brede
+sveip som Økt 46 innledningsvis (samme fire sjekkpunkter, alle fortsatt
+rene, ingen gjentagelse her), og gikk deretter videre til det foreslåtte
+sporet.
+
+**Reelt funn**: `src/lib/email/digest.ts` sin `SITE_ORIGIN`-konstant falt
+tilbake til plassholderdomenet `https://kildebanken.example` når
+`NEXT_PUBLIC_SITE_ORIGIN` mangler — akkurat samme mønster som
+`BREVO_API_KEY`, men **alvorligere**: `BREVO_API_KEY`-hullet logget i det
+minste noe (mottakerens e-post, feil i seg selv, men SYNLIG i loggene).
+Et glemt `NEXT_PUBLIC_SITE_ORIGIN` i produksjon ville derimot IKKE
+produsert noen feilmelding noe sted — selve e-postsendingen ville
+lykkes, bare med plassholderdomenet bakt inn i HVER lenke i HVER
+utsendte e-post (innloggingslenke, e-postbekreftelse,
+kontosletting-bekreftelse, kontaktforespørsel-godkjenning,
+digest-lenker og avmeldingslenke — alle 15+ malene som importerer
+`SITE_ORIGIN`), og gjort samtlige e-post-baserte handlinger ubrukelige
+uten et eneste synlig varsel.
+
+**Fiks**: samme mønster som Økt 46, tilpasset til at `SITE_ORIGIN` er en
+plain eksportert konstant referert direkte (via streng-interpolering) fra
+15+ malefiler — i stedet for å konvertere alle disse kallestedene til å
+kalle en funksjon, ble selve beregningen trukket ut i en liten, eksportert
+(for direkte testbarhet) funksjon `resolveSiteOrigin()`:
+
+```ts
+export function resolveSiteOrigin(): string {
+  const configured = process.env.NEXT_PUBLIC_SITE_ORIGIN;
+  if (configured) return configured;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "NEXT_PUBLIC_SITE_ORIGIN mangler i produksjon — nekter å falle tilbake til plassholderdomenet https://kildebanken.example, som ville gjort ALLE lenker i utsendte e-poster ubrukelige (se INFRASTRUCTURE.md 9 og NATTLOGG.md)."
+    );
+  }
+  return "https://kildebanken.example";
+}
+
+export const SITE_ORIGIN = resolveSiteOrigin();
+```
+
+`SITE_ORIGIN`-konstantens type og bruk er uendret, så ALLE 15+
+nedstrøms-malene (samt `tick.ts` og `digests.ts`) fortsetter å fungere
+uendret — kun beregningen av startverdien endret seg. Bekreftet `.env`
+og `.env.example` allerede har `NEXT_PUBLIC_SITE_ORIGIN` satt (til
+`http://localhost:3000`), slik at den nye produksjonssperren ikke
+forstyrrer `npx next build`-steget i verifiseringskjeden.
+
+**Empirisk bekreftet feilen var reell** (samme disiplin som resten av
+natten): la til tre nye tester i `digest.test.ts` — (1) faller fortsatt
+tilbake til plassholderdomenet i ikke-produksjon, (2) bruker den
+konfigurerte verdien uansett miljø, (3) kaster i produksjon i stedet for å
+falle tilbake. `git stash push -- src/lib/email/digest.ts` (beholdt bare
+testfilen) → alle tre nye tester FEILET som forventet mot den gamle
+koden (`TypeError: resolveSiteOrigin is not a function`, siden funksjonen
+rett og slett ikke eksisterte ennå) → `git stash pop` gjenopprettet
+fiksen → alle tester består igjen (13/13 i filen).
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, **458** tester
+  (455 + 3 nye), alle bestod.
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts` (full
+  integrasjonstestpakke mot ekte lokal Postgres — kjørt siden
+  `digest.ts` brukes av `tick.ts` og `digests.ts`, begge dekket av
+  integrasjonstester): full pakke (32 filer) feilet FØRST med én test i
+  `tick.integration.test.ts` (`runDigestTick` sin
+  "oppretter en digest og sender..."-test forventet `result.errors` tom,
+  men fikk et dusin "mangler påkrevde felt til tross for status
+  published"-feil for forespørsler med UUID-er som ikke fantes i noen
+  av testens egne fixtures). Undersøkt før antatt urelatert: kjørte
+  `tick.integration.test.ts` ALENE (25/25 bestod), sjekket databasen
+  direkte (`kildebanken_test` var TOM for både `countries` og
+  `requests` etter kjøringen), og kjørte HELE integrasjonspakken på nytt
+  (328/328 bestod, ingen gjentagelse). Konklusjon: en engangs
+  tvers-av-fil-race i vitest sin PARALLELLE fil-kjøring mot samme delte
+  Postgres-instans — `runDigestTick(db)` er produksjonskode og skanner
+  bevisst ALLE land som har en digest forfalt, ikke bare testens egen
+  isolerte `createIsolatedActiveCountry()`-rad, så en ANNEN testfils
+  midlertidige (siden ryddet opp i sin egen `finally`) publiserte
+  forespørsel i et annet land kan i prinsippet plukkes opp av denne
+  testens tikk hvis tidsvinduene overlapper. IKKE en regresjon fra denne
+  øktens `SITE_ORIGIN`-fiks (som ikke rører `tick.ts` sin
+  forretningslogikk i det hele tatt) — notert her som et nytt,
+  observert (men ikke reprodusert på kommando) tvers-av-fil-flake-mønster
+  for en fremtidig økt å vurdere, ikke noe å utsette denne fiksen for.
+- Empirisk `git stash`-kontrast (se over) beviser fiksen løser et reelt,
+  reproduserbart hull, ikke bare en teoretisk bekymring.
+
+### Neste økt
+
+Mulige spor, ingen hastende: (a) vurder om `tick.integration.test.ts` sin
+"oppretter en digest og sender..."-test bør skjerpes til å telle bare
+feil for SINE EGNE `requestIds` i stedet for å forvente `result.errors`
+helt tom — se flake-observasjonen over; usikkert om dette er verdt
+kompleksiteten for en test som bestod i BEGGE isolerte kjøringer og kun
+feilet én gang i en full parallell kjøring. (b) samme spørsmål som Økt 46
+avsluttet med: er det FLERE påkrevde miljøvariabler med samme
+stille-fallback-mønster? To funnet og rettet nå (`BREVO_API_KEY`,
+`NEXT_PUBLIC_SITE_ORIGIN`); et raskt `grep` etter `process.env.NEXT_PUBLIC`
+og `?? "` / `|| "`-mønstre andre steder i `src/` kan være verdt et blikk,
+men ingen konkrete kandidater er identifisert ennå. Ellers uendret: de to
+gjenværende GENUINE åpne spec-spørsmålene, fortsatt bevisst latt åpne for
+menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.

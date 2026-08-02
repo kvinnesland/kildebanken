@@ -1,5 +1,40 @@
-import { describe, expect, it } from "vitest";
-import { insertPerRecipientTokens, renderDigestContent, type DigestRequestItem } from "./digest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  insertPerRecipientTokens,
+  renderDigestContent,
+  resolveSiteOrigin,
+  type DigestRequestItem,
+} from "./digest";
+
+// INFRASTRUCTURE.md 9 / NATTLOGG.md: et glemt NEXT_PUBLIC_SITE_ORIGIN i
+// produksjon skal ALDRI stille falle tilbake til plassholderdomenet — se
+// samme sperre og begrunnelse som BREVO_API_KEY-sperren i send.test.ts.
+describe("resolveSiteOrigin", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("bruker plassholderdomenet i ikke-produksjon når miljøvariabelen mangler", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_ORIGIN", "");
+    vi.stubEnv("NODE_ENV", "test");
+
+    expect(resolveSiteOrigin()).toBe("https://kildebanken.example");
+  });
+
+  it("bruker den konfigurerte verdien når den er satt, uansett miljø", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_ORIGIN", "https://kildebanken.no");
+    vi.stubEnv("NODE_ENV", "production");
+
+    expect(resolveSiteOrigin()).toBe("https://kildebanken.no");
+  });
+
+  it("kaster i produksjon i stedet for å falle tilbake til plassholderdomenet", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_ORIGIN", "");
+    vi.stubEnv("NODE_ENV", "production");
+
+    expect(() => resolveSiteOrigin()).toThrow(/NEXT_PUBLIC_SITE_ORIGIN/);
+  });
+});
 
 const sampleRequest: DigestRequestItem = {
   id: "11111111-1111-1111-1111-111111111111",
