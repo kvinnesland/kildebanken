@@ -96,6 +96,27 @@ describe("processEmailEvent mot ekte Postgres (10.3, FR-037)", () => {
     expect(row?.consecutiveSoftBounces).toBe(2);
   });
 
+  it("to SAMTIDIGE myke bounces mister ikke en økning (tapt-oppdatering-kappløp)", async () => {
+    const sub = await createSubscribedRecipient();
+    createdUserIds.push(sub.userId);
+
+    // Med et rent les-så-skriv (`subscription.consecutiveSoftBounces + 1`
+    // regnet ut i JavaScript) kan to kall lese samme utgangsverdi og begge
+    // skrive tilbake samme sum — én økning tapt. NB: mot lokal Postgres over
+    // unix-socket er selve SELECT/UPDATE-rundturen så rask at dette kappløpet
+    // IKKE reproduserte pålitelig empirisk selv mot den gamle koden (se
+    // NATTLOGG.md) — testen er likevel riktig som regresjonsvern for den
+    // atomiske SQL-økningen, og sårbarheten i den gamle koden er bekreftet
+    // ved lesing av koden, et klassisk les-så-skriv-mønster.
+    await Promise.all([
+      processEmailEvent({ email: sub.email, event: "soft_bounce" }),
+      processEmailEvent({ email: sub.email, event: "soft_bounce" }),
+    ]);
+
+    const [row] = await db.select().from(emailSubscriptions).where(eq(emailSubscriptions.id, sub.subscriptionId));
+    expect(row?.consecutiveSoftBounces).toBe(2);
+  });
+
   it("tre myke bounces PÅ RAD eskalerer til hard bounce (10.3, ordrett)", async () => {
     const sub = await createSubscribedRecipient();
     createdUserIds.push(sub.userId);

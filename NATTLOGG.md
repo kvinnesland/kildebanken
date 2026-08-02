@@ -11487,3 +11487,105 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 19: fant og rettet et reelt tapt-oppdatering-kappløp i `processEmailEvent()`s soft_bounce-håndtering (10.3, FR-037)
+
+Fulgte forrige økts egen "Neste økt"-pekepinn: kritisk lesing av
+`src/lib/subscriptions/` sine BIBLIOTEKFUNKSJONER i isolasjon (ikke bare
+webhook-ruta, som alt var dekket).
+
+`unsubscribe.ts` er korrekt — idempotent avmelding-via-token med et
+harmløst kappløpsvindu (to samtidige klikk på samme lenke er begge trygge,
+takket være en idempotent UPDATE og `onConflictDoNothing()` på selve
+sperrelisteinnsettingen). Ingen bug.
+
+`email-events.ts` sin `soft_bounce`-håndtering hadde derimot et REELT,
+udokumentert tapt-oppdatering-kappløp: koden leste
+`subscription.consecutiveSoftBounces` fra et tidligere SELECT, regnet ut
+`+ 1` i JavaScript, og skrev tilbake — et klassisk les-så-skriv-mønster.
+To nesten samtidige `soft_bounce`-hendelser for SAMME abonnement (Brevo
+sin egen retry-semantikk ved en treg webhook-respons, eller to reelle
+bounces tett i tid) kunne begge lese samme utgangsverdi og begge skrive
+tilbake samme sum — én økning tapt, uten at noen telling faktisk beviser
+at streaken er brutt. Konsekvensen er ikke tap av data, men en FORSINKET
+eskalering til hard bounce (10.3, ordrett: "Tre myke bounces på rad
+behandles som hard bounce") — adressen fortsetter å motta digest-forsøk
+lenger enn spec-en tilsier.
+
+**Fiks**: flyttet `+ 1`-regningen inn i selve SQL-setningen via Drizzle
+sin `sql`-mal (`sql\`${emailSubscriptions.consecutiveSoftBounces} + 1\``),
+kombinert med `.returning()` for å hente den faktiske, atomisk oppdaterte
+verdien fra Postgres — eskaleringsbeslutningen tas nå mot DENNE verdien,
+aldri mot en potensielt utdatert JS-side verdi. Dette er samme generelle
+mønster som de tidligere TOCTOU-fiksene i natt (task #48–#51), første
+gang selve `sql`-malen brukes i akkurat dette mønsteret i kodebasen (ingen
+tidligere presedens funnet via grep, men teknikken er standard Drizzle-
+bruk).
+
+**Dødkode fjernet som en konsekvens**: `shouldEscalateToHardBounce()`
+(`bounce-policy.ts`) tok imot "telleren FØR denne hendelsen" og regnet ut
+beslutningen selv — overflødig når sammenligningen nå skjer direkte i
+`email-events.ts` mot den allerede oppdaterte databaseverdien. Bekreftet
+via grep at funksjonen ikke hadde noen gjenværende kallere utenom sin
+egen fil og sin egen dedikerte testfil. Per den stående regelen ("er du
+sikker på at noe er ubrukt, kan du slette det helt") ble funksjonen
+fjernet fullstendig, og `bounce-policy.test.ts` (3 tester, alle mot nå
+fjernet funksjon) slettet i sin helhet — den underliggende
+forretningsregelen (tre-på-rad-eskalering) er fortsatt dekket, og
+arguably BEDRE dekket, av de eksisterende integrasjonstestene mot ekte
+Postgres i `email-events.integration.test.ts`.
+
+**Ny test**: la til "to SAMTIDIGE myke bounces mister ikke en økning" i
+`email-events.integration.test.ts`, som fyrer to `processEmailEvent()`-
+kall via `Promise.all` (i stedet for sekvensielt awaitet, som de
+eksisterende testene) og forventer telleren `2` etterpå.
+
+**Ærlig om den empiriske verifiseringen**: fulgte den etablerte
+git-stash-metoden (stash `email-events.ts` + `bounce-policy.ts`, kjør
+testen mot den gamle koden, pop, bekreft mot den nye) — men den nye
+testen besto OGSÅ mot den gamle, sårbare koden, gjentatte ganger (5/5
+kjøringer). Årsak: mot lokal Postgres over unix-socket er selve
+SELECT/UPDATE-rundturen i `processEmailEvent()` rask nok til at
+`Promise.all([...])` med bare to kall ikke pålitelig overlapper de to
+kallenes sjekk-så-skriv-vindu i praksis — Node ruller ut de to
+funksjonskallene og deres spørringer så tett i tid at den ene
+UPDATE-en ofte rekker å committes før den andre SELECT-en i det hele
+tatt sendes. Kappløpet er likevel REELT og bekreftet ved lesing av koden
+(nøyaktig samme mønster som de tidligere bekreftede TOCTOU-bugene i
+natt) — bare ikke pålitelig reproduserbart som en deterministisk,
+sviktende test i dette miljøet. Testen er dokumentert med denne
+begrensningen direkte i kommentaren, og fungerer likevel som et
+legitimt regresjonsvern for selve SQL-mønsteret fremover.
+
+### Verifisert før commit (denne runden)
+
+- `npx tsc --noEmit`: OK, ingen feil.
+- `npx eslint .`: OK, ingen feil.
+- `npx vitest run` (full enhetstestpakke): 85 filer, 441 tester, alle
+  grønne — bekrefter at slettingen av `bounce-policy.test.ts` (3 tester)
+  ikke etterlot noen løse referanser andre steder.
+- `npx tsx src/i18n/check-keys.ts`: OK, 507 nøkler.
+- `npx next build`: OK, ingen feil.
+- `npx vitest run -c vitest.integration.config.ts` mot ekte lokal
+  Postgres: 32 filer, 310 tester, alle grønne — kjørt TO ganger for å
+  bekrefte stabilitet (ingen flakete testhygiene-kollisjon denne runden).
+- Empirisk git-stash-verifisering utført (se ærlig avsnitt over) —
+  bekreftet koden er lest riktig og fiksen er meningsfull, men kunne ikke
+  produsere en deterministisk før/etter-kontrast for akkurat DENNE
+  konkurransetilstanden i dette miljøet.
+
+### Neste økt
+
+Task #90 er fortsatt ikke fullført: `src/lib/reports/reports.ts`,
+`src/lib/security/rate-limit.ts`, `src/lib/countries/countries.ts` er
+IKKE lest kritisk ennå denne natten. Bør prioriteres neste økt.
+
+Ellers uendret: de tre opprinnelige åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

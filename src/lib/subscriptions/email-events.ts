@@ -1,8 +1,8 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { digestDeliveries, emailSubscriptions, suppressions, users } from "@/db/schema";
 import { hashToken } from "@/lib/auth/tokens";
-import { shouldEscalateToHardBounce } from "./bounce-policy";
+import { SOFT_BOUNCE_STREAK_TO_HARD_BOUNCE } from "./bounce-policy";
 
 export type EmailEventType = "delivered" | "soft_bounce" | "hard_bounce" | "complaint";
 
@@ -70,16 +70,26 @@ export async function processEmailEvent(
       }
       return { handled: true };
 
-    case "soft_bounce":
-      if (shouldEscalateToHardBounce(subscription.consecutiveSoftBounces)) {
+    case "soft_bounce": {
+      // Atomisk `+ 1` i selve SQL-en, IKKE les-så-skriv av den allerede
+      // hentede `subscription.consecutiveSoftBounces` — to nesten
+      // samtidige myke bounce-hendelser for SAMME abonnement (Brevo sin
+      // egen retry-semantikk ved en treg webhook-respons, eller to reelle
+      // bounces tett i tid) ville ellers begge lest samme utgangsverdi og
+      // tapt én økning ("lost update"), og dermed forsinket eskaleringen
+      // til hard bounce (10.3: "tre myke bounces PÅ RAD") uten at noen
+      // telling faktisk beviser at streaken er brutt.
+      const [updated] = await db
+        .update(emailSubscriptions)
+        .set({ consecutiveSoftBounces: sql`${emailSubscriptions.consecutiveSoftBounces} + 1` })
+        .where(eq(emailSubscriptions.id, subscription.id))
+        .returning({ consecutiveSoftBounces: emailSubscriptions.consecutiveSoftBounces });
+
+      if (updated && updated.consecutiveSoftBounces >= SOFT_BOUNCE_STREAK_TO_HARD_BOUNCE) {
         await applyHardBounce(subscription.id, input.email);
-      } else {
-        await db
-          .update(emailSubscriptions)
-          .set({ consecutiveSoftBounces: subscription.consecutiveSoftBounces + 1 })
-          .where(eq(emailSubscriptions.id, subscription.id));
       }
       return { handled: true };
+    }
 
     case "hard_bounce":
       await applyHardBounce(subscription.id, input.email);
