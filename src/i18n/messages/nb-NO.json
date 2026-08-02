@@ -397,7 +397,7 @@
 
   "email.request_rejected.subject": "Forespørselen din er avvist",
   "email.request_rejected.heading": "Forespørselen din er avvist",
-  "email.request_rejected.body": "Forespørselen din er dessverre ikke godkjent for publisering. Begrunnelse: {reason}",
+  "email.request_rejected.body": "Forespørselen «{title}» er dessverre ikke godkjent for publisering. Begrunnelse: {reason}",
 
   "email.deadline_approaching_24h.subject": "Forespørselen din utløper om 24 timer",
   "email.deadline_approaching_24h.heading": "Forespørselen din utløper om 24 timer",

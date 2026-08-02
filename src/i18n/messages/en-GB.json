@@ -397,7 +397,7 @@
 
   "email.request_rejected.subject": "Your request has been rejected",
   "email.request_rejected.heading": "Your request has been rejected",
-  "email.request_rejected.body": "Unfortunately, your request has not been approved for publication. Reason: {reason}",
+  "email.request_rejected.body": "Unfortunately, your request «{title}» has not been approved for publication. Reason: {reason}",
 
   "email.deadline_approaching_24h.subject": "Your request expires in 24 hours",
   "email.deadline_approaching_24h.heading": "Your request expires in 24 hours",

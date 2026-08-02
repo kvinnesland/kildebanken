@@ -13061,3 +13061,83 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+## Økt 35: fulgte opp forrige økts svakere kandidat (b) — `request_rejected`-
+e-posten manglet forespørselens tittel, den eneste identifikatoren en
+journalist med flere samtidig innsendte forespørsler ville hatt
+
+`rejectRequest()` (`src/lib/moderation/requests.ts`) henter alltid
+`request.title` via `findSubmitted()` (samme rad-oppslag som
+`publishRequest()` bruker, som ALLEREDE sender `title` videre til sin
+egen e-post), men `rejectRequest()`s eget `notifyJournalist()`-kall sendte
+kun `{ requestId, reason }` — tittelen ble aldri sendt med.
+
+Denne malen har (bevisst, 9.2: avvisning er endelig) INGEN CTA-lenke å
+disambiguere med, ulikt `changes_requested` (som har en direkte lenke til
+akkurat den redigerbare forespørselen — derfor uproblematisk uten tittel
+i selve teksten). Bekreftet at scenariet er reelt nåbart: det finnes
+ INGEN grense på antall samtidig `submitted` (kun ventende) forespørsler
+en journalist kan ha — FR-029s 5-grense gjelder utelukkende `published`.
+En journalist med to eller flere forespørsler til vurdering samtidig
+ville dermed fått en avvisnings-e-post som bare sa "Forespørselen din er
+dessverre ikke godkjent for publisering. Begrunnelse: ..." — ingen måte
+å se HVILKEN.
+
+**Fiks**: la til `title`-parameter på `renderRequestRejectedEmail()`,
+interpolert i teksten med samme «guillemets»-mønster som
+`request_approved_published` allerede bruker (`«{title}»`), i begge
+språk. `send.ts`s dispatch-case for `request_rejected` oppdatert til å
+kreve og videresende `title`. `rejectRequest()`s `notifyJournalist()`-kall
+utvidet med `title: request.title` — dataen var allerede i scope, ren
+videresending.
+
+**Empirisk bekreftet feilen var reell** (samme metode som Økt 34, siden
+signaturen endret seg — en ren stash-kontrast på selve malfunksjonen
+ville ikke vært meningsfull mot nye testkall med feil posisjonelle
+argumenter): to nye tester i `send.test.ts`, som kaller den STABILE,
+uendrede `sendTransactionalEmail()`-grensesnittfunksjonen. `git stash`
+på kildefilene (beholdt testfilene), begge nye tester feilet mot den
+gamle koden nøyaktig som forventet (tittelen manglet i den loggede
+teksten; den andre testen feilet fordi gammel kode aldri krevde `title`
+og derfor rendret vellykket i stedet for å falle tilbake). `git stash pop`
+gjenopprettet fiksen, begge bestod.
+
+### Verifisert før commit (denne runden)
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 451 tester, alle
+  bestod (opp fra 448 — tre nye tester i `send.test.ts` og
+  `request-rejected.test.ts`).
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 kall-steder funnet
+  (uendret — ingen ny nøkkel, kun endret tekst på en eksisterende).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts` (full
+  integrasjonstestpakke mot ekte lokal Postgres): 32 filer, 320 tester,
+  alle bestod — kjørt TO ganger for stabilitet, identisk resultat begge
+  ganger (`moderation/requests.integration.test.ts`s eksisterende
+  `rejectRequest()`-test, som kun sjekker at loggmeldingen inneholder
+  strengen "request_rejected", uendret upåvirket).
+- Empirisk git-stash-kontrast (se over): begge nye tester feilet mot
+  gammel kode, begge bestod med fiksen.
+
+### Neste økt
+
+Gjenstående kandidater, i prioritert rekkefølge: (a) den svakere
+`new-request-for-moderation.ts`-`requestId`-kandidaten fra Økt 34s
+sveip — modereringskøen lister allerede alle ventende forespørsler etter
+tittel, så dette er trolig lav prioritet, men ikke undersøkt i dybden
+ennå; (b) `countryCode`-visningshullet i admin/moderator-listene
+(digests, journalists, recipients), fortsatt bevisst utsatt til land
+nummer to faktisk legges til; (c) den avbrutte E2E-kjeden fra Økt 30
+(respondentens godkjenn/avslå-sti) er fortsatt utestet LEVENDE, men lav
+prioritet gitt grundig eksisterende testdekning. Ellers uendret: de tre
+opprinnelige åpne spec-spørsmålene, fortsatt bevisst latt åpne for
+menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) om FR-023s 403→404-presisjonsfiks bør utvides til
+`moderation/users.ts`, `moderation/journalists.ts`,
+`moderation/responses.ts`, `digests/digests.ts`.

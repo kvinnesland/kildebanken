@@ -154,7 +154,7 @@ export async function rejectRequest(requestId: string, reason: string): Promise<
     reason,
   });
 
-  await notifyJournalist(request.journalistId, "request_rejected", { requestId, reason });
+  await notifyJournalist(request.journalistId, "request_rejected", { requestId, title: request.title, reason });
 
   return { ok: true };
 }

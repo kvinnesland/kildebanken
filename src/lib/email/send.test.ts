@@ -154,6 +154,37 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
     expect(loggedMessage).toContain("Kunne ikke bekrefte tilknytning til oppgitt redaksjon.");
   });
 
+  it("logger den faktisk rendrede malen for request_rejected, med TITTELEN satt inn i teksten (ingen CTA-lenke til å disambiguere)", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sendTransactionalEmail({
+      template: "request_rejected",
+      to: { email: "journalist@example.com", locale: "nb-NO" },
+      data: { title: "Journalisters spørsmål til kommunen", reason: "Manglet legitimt journalistisk formål." },
+    });
+
+    const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
+    expect(loggedMessage).toContain("Journalisters spørsmål til kommunen");
+    expect(loggedMessage).toContain("Manglet legitimt journalistisk formål.");
+  });
+
+  it("faller tilbake til det generiske formatet når request_rejected mangler tittelen", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sendTransactionalEmail({
+      template: "request_rejected",
+      to: { email: "journalist@example.com", locale: "nb-NO" },
+      data: { reason: "Manglet legitimt journalistisk formål." },
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[email:stub] request_rejected → journalist@example.com (nb-NO)",
+      { reason: "Manglet legitimt journalistisk formål." }
+    );
+  });
+
   it("logger den faktisk rendrede malen for content_reported, med lenke til DET SPESIFIKKE svaret for entityType='response'", async () => {
     vi.stubEnv("BREVO_API_KEY", "");
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});

@@ -224,9 +224,9 @@ function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedE
       return renderChangesRequestedEmail(locale, requestId, comment);
     }
     case "request_rejected": {
-      const reason = input.data.reason;
-      if (typeof reason !== "string") return null;
-      return renderRequestRejectedEmail(locale, reason);
+      const { title, reason } = input.data;
+      if (typeof title !== "string" || typeof reason !== "string") return null;
+      return renderRequestRejectedEmail(locale, title, reason);
     }
     case "deadline_approaching_24h": {
       const { requestId, title } = input.data;
