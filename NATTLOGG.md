@@ -12396,3 +12396,16 @@ et svars innhold;
 (c) om FR-023s 403→404-presisjonsfiks bør utvides til
 `moderation/users.ts`, `moderation/journalists.ts`,
 `moderation/responses.ts`, `digests/digests.ts`.
+
+**Tillegg samme økt**: fullførte `count()`-sveipen fra egen "Neste
+økt"-liste over. Sjekket de fire gjenstående filene —
+`admin/dashboard.ts`, `moderation/journalists.ts`, `digests/digests.ts`,
+`journalist-inbox/journalist-inbox.ts` — linje for linje. ALLE er rene
+VISNINGSTELLINGER (dashboard-nøkkeltall, "tidligere forespørsler"-tallet
+i journalistlisten, leveransestatus-fordeling per digest,
+kontaktforespørsel-summen i svarinnboksen): ingen av dem etterfølges av
+en skriving som en (for lav) telling kunne latt gjennom. Dette lukker
+`count()`-sveipen helt — de to reelle funnene i natt (FR-029, Økt 27;
+innloggingslenkens hastighetsgrense, Økt 28) er nå bekreftet å være de
+ENESTE to stedene i kodebasen der en tellingsbasert grense faktisk
+håndheves uten en databasebegrensning bak seg. Ingen kodeendring.
