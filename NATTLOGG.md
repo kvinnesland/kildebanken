@@ -15517,3 +15517,86 @@ for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 63: fulgte opp Økt 62 sine to anbefalinger — INGEN nye hull
+funnet, INGEN kodeendring
+
+Gjorde begge tingene Økt 62 foreslo, i tillegg til én egen sjekk. Alle
+tre kom tilbake rene.
+
+**Grep etter TODO/FIXME/XXX/"reelt hull"/"ikke bygget"/"ikke
+implementert" på tvers av hele `src/`**: fant kun allerede kjente,
+allerede dokumenterte poster — ingen nye:
+- `retention.ts`s egen TODO (per-land-konfigurasjon av lagringstider,
+  bevisst utsatt til land nummer to faktisk trenger avvikende frister —
+  se Økt 62).
+- `foresporsler/[id]/[slug]/page.tsx`: OG-delingsbilde bevisst IKKE
+  bygget (ingen bilde-genereringsinfrastruktur finnes i prosjektet i
+  det hele tatt — å bygge dette ville vært et helt nytt
+  infrastruktur-spor, ikke en liten rettelse, og spec-en krever det ikke
+  eksplisitt for v1).
+- `email/colors.ts`: DESIGN.md 7 sin fulle byggetids-token-eksport
+  bevisst IKKE bygget, men med en dedikert test (`colors.test.ts`) som
+  fanger drift mot de faktiske primitivene — allerede den nærmeste
+  praktiske tilnærmingen uten hele pipelinen.
+- Resten av treffene var fortidsform ("reelt hull FRAM TIL NÅ, rettet
+  her") — dokumentasjon av allerede lukkede hull, ikke åpne.
+
+**Full kritisk lesing, topp til bunn, av `src/lib/digests/digests.ts`
+(262 linjer) og `src/lib/jobs/tick.ts` (624 linjer)**, samt
+`src/lib/email/digest.ts` (187 linjer, selve rendrings-/
+token-modulen begge de to andre kaller inn i) — undersøkte spesielt
+`retryFailedDigestDeliveries()` sin
+`recipientCount: digest.recipientCount + retriedCount`-linje som så
+mistenkelig ut ved første blikk (ser ut som dobbelttelling av mottakere
+som allerede var talt). Sporet opp `runDigestTick()`/
+`sendDigestToRecipients()` i `tick.ts` og bekreftet at `recipientCount`
+semantisk betyr "antall FAKTISK vellykket sendt" (`sentCount`), ikke
+"antall tiltenkte mottakere" — en etterfølgende vellykket gjensending av
+tidligere mislykkede leveranser skal derfor legge seg TIL det
+eksisterende tallet. Korrekt, ikke en bug. Ingen andre uregelmessigheter
+funnet i noen av de tre filene — alle TOCTOU-avveininger (f.eks.
+påminnelsesjobbenes select→send→merk-mønster i `runDeadlineReminders()`/
+`runStaleRequestReminders()`) er allerede eksplisitt dokumentert som
+bevisst aksepterte, ikke oversette.
+
+**Egen tilleggssjekk**: integrasjonstestene logger gjentatte ganger
+`[i18n] mangler nøkkel "email.sender_name.test" i kjeden [nb-NO]` —
+sjekket at dette er en BEVISST testfixture (`sender-identity.integration.test.ts`
+sin egen kommentar sier eksplisitt at strengen ikke er en ekte
+oversettelsesnøkkel), brukt konsekvent på tvers av 7 testfiler
+(`dashboard.integration.test.ts`, `countries.integration.test.ts`, m.fl.)
+— ikke en reell mangel i i18n-nøklene.
+
+**Fjerde sjekk, samme økt**: grep etter "netlify" på tvers av HELE
+`src/` (README.md 16.8/INFRASTRUCTURE.md 16.8s regel: ingen
+vertsspesifikk kode utenfor `netlify.toml`/`netlify/functions/`). Tre
+treff (`jobs/tick.ts`, `subscriptions/email-events.ts`,
+`i18n/get-messages.ts`) — alle tre er RENE prosakommentarer som nevner
+"netlify/functions/tick.ts" som EKSEMPEL på selve
+adapter-/kjerne-mønsteret (forklarer hvorfor filen er
+vert-uvitende), ikke faktiske importer. Et oppfølgende grep spesifikt
+etter `@netlify`-importer i kildekoden ga null treff. Ingen
+vertsspesifikk kode har sneket seg inn — regelen holder fortsatt.
+
+**Ingen kodeendring i det hele tatt denne økten** — kun denne
+NATTLOGG-oppføringen. Standard verifiseringskjede kjøres derfor ikke på
+nytt (ingenting i kildekoden er endret siden Økt 61s allerede grønne
+kjøring).
+
+### Neste økt
+
+Med Økt 62 sine to anbefalte spor OG en tredje egen sjekk (host-kode-
+lekkasje) nå alle fulgt opp uten funn, er det økonomisk å bruke en
+fremtidig økt på noe kvalitativt ANNET enn "les enda en fil kritisk" —
+det mønsteret gir stadig avtagende avkastning nå som prosjektet er så
+grundig gjennomgått (125+ fullførte oppgaver i tasklisten). Forslag til
+en fremtidig økt: en frisk gjennomgang av `DESIGN.md` sine gjenstående
+kriterier (flere er allerede verifisert manuelt i tidligere økter — se
+tasklisten — sjekk om noen fortsatt står uverifisert). Uendret: de to
+gjenværende GENUINE åpne spec-spørsmålene, fortsatt bevisst latt åpne
+for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
