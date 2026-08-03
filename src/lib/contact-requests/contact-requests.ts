@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { auditLogs, contactRequests, journalistProfiles, requests, responses, users } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
+import { resolveSenderIdentity } from "@/lib/email/sender-identity";
 import { isUniqueViolation } from "@/db/errors";
 
 const EXPIRES_AFTER_MS = 14 * 24 * 60 * 60 * 1000; // 14 dager, SPEC-V1.md 14.2
@@ -73,13 +74,15 @@ export async function createContactRequest(
     if (!created) return { ok: false, error: "errors.generic" };
 
     const [respondent] = await db
-      .select({ email: users.email, locale: users.locale })
+      .select({ email: users.email, locale: users.locale, countryCode: users.countryCode })
       .from(users)
       .innerJoin(responses, eq(responses.respondentId, users.id))
       .where(eq(responses.id, responseId))
       .limit(1);
 
     if (respondent) {
+      // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar.
+      const identity = await resolveSenderIdentity(respondent.countryCode, respondent.locale);
       await sendTransactionalEmail({
         template: "contact_request_received",
         to: { email: respondent.email, locale: respondent.locale },
@@ -89,6 +92,8 @@ export async function createContactRequest(
           journalistName: response.journalistName,
           organizationName: response.organizationName,
         },
+        senderName: identity?.senderName,
+        replyTo: identity?.replyTo,
       });
     }
 
@@ -178,15 +183,19 @@ export async function respondToContactRequest(
     });
 
     const [journalist] = await db
-      .select({ email: users.email, locale: users.locale })
+      .select({ email: users.email, locale: users.locale, countryCode: users.countryCode })
       .from(users)
       .where(eq(users.id, contactRequest.journalistId))
       .limit(1);
     if (journalist) {
+      // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar.
+      const identity = await resolveSenderIdentity(journalist.countryCode, journalist.locale);
       await sendTransactionalEmail({
         template: "contact_approved",
         to: { email: journalist.email, locale: journalist.locale },
         data: { contactRequestId },
+        senderName: identity?.senderName,
+        replyTo: identity?.replyTo,
       });
     }
   } else {
@@ -199,17 +208,21 @@ export async function respondToContactRequest(
     if (!updated) return { ok: false, error: "errors.contact_request_not_pending" };
 
     const [journalist] = await db
-      .select({ email: users.email, locale: users.locale })
+      .select({ email: users.email, locale: users.locale, countryCode: users.countryCode })
       .from(users)
       .where(eq(users.id, contactRequest.journalistId))
       .limit(1);
     if (journalist) {
       // "Ved avslag varsles journalisten uten begrunnelse" (14.2) — ingen
-      // `reason`-data sendes med.
+      // `reason`-data sendes med. SPEC-V1.md 10.4 — se
+      // resolveSenderIdentity() sin egen kommentar.
+      const identity = await resolveSenderIdentity(journalist.countryCode, journalist.locale);
       await sendTransactionalEmail({
         template: "contact_declined",
         to: { email: journalist.email, locale: journalist.locale },
         data: { contactRequestId },
+        senderName: identity?.senderName,
+        replyTo: identity?.replyTo,
       });
     }
   }
