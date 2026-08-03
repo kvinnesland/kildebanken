@@ -14668,3 +14668,79 @@ for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+---
+
+## Økt 52: fulgte opp forrige økts spor (kritisk lesing av
+`safe-redirect.ts`/`timezone.ts`) — fant og rettet et manglende
+valideringshull i `createCountry`/`updateCountry`
+
+`src/lib/http/safe-redirect.ts` og `src/lib/datetime/timezone.ts` selv
+er begge rene og allerede grundig testet (ingen endring). Men lesingen
+av `timezone.ts` reiste et NABOSPØRSMÅL: hvor kommer `timeZone`-
+argumentet til `zonedWallTimeToUtc()`/`utcToZonedWallTime()` egentlig
+fra, og er DET validert?
+
+**Reelt funn**: `countries.timezone` — satt av administrator via
+`createCountry()`/`updateCountry()` (src/lib/admin/countries.ts) — ble
+ALDRI validert som en faktisk gyldig IANA-tidssone, i motsetning til
+`availableLocales` (validert siden oppgave #94, SAMME natt). En
+skrivefeil (f.eks. "Europe/Osloo") ville ikke feilet ved selve
+landoppsettet — den ville først krasjet, uhåndtert, som en
+`RangeError` fra `Intl.DateTimeFormat` inne i
+`zonedWallTimeToUtc()`/`utcToZonedWallTime()`, første gang en
+journalist i DET landet prøvde å sette eller vise en svarfrist. Samme
+"aksepteres nå, krasjer langt unna og mye senere"-mønster som flere
+andre valideringshull rettet tidligere i natt.
+
+Ekstra pussig detalj: nøkkelen `errors.invalid_timezone` fantes
+ALLEREDE i begge locale-filene (`en-GB.json`/`nb-NO.json`) — brukt av
+`PATCH /me` sin egen tidssone-validering (`me/profile.ts` via
+`isValidTimezone()`, `me/validate.ts`) — men aldri koblet til
+`admin/countries.ts`. En halvferdig kobling, ikke et helt ukjent hull.
+
+**Fiks**: importerte og gjenbrukte den EKSISTERENDE `isValidTimezone()`
+(bruker `Intl`s egen aksept/avvisning, ikke en hardkodet liste — samme
+begrunnelse som selve funksjonens kommentar) i begge funksjonene, rett
+ved siden av den eksisterende locale-sjekken, med samme
+`errors.invalid_timezone`-nøkkel `me/profile.ts` allerede bruker.
+`updateCountry()` validerer kun når `timezone` faktisk er del av DENNE
+PATCH-en (samme mønster som dens egen locale-sjekk).
+
+**Empirisk bekreftet feilen var reell**: la til to nye tester i
+`countries.integration.test.ts` (én for `createCountry`, én for
+`updateCountry`, begge med `timezone: "Europe/Osloo"`). `git stash push`
+på `countries.ts` alene (beholdt testene) → BEGGE nye tester FEILET som
+forventet mot den gamle koden (`{ok: true}` i stedet for det forventede
+`{ok: false, error: "errors.invalid_timezone"}` — landet/oppdateringen
+ble stille godtatt) → `git stash pop` gjenopprettet fiksen → alle 21
+tester i filen består (19 eksisterende + 2 nye).
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 458 tester,
+  uendret.
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret (nøkkelen
+  fantes allerede, se over).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 32 filer, **331**
+  tester (329 + 2 nye), alle bestod. Global-opprydningen fjernet 230
+  testbrukere, uendret oppførsel.
+- Empirisk `git stash`-kontrast (se over) beviser fiksen løser et reelt,
+  reproduserbart hull, ikke bare en teoretisk bekymring.
+
+### Neste økt
+
+Ingen kjent gjenstående handling. Mulig neste spor, ingen hastende:
+`createCountry`/`updateCountry` sine ANDRE ustrukturerte strengfelt
+(`digestSendTime` — format `HH:mm`? `senderNameKey`/`nameKey` — gyldige
+i18n-nøkler?) er ikke sjekket for et LIGNENDE "aksepteres stille,
+krasjer langt unna senere"-mønster ennå — ikke undersøkt denne runden.
+Ellers uendret: de to gjenværende GENUINE åpne spec-spørsmålene,
+fortsatt bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.

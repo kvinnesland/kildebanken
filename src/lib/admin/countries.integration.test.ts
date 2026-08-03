@@ -173,6 +173,19 @@ describe("admin/countries.ts mot ekte Postgres", () => {
     expect(notCreated).toBeUndefined();
   });
 
+  it("createCountry(): avviser en ugyldig tidssone (skrivefeil ville ellers krasjet FØRST ved en journalists svarfrist-innsending)", async () => {
+    await ensureTestCountry();
+    const admin = await createAdmin(TEST_COUNTRY_CODE);
+    await loginAs(admin.id);
+    const input = testCountryInput({ timezone: "Europe/Osloo" });
+
+    const result = await createCountry(input);
+
+    expect(result).toEqual({ ok: false, error: "errors.invalid_timezone" });
+    const [notCreated] = await db.select().from(countries).where(eq(countries.code, input.code));
+    expect(notCreated).toBeUndefined();
+  });
+
   it("createCountry(): avviser en kode som allerede finnes", async () => {
     await ensureTestCountry();
     const admin = await createAdmin(TEST_COUNTRY_CODE);
@@ -258,6 +271,22 @@ describe("admin/countries.ts mot ekte Postgres", () => {
     expect(result).toEqual({ ok: false, error: "errors.unsupported_locale" });
     const [after] = await db.select().from(countries).where(eq(countries.code, input.code));
     expect(after?.availableLocales).toEqual(["nb-NO"]);
+
+    await deleteTestCountry(input.code);
+  });
+
+  it("updateCountry(): avviser en ugyldig tidssone", async () => {
+    await ensureTestCountry();
+    const admin = await createAdmin(TEST_COUNTRY_CODE);
+    await loginAs(admin.id);
+    const input = testCountryInput();
+    await createCountry(input);
+
+    const result = await updateCountry(input.code, { timezone: "Europe/Osloo" });
+
+    expect(result).toEqual({ ok: false, error: "errors.invalid_timezone" });
+    const [after] = await db.select().from(countries).where(eq(countries.code, input.code));
+    expect(after?.timezone).toBe("Europe/Oslo");
 
     await deleteTestCountry(input.code);
   });

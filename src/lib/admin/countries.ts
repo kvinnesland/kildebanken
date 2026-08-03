@@ -4,6 +4,7 @@ import { auditLogs, countries, legalDocuments, moderatorCountries, users } from 
 import { isUniqueViolation } from "@/db/errors";
 import { requireAdmin } from "@/lib/auth/authorize";
 import { isSupportedLocale } from "@/i18n/config";
+import { isValidTimezone } from "@/lib/me/validate";
 
 export type CountryActionResult = { ok: true } | { ok: false; error: string };
 
@@ -49,6 +50,20 @@ export async function createCountry(input: CreateCountryInput): Promise<CountryA
   // "velge" et språk som stille aldri faktisk ble brukt noe sted.
   if (!input.availableLocales.every(isSupportedLocale)) {
     return { ok: false, error: "errors.unsupported_locale" };
+  }
+  // Reelt hull frem til nå: `timezone` ble aldri validert som en faktisk
+  // IANA-sone verken her eller i updateCountry() under — en admin-skrivefeil
+  // (f.eks. "Europe/Osloo") ville ikke feilet HER, men først langt senere,
+  // som en uhåndtert `RangeError` fra `Intl.DateTimeFormat` inne i
+  // `zonedWallTimeToUtc()`/`utcToZonedWallTime()` (datetime/timezone.ts) —
+  // altså først når en journalist i DETTE landet faktisk prøver å sette
+  // eller vise en svarfrist. Samme mønster og begrunnelse som
+  // `errors.unsupported_locale`-sjekken over. `isValidTimezone()`
+  // (me/validate.ts) er allerede den etablerte valideringsfunksjonen —
+  // brukt for brukerens EGEN tidssone-preferanse i PATCH /me — gjenbrukt
+  // her i stedet for å skrive en ny variant.
+  if (!isValidTimezone(input.timezone)) {
+    return { ok: false, error: "errors.invalid_timezone" };
   }
 
   const [existing] = await db
@@ -122,6 +137,12 @@ export async function updateCountry(
   // Samme begrunnelse som createCountry() (se der).
   if (!nextAvailableLocales.every(isSupportedLocale)) {
     return { ok: false, error: "errors.unsupported_locale" };
+  }
+  // Samme begrunnelse som createCountry() (se der) — kun valider hvis
+  // `timezone` faktisk er del av DENNE PATCH-en, ikke det eksisterende,
+  // allerede lagrede feltet.
+  if (input.timezone !== undefined && !isValidTimezone(input.timezone)) {
+    return { ok: false, error: "errors.invalid_timezone" };
   }
 
   await db
