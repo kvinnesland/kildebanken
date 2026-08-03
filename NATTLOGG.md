@@ -16509,3 +16509,88 @@ gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 75: fulgte opp Økt 74 sin anbefaling (seksjon 16) — fant og
+rettet ETT hull i modereringskøen, PLUSS en reell, reproduserbar flaky
+integrasjonstest oppdaget underveis
+
+Leste seksjon 16 (Administrasjonsgrensesnitt) linje for linje mot
+`admin/dashboard.ts`, `moderation/requests.ts`, `moderation/users.ts`
+og de tilhørende admin-sidene. 16.1 (de sju dashbord-tallene, landvelger
+for administrator kontra automatisk visning for moderator) stemte
+allerede eksakt. 16.2 sin funksjonsliste stemte for det meste: søk,
+søknadsgrunnlag, godkjenn/avvis/suspender/opphev, tidligere forespørsler
+(Journalister); modereringskø, godkjenn/avvis/returner/lukk
+(Forespørsler); søk, kontostatus, SAMTYKKEHISTORIKK (bekreftet — allerede
+bygget, task #75), sletting, suspensjon (Mottakere); siste digester,
+antall sendt/bounces/klager, kjør på nytt (Utsendelser); opprette/
+redigere/status/moderatorer/juridiske dokumenter (Land). Den lukkede
+begrunnelseslisten for `GET /admin/responses/:id` var også allerede
+korrekt implementert (`ADMIN_RESPONSE_ACCESS_REASONS`, obligatorisk,
+logget).
+
+**Hullet**: 16.2 sier "Forespørsler: modereringskø, **forhåndsvisning**,
+godkjenn, avvis, returner med kommentar, lukk", og 9.3 sin
+moderasjonssjekkliste krever eksplisitt "at oppgitt innholdsspråk
+stemmer med teksten." `listModerationQueue()` (moderation/requests.ts)
+hentet ALDRI `contentLanguage` i det hele tatt, og `RequestQueueItem.tsx`
+viste følgelig aldri hvilket språk journalisten faktisk hadde oppgitt —
+en moderator kunne se selve teksten (allerede vist inline i køen, som
+dekker "forhåndsvisning"), men hadde ingen måte å vite HVILKET språk som
+var erklært for den, og kunne dermed ikke faktisk utføre akkurat den ene
+sjekklistesjekken.
+
+**Retting**: la til `contentLanguage: requests.contentLanguage` i
+`listModerationQueue()` sitt SELECT. Ny prop `contentLanguageLabel`
+(oversatt via samme `locale.name.*`-nøkler som resten av kodebasen
+allerede bruker, f.eks. i `SubscribeForm.tsx`) vist som en egen linje i
+`RequestQueueItem.tsx`, pluss `lang`-attributt på selve tittel-/
+oppsummerings-/beskrivelse-/målgruppe-tekstene (samme etablerte mønster
+som task #34, forespørselssiden og digest-e-posten).
+
+**Den flaky integrasjonstesten** (oppdaget ved en tilfeldig rødt resultat
+i full-pakke-kjøringen, IKKE forårsaket av denne øktens kodeendring —
+bekreftet ved at testen består i isolasjon): "returnerer null for siste
+utsendelse når ingen digest er kjørt for landet ennå"
+(`admin/dashboard.integration.test.ts`) brukte den DELTE, persistente
+`TEST_COUNTRY_CODE_2`-fixturen, og feilet sporadisk fordi
+`digests.integration.test.ts` (som kjører parallelt, samme etablerte
+vitest-konvensjon) også setter inn digest-rader for NØYAKTIG samme
+landkode — testen kunne fange en slik rad i det korte vinduet mellom
+den andre testens insert og dens egen opprydding. Søstertesten RETT
+UNDER hadde allerede en dokumentert, korrekt fiks for nøyaktig denne
+klassen problem (et eget, isolert testland med tilfeldig kode) — denne
+ene testen manglet bare den samme fiksen. Rettet ved å gi den samme
+isolasjonen (bekreftet med tre gjentatte kjøringer av begge filene
+sammen, alle grønne). `ensureSecondTestCountry`-importen ble fjernet
+som følge (ubrukt etter fiksen).
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil (bekreftet ubrukt import fjernet riktig).
+- `npx vitest run` (full enhetstestpakke): 86 filer, 468 tester
+  (467 + 1 ny, for innholdsspråk-visningen).
+- `npx tsx src/i18n/check-keys.ts`: OK — 533 nøkler (opp fra 532 — den
+  nye `content_language_label`-nøkkelen).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 342
+  tester — først ETT rødt resultat (den kjente flaky-testen, se over),
+  deretter tre påfølgende grønne kjøringer av de to berørte filene
+  sammen, OG én til grønn kjøring av HELE pakken etter fiksen.
+
+### Neste økt
+
+Seksjon 16 er nå ferdig gjennomgått. Dekket totalt: 2-16. Gjenstår av
+hovedseksjonene for denne linje-for-linje-metoden: 1 (Formål,
+sannsynligvis rent beskrivende), 17-20 (Personvern/Sikkerhet/
+Datamodell/API — hver har egne, tidligere dedikerte revisjonsøkter, men
+ikke denne spesifikke linje-for-linje-mot-kode-metoden). Foreslått
+neste: seksjon 17 (Personvern), siden den har direkte konsekvenser for
+ekte persondata og derfor høyest verdi å dobbeltsjekke grundig. Uendret:
+de to gjenværende GENUINE åpne spec-spørsmålene, fortsatt bevisst latt
+åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.

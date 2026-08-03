@@ -16,6 +16,8 @@ interface RequestQueueItemData {
   targetPersonDescription: string;
   byLabel: string;
   deadlineLabel: string;
+  contentLanguage: string;
+  contentLanguageLabel: string;
 }
 
 type Mode = "view" | "rejecting" | "requesting_changes" | "busy" | "published" | "rejected" | "changes_requested";
@@ -98,12 +100,26 @@ export function RequestQueueItem({
   return (
     <li className={styles.item}>
       <div className={styles.main}>
-        <span className={styles.title}>{request.title}</span>
+        <span className={styles.title} lang={request.contentLanguage}>
+          {request.title}
+        </span>
         <span className={styles.meta}>{request.byLabel}</span>
         {request.deadlineLabel ? <span className={styles.meta}>{request.deadlineLabel}</span> : null}
-        <p className={styles.summary}>{request.summary}</p>
-        <p className={styles.description}>{request.description}</p>
-        <p className={styles.meta}>{request.targetPersonDescription}</p>
+        {/* SPEC-V1.md 9.3: moderator skal kontrollere "at oppgitt
+            innholdsspråk stemmer med teksten" — krever at det oppgitte
+            språket faktisk vises, ikke bare håndheves via lang-attributtet
+            (som en skjermleser bruker, men en moderator som LESER siden
+            ikke kan se). Reelt hull frem til nå, se NATTLOGG.md. */}
+        <span className={styles.meta}>{request.contentLanguageLabel}</span>
+        <p className={styles.summary} lang={request.contentLanguage}>
+          {request.summary}
+        </p>
+        <p className={styles.description} lang={request.contentLanguage}>
+          {request.description}
+        </p>
+        <p className={styles.meta} lang={request.contentLanguage}>
+          {request.targetPersonDescription}
+        </p>
       </div>
 
       {errorKey ? <p className={styles.formError}>{t(errorKey)}</p> : null}

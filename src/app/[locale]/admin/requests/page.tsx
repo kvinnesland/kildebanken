@@ -85,6 +85,10 @@ export default async function AdminRequestsPage({
                         deadline: dateFormatter.format(request.responseDeadline),
                       })
                     : "",
+                  contentLanguage: request.contentLanguage,
+                  contentLanguageLabel: t("admin.requests.content_language_label", {
+                    language: t(`locale.name.${request.contentLanguage}`),
+                  }),
                 }}
               />
             );

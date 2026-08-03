@@ -12,6 +12,8 @@ const request = {
   targetPersonDescription: "En beskrivelse av personen",
   byLabel: "Kari Nordmann, Avisa",
   deadlineLabel: "Svarfrist: 1. august 2026",
+  contentLanguage: "nb-NO",
+  contentLanguageLabel: "Oppgitt innholdsspråk: Norsk bokmål",
 };
 
 vi.mock("next/navigation", () => ({
@@ -73,6 +75,11 @@ describe("RequestQueueItem", () => {
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
     expect(await screen.findByText("Denne forespørselen kan ikke redigeres nå.")).toBeInTheDocument();
+  });
+
+  it("SPEC-V1.md 9.3: viser oppgitt innholdsspråk, slik at moderator kan sjekke det mot teksten", () => {
+    render(<RequestQueueItem locale="nb-NO" request={request} />);
+    expect(screen.getByText("Oppgitt innholdsspråk: Norsk bokmål")).toBeInTheDocument();
   });
 
   it("publiserer og viser en bekreftelse ved suksess", async () => {

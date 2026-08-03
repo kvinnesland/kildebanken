@@ -242,6 +242,12 @@ export async function listModerationQueue(session: CurrentSession) {
       description: requests.description,
       targetPersonDescription: requests.targetPersonDescription,
       countryCode: requests.countryCode,
+      // SPEC-V1.md 9.3 sin sjekkliste krever eksplisitt "at oppgitt
+      // innholdsspråk stemmer med teksten" — moderator kan ikke kontrollere
+      // det uten å se HVILKET språk som faktisk ble oppgitt. Reelt hull
+      // frem til nå: feltet ble aldri hentet her i det hele tatt, se
+      // NATTLOGG.md.
+      contentLanguage: requests.contentLanguage,
       responseDeadline: requests.responseDeadline,
       createdAt: requests.createdAt,
       journalistFullName: journalistProfiles.fullName,

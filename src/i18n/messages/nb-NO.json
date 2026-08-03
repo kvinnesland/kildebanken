@@ -138,6 +138,7 @@
   "admin.requests.empty_description": "Nye innsendte forespørsler vises her når en journalist sender dem til vurdering.",
   "admin.requests.by_label": "{journalistName}, {organizationName}",
   "admin.requests.deadline_label": "Svarfrist: {deadline}",
+  "admin.requests.content_language_label": "Oppgitt innholdsspråk: {language}",
   "admin.requests.publish": "Godkjenn og publiser",
   "admin.requests.reject": "Avvis",
   "admin.requests.request_changes": "Be om endringer",

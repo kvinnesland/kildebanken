@@ -138,6 +138,7 @@
   "admin.requests.empty_description": "New submitted requests appear here when a journalist sends them for review.",
   "admin.requests.by_label": "{journalistName}, {organizationName}",
   "admin.requests.deadline_label": "Response deadline: {deadline}",
+  "admin.requests.content_language_label": "Declared content language: {language}",
   "admin.requests.publish": "Approve and publish",
   "admin.requests.reject": "Reject",
   "admin.requests.request_changes": "Request changes",

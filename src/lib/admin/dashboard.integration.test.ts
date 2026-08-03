@@ -14,7 +14,6 @@ import {
 } from "@/db/schema";
 import {
   createActiveJournalist,
-  ensureSecondTestCountry,
   ensureTestCountry,
   TEST_COUNTRY_CODE,
   TEST_COUNTRY_CODE_2,
@@ -281,9 +280,36 @@ describe("getDashboardStatsForCountry mot ekte Postgres (SPEC-V1.md 16.1)", () =
   });
 
   it("returnerer null for siste utsendelse når ingen digest er kjørt for landet ennå", async () => {
-    await ensureSecondTestCountry();
-    const stats = await getDashboardStatsForCountry(TEST_COUNTRY_CODE_2);
-    expect(stats.lastDigest).toBeNull();
+    // Eget, ISOLERT testland i stedet for TEST_COUNTRY_CODE_2 — samme
+    // begrunnelse som "returnerer siste utsendelse..." rett under: en delt
+    // landkode gjør denne testen avhengig av at INGEN annen parallell fil
+    // (digests.integration.test.ts setter faktisk inn digest-rader for
+    // NØYAKTIG TEST_COUNTRY_CODE_2) har en rad synlig akkurat idet
+    // getDashboardStatsForCountry() kalles her — bekreftet reelt, ikke
+    // teoretisk: denne testen feilet sporadisk med en digest-rad fra den
+    // andre filen fanget midt i dens egen insert-så-slett-vindu (se
+    // NATTLOGG.md). Et land bare denne testen vet om gjør den fullstendig
+    // immun, som søstertesten allerede var.
+    const countryCode = `Z${randomUUID().slice(0, 6).toUpperCase()}`;
+    await db.insert(countries).values({
+      code: countryCode,
+      nameKey: "country.test.name",
+      defaultLocale: "nb-NO",
+      availableLocales: ["nb-NO"],
+      timezone: "Europe/Oslo",
+      minimumAge: 18,
+      digestSendTime: "07:00",
+      senderNameKey: "email.sender_name.test",
+      supportEmail: "test@example.invalid",
+      status: "active",
+    });
+
+    try {
+      const stats = await getDashboardStatsForCountry(countryCode);
+      expect(stats.lastDigest).toBeNull();
+    } finally {
+      await db.delete(countries).where(eq(countries.code, countryCode));
+    }
   });
 
   it("returnerer siste utsendelse med antall feilede leveranser", async () => {
