@@ -363,6 +363,30 @@ describe("sendTransactionalEmail (ekte Brevo-kall, mocket fetch)", () => {
     expect(body.textContent).toContain("abc123");
   });
 
+  it("SPEC-V1.md 10.4: legger på lokalisert From-navn og Reply-To når kalleren oppgir dem (valgfritt under migrering, se sender-identity.ts)", async () => {
+    vi.stubEnv("BREVO_API_KEY", "test-key-123");
+    vi.stubEnv("BREVO_SENDER_TRANSACTIONAL", "varsler@tjenesten.no");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      text: () => Promise.resolve(""),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendTransactionalEmail({
+      template: "magic_link",
+      to: { email: "test@example.com", locale: "nb-NO" },
+      data: { token: "abc123" },
+      senderName: "Kildebanken Norge",
+      replyTo: "support@example.invalid",
+    });
+
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(options.body as string);
+    expect(body.sender).toEqual({ email: "varsler@tjenesten.no", name: "Kildebanken Norge" });
+    expect(body.replyTo).toEqual({ email: "support@example.invalid" });
+  });
+
   it("kaster når Brevo svarer med en feilstatus", async () => {
     vi.stubEnv("BREVO_API_KEY", "test-key-123");
     vi.stubEnv("BREVO_SENDER_TRANSACTIONAL", "varsler@tjenesten.no");

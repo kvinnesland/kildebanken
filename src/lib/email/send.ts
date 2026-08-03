@@ -127,6 +127,18 @@ export interface SendTransactionalEmailInput {
   template: TransactionalTemplate;
   to: { email: string; locale: string };
   data: Record<string, unknown>;
+  // SPEC-V1.md 10.4 — se `resolveSenderIdentity()` (./sender-identity.ts).
+  // VALGFRIE, i motsetning til `SendBulkEmailInput` sine tilsvarende
+  // OBLIGATORISKE felt — bevisst en MIDLERTIDIG overgangstilstand under
+  // migrering av denne funksjonens mange kallesteder (ni filer, se
+  // NATTLOGG.md Økt 54/55). Utelates de, er oppførselen UENDRET fra før
+  // migreringen begynte (ingen `name` på avsender, ingen Reply-To) — IKKE
+  // en regresjon for et kallested som ennå ikke er migrert. Planen er å
+  // gjøre dem obligatoriske (samme mønster som `listUnsubscribeUrl`/
+  // `senderName`/`replyTo` i `SendBulkEmailInput`) den dagen ALLE
+  // kallesteder er migrert.
+  senderName?: string;
+  replyTo?: string;
 }
 
 /**
@@ -328,11 +340,12 @@ export async function sendTransactionalEmail(
   // digest-utsendelser har DigestDelivery) — meldings-IDen fra Brevo har
   // derfor ingen sted å lagres her, og forkastes med hensikt.
   await sendViaBrevo(apiKey, {
-    sender: { email: senderEmail },
+    sender: { email: senderEmail, name: input.senderName },
     to: [{ email: input.to.email }],
     subject: rendered.subject,
     htmlContent: rendered.html,
     textContent: rendered.text,
+    ...(input.replyTo ? { replyTo: { email: input.replyTo } } : {}),
   });
 }
 

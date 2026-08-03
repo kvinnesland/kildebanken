@@ -14932,3 +14932,103 @@ for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+---
+
+## Økt 55: startet den varslede migreringen av `sendTransactionalEmail()`
+sine mange kallesteder til lokalisert avsenderidentitet — FORSIKTIG,
+ett kallested denne runden, resten et bevisst spor videre
+
+Forrige økt (54) fikset dette for bulk-digesten, men lot
+`sendTransactionalEmail()` (ni filer, ~18 kallesteder) stå eksplisitt
+utsatt — "betydelig større omfang... bør gjøres FORSIKTIG, gjerne i
+flere mindre økter". Fulgte akkurat det rådet i stedet for å haste
+gjennom alle ni filene på én gang.
+
+**Kartla omfanget først**: 18 reelle kallesteder på tvers av
+`moderation/journalists.ts` (2), `moderation/requests.ts` (1),
+`auth/magic-link.ts` (1), `auth/account-deletion.ts` (4),
+`requests/requests.ts` (3), `admin/legal-documents.ts` (1),
+`contact-requests/contact-requests.ts` (3), `responses/responses.ts`
+(2), `reports/reports.ts` (1) — pluss 25 eksisterende kall i
+`send.test.ts`. For mange til å migrere trygt i én økt uten å risikere
+en overfladisk, dårlig verifisert endring i en sentral, tillitsfølsom
+e-postflyt.
+
+**Arkitekturvalg vurdert og avvist**: å la `sendTransactionalEmail()`
+selv slå opp mottakerens land internt (via mottakerens e-post →
+`users.countryCode`) ville krevd NULL kallsstedsendringer, men ville
+brutt `send.ts` sitt eget, uttalte designprinsipp ("Tynt
+e-postgrensesnitt", ingen `db`-avhengighet, se filens egen
+toppkommentar) og gjort ALLE dens rene enhetstester avhengige av en
+ekte database. Forkastet til fordel for samme mønster som bulk-fiksen:
+kalleren løser identiteten og sender den inn eksplisitt.
+
+**Bygget delt infrastruktur** (`src/lib/email/sender-identity.ts`,
+`resolveSenderIdentity(countryCode, locale)`): én spørring mot
+`countries` + `createTranslator()`-oversettelse, delt av ALLE
+kallesteder i stedet for duplisert 18 ganger. Returnerer `null`
+defensivt for et land som ikke finnes (kan ikke skje i praksis —
+`users.countryCode` har en fremmednøkkel mot `countries.code` — men en
+manglende avsenderidentitet skal ALDRI stoppe selve sendingen).
+
+**`SendTransactionalEmailInput` fikk `senderName`/`replyTo`, men VALGFRIE,
+ikke obligatoriske** — bevisst ULIKT `SendBulkEmailInput`s tilsvarende
+felt. Dette er en MIDLERTIDIG overgangstilstand, tydelig kommentert i
+selve interfacet: et umigrert kallested (18 av 18 uendret bortsett fra
+`magic-link.ts`, se under) oppfører seg IDENTISK med i går — ingen
+regresjon, bare IKKE fikset ennå. Planen er å gjøre feltene obligatoriske
+den dagen alle ni filene er migrert, samme prinsipp som
+`listUnsubscribeUrl`/bulk-fiksens felt.
+
+**Migrerte ÉTT kallested denne runden**: `auth/magic-link.ts`
+(`requestMagicLink()`) — valgt fordi det er det ENKLESTE (ett
+kallested, `user`-raden er allerede en FULL `.select()` med
+`countryCode` rett tilgjengelig, ingen ekstra spørring eller
+select-feltendring nødvendig) og et av de HØYEST-TRAFIKKERTE (hver
+innlogging/e-postbekreftelse går gjennom denne).
+
+**Empirisk bekreftet feilen (mangelen) var reell**: la til en ny test i
+`send.test.ts` som sender med `senderName`/`replyTo` oppgitt og
+sjekker at Brevo-payloaden faktisk bærer dem videre. `git stash push`
+på `send.ts` alene → testen FEILET som forventet mot den gamle koden
+(`sender` manglet `name` helt) → `git stash pop` gjenopprettet fiksen
+→ alle tester består.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, **459** tester
+  (458 + 1 ny).
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: **33** filer (32 +
+  ny `sender-identity.integration.test.ts`, 4 tester: oversetter
+  korrekt, faller tilbake for en ustøttet locale, returnerer `null` for
+  en ukjent landkode i stedet for å kaste, henter OPPDATERT verdi etter
+  landendring). **337** tester totalt (333 + 4 nye), alle bestod.
+  Global-opprydningen fjernet 230 testbrukere, uendret oppførsel.
+- Empirisk `git stash`-kontrast (se over) beviser fiksen løser et reelt,
+  reproduserbart hull.
+
+### Neste økt
+
+Migreringssporet fortsetter — ÅTTE filer gjenstår (17 kallesteder):
+`moderation/journalists.ts`, `moderation/requests.ts`,
+`auth/account-deletion.ts` (4 kallesteder — to har allerede
+`countryCode` tilgjengelig i en snever `.select()`, to trenger en liten
+utvidelse av eksisterende select-lister, kartlagt allerede denne
+økten), `requests/requests.ts`, `admin/legal-documents.ts`,
+`contact-requests/contact-requests.ts`, `responses/responses.ts`,
+`reports/reports.ts`. Foreslått rekkefølge: én fil (eller to nære
+beslektede) per økt, samme forsiktige tempo som denne. Når ALLE ni er
+migrert: gjør `senderName`/`replyTo` OBLIGATORISKE på
+`SendTransactionalEmailInput` (fjerner overgangskommentaren, matcher
+`SendBulkEmailInput`s mønster) som en siste, avsluttende økt. Ellers
+uendret: de to gjenværende GENUINE åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.

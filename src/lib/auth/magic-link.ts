@@ -3,6 +3,7 @@ import { users, authTokens } from "@/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { generateToken, hashToken } from "./tokens";
 import { sendTransactionalEmail } from "@/lib/email/send";
+import { resolveSenderIdentity } from "@/lib/email/sender-identity";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 
 // SPEC-V1.md 6.1: 15 minutters gyldighet, engangsbruk, maks 5 forespørsler
@@ -58,10 +59,15 @@ export async function requestMagicLink(email: string): Promise<void> {
   const firstEmailTemplate =
     user.role === "journalist" ? "journalist_application_received" : "confirm_email";
 
+  // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar.
+  const identity = await resolveSenderIdentity(user.countryCode, user.locale);
+
   await sendTransactionalEmail({
     template: user.emailVerifiedAt ? "magic_link" : firstEmailTemplate,
     to: { email: user.email, locale: user.locale },
     data: { token: rawToken },
+    senderName: identity?.senderName,
+    replyTo: identity?.replyTo,
   });
 }
 
