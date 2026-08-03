@@ -21,6 +21,7 @@ import {
 } from "@/db/integration/fixtures";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
 import { submitResponse, withdrawResponse } from "@/lib/responses/responses";
+import { updateResponseMarking } from "@/lib/journalist-inbox/journalist-inbox";
 import { hideResponse } from "./responses";
 
 // hideResponse() kaller requireModeratorForCountry() → getCurrentSession()
@@ -249,6 +250,40 @@ describe("hideResponse mot ekte Postgres (SPEC-V1.md 12.5)", () => {
     } else {
       expect(["errors.response_not_visible", "errors.not_found"]).toContain(hideResult.error);
       expect(hideWasLogged).toBe(false);
+    }
+  });
+
+  it("en SAMTIDIG skjuling gjør IKKE at en journalist-markering slår igjennom på et allerede skjult svar (TOCTOU)", async () => {
+    // `updateResponseMarking()` (journalist-inbox.ts) sin egen UPDATE hadde
+    // frem til nå IKKE `lifecycleStatus="submitted"` i WHERE-betingelsen
+    // (bare i den innledende SELECT-sjekken) — samme klasse hull som
+    // `hideResponse()` selv hadde FØR forrige fiks over. Uten den kunne en
+    // samtidig `hideResponse()` skjule svaret rett før markeringens egen
+    // UPDATE likevel traff raden og skrev `journalistMarking`, stille i
+    // strid med at et skjult svar skal være utilgjengelig for journalisten
+    // (13, 19.7).
+    await ensureTestCountry();
+    const { journalistId, responseId } = await createPublishedRequestWithResponse();
+    const moderator = await createModerator(TEST_COUNTRY_CODE);
+    await loginAs(moderator.id);
+
+    const [markResult, hideResult] = await Promise.all([
+      updateResponseMarking(responseId, journalistId, { marking: "shortlisted" }),
+      hideResponse(responseId),
+    ]);
+
+    expect(hideResult.ok).toBe(true);
+    const [row] = await db.select().from(responses).where(eq(responses.id, responseId));
+    expect(row?.lifecycleStatus).toBe("hidden_by_moderator");
+
+    if (markResult.ok) {
+      // Markeringen rakk å bli skrevet FØR skjulingens UPDATE committet —
+      // gyldig utfall, svaret var fortsatt "submitted" i det øyeblikket.
+      expect(row?.journalistMarking).toBe("shortlisted");
+    } else {
+      // Skjulingen vant kappløpet — markeringen skal ALDRI ha blitt skrevet.
+      expect(markResult.error).toBe("errors.not_found");
+      expect(row?.journalistMarking).toBe("unreviewed");
     }
   });
 });

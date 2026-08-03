@@ -208,7 +208,19 @@ export async function updateResponseMarking(
 
   if (Object.keys(patch).length === 0) return { ok: true, data: null };
 
-  await db.update(responses).set({ ...patch, updatedAt: new Date() }).where(eq(responses.id, responseId));
+  // `lifecycleStatus = "submitted"` i WHERE-betingelsen (ikke bare i sjekken
+  // over) lukker samme TOCTOU-vindu som `hideResponse()` (moderation/
+  // responses.ts) allerede lukker på SIN side av akkurat denne raden — uten
+  // denne betingelsen kunne en samtidig `hideResponse()`/`withdrawResponse()`
+  // mellom SELECT og UPDATE la denne skrivingen slå igjennom på et svar som
+  // akkurat ble skjult/trukket, stille i strid med at et skjult/trukket svar
+  // skal være utilgjengelig for journalisten (13, 19.7).
+  const [updated] = await db
+    .update(responses)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(and(eq(responses.id, responseId), eq(responses.lifecycleStatus, "submitted")))
+    .returning({ id: responses.id });
+  if (!updated) return { ok: false, error: "errors.not_found" };
 
   return { ok: true, data: null };
 }

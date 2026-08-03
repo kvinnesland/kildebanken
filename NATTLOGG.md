@@ -14566,3 +14566,105 @@ for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+---
+
+## Økt 51: lukket `retention.integration.test.ts`-sporet (rent funn), fant
+og rettet en genuin, men vanskelig-å-bevise TOCTOU i `updateResponseMarking()`
+
+**Spor fra Økt 50 — sjekket `retention.integration.test.ts` for samme
+flakebugklasse.** Konklusjon: IKKE rammet, av to grunner: (1) INGEN annen
+`.integration.test.ts`-fil i hele kodebasen bruker måneds-/årsskala
+tilbakedaterte tidsstempler (grep etter `getUTCMonth`/`getUTCFullYear`/
+`monthsAgo`/`yearsAgo` traff KUN denne filen selv) — retensjonsvinduene
+(6 måneder til 3 år) er så mye lengre enn noen annen tests egne
+tidsstempler (typisk minutter til ~31 dager) at en samtidig kjørende
+testfils fixtures aldri kan feilaktig treffes av denne jobbens
+alderskriterier. (2) `describe`-blokkene i selve filen kjører
+SEKVENSIELT (ingen `.concurrent`), så det er heller ingen risiko
+INNAD i filen. Dette sporet er dermed lukket uten kodeendring.
+
+**Nytt spor, funnet underveis: kritisk lesing av mindre-utforskede
+lib-mapper.** Med det forrige sporet lukket, gjorde en kort kritisk
+lesing av `src/lib/legal/documents.ts` (ren, ingen check-then-write) og
+`src/lib/journalist-inbox/journalist-inbox.ts` (ikke tidligere eksplisitt
+kritisk-lest i denne økt-serien).
+
+**Reelt funn**: `updateResponseMarking()` (PATCH
+`/journalist/responses/:id/status`, SPEC-V1.md 13.1) gjorde en SELECT som
+sjekket `lifecycleStatus === "submitted"`, men den påfølgende UPDATE-en
+hadde IKKE samme betingelse i sin egen WHERE — kun `eq(responses.id,
+responseId)`. Dette er nøyaktig samme hullklasse som `hideResponse()`
+(moderation/responses.ts) hadde FØR Økt (se oppgave #92) — men på den
+MOTSATTE siden av akkurat den samme raden: en samtidig `hideResponse()`
+(moderator skjuler svaret) mellom SELECT og UPDATE her kunne la
+journalistens markerings-/notatskriving stille slå igjennom på et svar
+som akkurat ble skjult, i strid med at et skjult svar skal være
+utilgjengelig for journalisten (13, 19.7).
+
+**Fiks**: la til `eq(responses.lifecycleStatus, "submitted")` i selve
+UPDATE-ens WHERE-betingelse, med `.returning()` for å oppdage om den
+faktisk traff en rad — `errors.not_found` hvis ikke, samme mønster som
+`hideResponse()` selv og de mange andre TOCTOU-fiksene denne natten.
+
+**Ærlig begrensning i verifiseringen, i motsetning til øktens vanlige
+disiplin**: la til en `Promise.all`-kappløpstest i
+`moderation/responses.integration.test.ts` (rett ved siden av den
+eksisterende `hideResponse` vs. `withdrawResponse`-kappløpstesten, samme
+mønster) som kjører `updateResponseMarking()` og `hideResponse()`
+samtidig og sjekker at UANSETT hvilken som vinner, resultatet er
+konsistent. FORSØKTE deretter den vanlige `git stash`-kontrasten — men
+i MOTSETNING til alle tidligere kappløpsfiks i natt, klarte testen IKKE
+å feile pålitelig mot den gamle koden: kjørt 5 ganger mot koden UTEN
+fiksen, og alle 5 gangene "vant" markerings-skrivingen kappløpet (aldri
+`errors.not_found`). Årsak, ved inspeksjon: `hideResponse()` gjør
+FLERE forutgående steg (eierskaps-sjekk, moderator-landsjekk) FØR sin
+egen UPDATE, mens `updateResponseMarking()` går RETT fra sin SELECT til
+sin UPDATE — de to funksjonene er strukturelt for ULIKT lange til at
+`Promise.all` pålitelig produserer den farlige rekkefølgen (markerings-
+skrivingen committer nesten alltid FØR skjulingen, uansett kodeversjon).
+Dette er en ANNEN situasjon enn de tidligere kappløpene i natt, som alle
+racet SYMMETRISKE konkurrenter (N identiske kall, eller to kall av
+sammenlignbar lengde) — asymmetrien her gjør akkurat DENNE
+rekkefølgen for sjelden til å fremtvinges pålitelig i en svart-boks-test
+uten å instrumentere produksjonskoden med en kunstig forsinkelse (noe
+som ikke hører hjemme der).
+
+Fiksen beholdes likevel — den er korrekt ved KODEinspeksjon (identisk
+mønster og begrunnelse som den ALLEREDE beviste `hideResponse()`-fiksen,
+bare på den andre siden av samme rad), og testen beholdes også, siden
+den fortsatt verifiserer en reell invariant under samtidig kjøring (og
+ville fanget opp en FREMTIDIG regresjon dersom de to funksjonenes
+relative hastighet noen gang endrer seg) — men "empirisk bevist feilet
+mot gammel kode" kan IKKE hevdes for denne ene fiksen, i motsetning til
+alle andre kappløpsfikser i natt. Notert her i stedet for å late som om
+disiplinen ble fulgt fullt ut.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 458 tester,
+  uendret.
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 32 filer, **329**
+  tester (328 + 1 ny), alle bestod. Global-opprydningen fjernet 230
+  testbrukere, uendret oppførsel.
+- `git stash`-forsøk (se over): IKKE en ren empirisk bekreftelse denne
+  gangen — dokumentert ærlig i stedet for skjult.
+
+### Neste økt
+
+Ingen kjent gjenstående handling. Mulig neste spor, ingen hastende:
+fortsett den kritiske lesingen av mindre-utforskede filer
+(`src/lib/http/safe-redirect.ts` og `src/lib/datetime/timezone.ts` er
+trolig allerede dekket av tidligere fikser i natt — henholdsvis
+open-redirect-fiksen og øktene som bygde jobblogikken — men ikke
+eksplisitt re-sjekket i DENNE stilen). Ellers uendret: de to
+gjenværende GENUINE åpne spec-spørsmålene, fortsatt bevisst latt åpne
+for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
