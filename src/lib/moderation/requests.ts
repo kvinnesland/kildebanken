@@ -2,6 +2,7 @@ import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { auditLogs, journalistProfiles, requests, users } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
+import { resolveSenderIdentity } from "@/lib/email/sender-identity";
 import { checkModeratorForCountry, getAssignedCountryCodes } from "@/lib/auth/authorize";
 import type { CurrentSession } from "@/lib/auth/session";
 
@@ -31,12 +32,20 @@ async function notifyJournalist(
   data: Record<string, unknown>
 ) {
   const [journalist] = await db
-    .select({ email: users.email, locale: users.locale })
+    .select({ email: users.email, locale: users.locale, countryCode: users.countryCode })
     .from(users)
     .where(eq(users.id, journalistId))
     .limit(1);
   if (journalist) {
-    await sendTransactionalEmail({ template, to: { email: journalist.email, locale: journalist.locale }, data });
+    // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar.
+    const identity = await resolveSenderIdentity(journalist.countryCode, journalist.locale);
+    await sendTransactionalEmail({
+      template,
+      to: { email: journalist.email, locale: journalist.locale },
+      data,
+      senderName: identity?.senderName,
+      replyTo: identity?.replyTo,
+    });
   }
 }
 

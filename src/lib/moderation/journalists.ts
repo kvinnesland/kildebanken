@@ -2,6 +2,7 @@ import { and, count, eq, ilike, inArray, notInArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { auditLogs, journalistProfiles, requests, users } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
+import { resolveSenderIdentity } from "@/lib/email/sender-identity";
 import { checkModeratorForCountry, getAssignedCountryCodes } from "@/lib/auth/authorize";
 import type { CurrentSession } from "@/lib/auth/session";
 
@@ -77,10 +78,15 @@ export async function approveJournalist(journalistUserId: string): Promise<Moder
     entityId: journalist.profileId,
   });
 
+  // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar.
+  const identity = await resolveSenderIdentity(journalist.countryCode, journalist.locale);
+
   await sendTransactionalEmail({
     template: "journalist_approved",
     to: { email: journalist.email, locale: journalist.locale },
     data: {},
+    senderName: identity?.senderName,
+    replyTo: identity?.replyTo,
   });
 
   return { ok: true };
@@ -138,10 +144,15 @@ export async function rejectJournalist(
     reason,
   });
 
+  // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar.
+  const identity = await resolveSenderIdentity(journalist.countryCode, journalist.locale);
+
   await sendTransactionalEmail({
     template: "journalist_rejected",
     to: { email: journalist.email, locale: journalist.locale },
     data: { reason },
+    senderName: identity?.senderName,
+    replyTo: identity?.replyTo,
   });
 
   return { ok: true };

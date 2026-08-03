@@ -15032,3 +15032,71 @@ bevisst latt åpne for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+---
+
+## Økt 56: fortsatte sender-identitet-migreringen (Økt 55) — to filer
+til, `moderation/journalists.ts` og `moderation/requests.ts`
+
+Samme forsiktige tempo som forrige økt la opp til: én til to nære
+beslektede filer, ikke flere.
+
+**`moderation/journalists.ts`**: to kallesteder
+(`approveJournalist()`/`rejectJournalist()`), begge via samme
+`findJournalist()`-hjelpefunksjon som ALLEREDE selekterte
+`countryCode` (brukt til `checkModeratorForCountry()` rett over) —
+ingen select-utvidelse nødvendig, bare et `resolveSenderIdentity()`-kall
+og to nye felt på hvert `sendTransactionalEmail()`-kall.
+
+**`moderation/requests.ts`**: tre kallesteder, men ALLE går gjennom
+ÉN delt `notifyJournalist()`-hjelpefunksjon — denne selekterte
+tidligere KUN `{email, locale}`, IKKE `countryCode`. La til
+`countryCode: users.countryCode` i dens `.select()` (trivielt, samme
+tabell er allerede spurt) og ett `resolveSenderIdentity()`-kall inni
+selve hjelpefunksjonen — retter dermed alle tre kallestedene
+(`request_approved_published`, `request_rejected`,
+`changes_requested`) i én endring.
+
+**Ingen nye tester denne runden** — bevisst, samme begrunnelse som
+`magic-link.ts`-migreringen (Økt 55): selve MEKANISMEN
+(`sendTransactionalEmail()`s valgfrie felt-gjennomsending,
+`resolveSenderIdentity()`s slå-opp-og-oversett) er allerede grundig
+testet på egen hånd. Det som gjenstår å bevise per kallested er bare
+"kalles funksjonen med RIKTIG countryCode/locale" — en ren
+kablings-sjekk som ville krevd enten å mocke `resolveSenderIdentity()`/
+`sendTransactionalEmail()` for å fange kallargumenter, eller å sette en
+ekte `BREVO_API_KEY` + mocke `fetch` i en integrasjonstest (uvanlig
+blanding av testnivåer) — uforholdsmessig kompleksitet for en enkel
+verdi-videreføring. Samme avveining, samme konklusjon som sist.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 459 tester,
+  uendret (ingen nye tester denne runden, se over).
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 337
+  tester, ALLE bestod uendret. Global-opprydningen fjernet 230
+  testbrukere, uendret oppførsel.
+
+### Neste økt
+
+Migreringssporet fortsetter — SEKS filer gjenstår (12 kallesteder):
+`auth/account-deletion.ts` (4 kallesteder — to har allerede
+`countryCode` tilgjengelig fra en full `.select()`, to trenger en liten
+utvidelse av eksisterende snevre select-lister, kartlagt i Økt 55),
+`requests/requests.ts` (3), `admin/legal-documents.ts` (1),
+`contact-requests/contact-requests.ts` (3),
+`responses/responses.ts` (2), `reports/reports.ts` (1). Foreslått
+neste: `auth/account-deletion.ts` (nær beslektet med denne og forrige
+økts auth-/moderasjonsfokus, og allerede kartlagt i detalj). Når ALLE ni
+filer er migrert: gjør `senderName`/`replyTo` OBLIGATORISKE på
+`SendTransactionalEmailInput` som en siste, avsluttende økt. Ellers
+uendret: de to gjenværende GENUINE åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
