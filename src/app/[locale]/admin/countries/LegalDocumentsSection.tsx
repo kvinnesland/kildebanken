@@ -13,6 +13,11 @@ import styles from "./LegalDocumentsSection.module.css";
 
 const DOCUMENT_TYPES = ["terms", "privacy", "journalist_terms"] as const;
 
+// 50, samme grense som POST /admin/legal-documents sitt Zod-skjema
+// (src/app/api/admin/legal-documents/route.ts) håndhever server-side —
+// samme bugklasse som SubscribeForm.tsx (se NATTLOGG.md).
+const VERSION_LIMIT = 50;
+
 interface LegalDocumentRow {
   id: string;
   rowLabel: string;
@@ -121,6 +126,7 @@ export function LegalDocumentsSection({
             value={version}
             onChange={setVersion}
             isRequired
+            inputProps={{ maxLength: VERSION_LIMIT }}
           />
           <TextArea
             label={t("admin.countries.publish_body_label")}

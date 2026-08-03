@@ -42,6 +42,15 @@ describe("JournalistApplyForm", () => {
     vi.unstubAllGlobals();
   });
 
+  it("begrenser fullt navn, stilling og organisasjon til 200 tegn, samme grense som POST /journalists/apply håndhever server-side", async () => {
+    render(<JournalistApplyForm locale="nb-NO" />);
+    await screen.findByRole("button", { name: /Land/ });
+
+    expect(screen.getByLabelText("Fullt navn")).toHaveAttribute("maxLength", "200");
+    expect(screen.getByLabelText("Stilling eller funksjon")).toHaveAttribute("maxLength", "200");
+    expect(screen.getByLabelText("Redaksjon eller organisasjon")).toHaveAttribute("maxLength", "200");
+  });
+
   it("viser ikke samtykket før land og språk er valgt", async () => {
     render(<JournalistApplyForm locale="nb-NO" />);
     await screen.findByRole("button", { name: /Land/ });

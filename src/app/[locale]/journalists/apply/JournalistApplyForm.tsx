@@ -21,6 +21,13 @@ interface CountryOption {
 
 type Status = "idle" | "loading_countries" | "submitting" | "success" | "error";
 
+// 200, samme grense som POST /journalists/apply sitt Zod-skjema
+// (src/app/api/journalists/apply/route.ts) håndhever server-side for alle
+// tre feltene — samme bugklasse som SubscribeForm.tsx (se NATTLOGG.md):
+// uten disse kunne en søker skrive inn mer enn serverens grense og få en
+// uforklarlig, feltløs feilmelding ved innsending.
+const FIELD_LIMIT = 200;
+
 // Samme mønster som SubscribeForm.tsx sin `interpolateNodes` — se
 // kommentaren der for hvorfor dette ikke går via IntlMessageFormat/ICU.
 function interpolateNodes(template: string, replacements: Record<string, ReactNode>): ReactNode[] {
@@ -174,6 +181,7 @@ export function JournalistApplyForm({ locale }: { locale: SupportedLocale }) {
         isRequired
         isInvalid={attempted && fullName.trim() === ""}
         errorMessage={t("errors.field_required")}
+        inputProps={{ maxLength: FIELD_LIMIT }}
       />
 
       <TextField
@@ -193,6 +201,7 @@ export function JournalistApplyForm({ locale }: { locale: SupportedLocale }) {
         isRequired
         isInvalid={attempted && jobTitle.trim() === ""}
         errorMessage={t("errors.field_required")}
+        inputProps={{ maxLength: FIELD_LIMIT }}
       />
 
       <TextField
@@ -202,6 +211,7 @@ export function JournalistApplyForm({ locale }: { locale: SupportedLocale }) {
         isRequired
         isInvalid={attempted && organizationName.trim() === ""}
         errorMessage={t("errors.field_required")}
+        inputProps={{ maxLength: FIELD_LIMIT }}
       />
 
       <TextField

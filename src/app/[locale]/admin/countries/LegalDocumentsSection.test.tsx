@@ -44,6 +44,15 @@ describe("LegalDocumentsSection", () => {
     expect(screen.getByLabelText("Versjon")).toBeInTheDocument();
   });
 
+  it("begrenser versjon til 50 tegn, samme grense som POST /admin/legal-documents håndhever server-side", async () => {
+    render(
+      <LegalDocumentsSection locale="nb-NO" countryCode="XT" availableLocales={["nb-NO"]} documents={[]} />
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Publiser ny versjon" }));
+
+    expect(screen.getByLabelText("Versjon")).toHaveAttribute("maxLength", "50");
+  });
+
   it("krever alle feltene før publisering kan fyre", async () => {
     render(
       <LegalDocumentsSection locale="nb-NO" countryCode="XT" availableLocales={["nb-NO"]} documents={[]} />

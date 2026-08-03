@@ -15668,3 +15668,78 @@ gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 65: gjorde nettopp den systematiske `.max(...)`-sveipen Økt 64
+foreslo — fant og rettet TO til (fjerde og femte forekomst)
+
+Grep'et `z\.string()\.(min|max)` på tvers av ALLE `route.ts`-filer i
+`src/app/api`, listet opp hver eneste streng-lengdegrense funnet, og
+krysset HVER av dem mot dens tilhørende frontend-skjema/komponent én
+etter én. De aller fleste stemte allerede (bekreftet, ikke bare antatt):
+`RequestEditForm.tsx` sine seks `LIMITS`-verdier (title 120, summary
+300, description 5000, targetPersonDescription 500, geographicNote 100,
+internalReference 100), `ResponseForm.tsx` sine fire (relevanceStatement
+2000, answerText 4000, shortBio 500, displayName 80),
+`JournalistProfileForm.tsx` sine tre (fullName/jobTitle/organizationName
+200), `RecipientRow.tsx`/`JournalistSearchRow.tsx`/
+`RequestQueueItem.tsx` sin delte `REASON_LIMIT = 2000`, og
+`ResponseDetailPanel.tsx` sine `NOTE_LIMIT = 4000`/`MESSAGE_LIMIT =
+1000` — alle korrekte. `HideResponseAction.tsx` har med hensikt INGEN
+grense (POST /admin/responses/:id/hide tar ingen body i det hele tatt,
+bekreftet ved å lese selve route-filen).
+
+Fant TO ekte, tidligere uoppdagede hull, begge samme bugklasse som
+`SubscribeForm.tsx` (Økt 64) — feltet manglet `maxLength` HELT, ikke en
+foreldet verdi:
+
+1. **`journalists/apply/JournalistApplyForm.tsx`** (søknadsskjemaet,
+   `POST /journalists/apply`): `fullName`, `jobTitle` og
+   `organizationName` hadde INGEN `maxLength`, til tross for at
+   backend-skjemaet (`src/app/api/journalists/apply/route.ts`)
+   håndhever `.max(200)` på alle tre — nøyaktig de samme tre feltene
+   som `JournalistProfileForm.tsx` (redigeringsskjemaet, `PATCH
+   /journalists/me`) allerede hadde riktig satt. Søknadsskjemaet var
+   aldri sjekket mot redigeringsskjemaets etablerte mønster før nå. La
+   til en delt `FIELD_LIMIT = 200`-konstant og `inputProps={{ maxLength:
+   FIELD_LIMIT }}` på alle tre.
+2. **`admin/countries/LegalDocumentsSection.tsx`** (publiser
+   ny-juridisk-dokument-skjemaet, `POST /admin/legal-documents`):
+   `version`-feltet hadde INGEN `maxLength`, til tross for at
+   backend-skjemaet håndhever `.max(50)`. Kun admin-brukt (lavere
+   alvorlighet enn de to foregående, siden bare betrodde
+   administratorer rammes), men samme prinsipp: en for lang versjonsstreng
+   ville gitt en uforklarlig feilmelding i stedet for å bli stanset i
+   feltet. La til `VERSION_LIMIT = 50` og `inputProps={{ maxLength:
+   VERSION_LIMIT }}`.
+
+**Nye tester**: én i `JournalistApplyForm.test.tsx` som sjekker
+`maxLength="200"` på alle tre feltene, én i
+`LegalDocumentsSection.test.tsx` som sjekker `maxLength="50"` på
+versjonsfeltet — samme mønster som de tre foregående rettelsene (Økt
+57/59/64) sine egne regresjonstester.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 462 tester (460 +
+  2 nye).
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 337
+  tester, ALLE bestod uendret (rent frontend, ingen server-/DB-logikk
+  endret, men kjørt likevel per den stående regelen).
+
+### Neste økt
+
+Den systematiske sveipen er nå FULLFØRT — hver eneste streng-`.max(...)`
+i samtlige `route.ts`-Zod-skjemaer er krysset mot sitt tilhørende
+frontend-felt, og alle fem funnet-og-rettede tilfeller (Økt 57, 59, 64,
+og de to i denne økten) er nå konsistente. Ingen flere kjente
+forekomster av denne spesifikke bugklassen gjenstår. Uendret: de to
+gjenværende GENUINE åpne spec-spørsmålene, fortsatt bevisst latt åpne
+for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
