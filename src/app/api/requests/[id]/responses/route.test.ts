@@ -52,6 +52,7 @@ describe("POST /requests/:id/responses", () => {
       countryCode: "NO",
       locale: "nb-NO",
       email: "test@example.invalid",
+      displayName: null,
     });
     vi.mocked(submitResponse).mockResolvedValue({ ok: false, error: "errors.not_authorized" });
 
@@ -70,6 +71,7 @@ describe("POST /requests/:id/responses", () => {
       countryCode: "NO",
       locale: "nb-NO",
       email: "test@example.invalid",
+      displayName: null,
     });
 
     vi.mocked(submitResponse).mockResolvedValueOnce({ ok: false, error: "errors.not_found" });

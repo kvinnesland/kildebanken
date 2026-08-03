@@ -26,12 +26,14 @@ export function ResponseForm({
   journalistName,
   organizationName,
   sessionEmail,
+  sessionDisplayName,
 }: {
   locale: SupportedLocale;
   requestId: string;
   journalistName: string;
   organizationName: string;
   sessionEmail: string;
+  sessionDisplayName: string | null;
 }) {
   const t = createTranslator(locale);
 
@@ -43,7 +45,8 @@ export function ResponseForm({
   const [relevanceStatement, setRelevanceStatement] = useState("");
   const [answerText, setAnswerText] = useState("");
   const [shortBio, setShortBio] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  // SPEC-V1.md 12.1: "Visningsnavn | valgfritt, forhåndsutfylt fra kontoen".
+  const [displayName, setDisplayName] = useState(sessionDisplayName ?? "");
   const [contactSharing, setContactSharing] = useState<ContactSharing>("none");
 
   const relevanceValid =

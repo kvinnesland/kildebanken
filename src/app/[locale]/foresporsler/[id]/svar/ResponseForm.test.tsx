@@ -4,7 +4,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ResponseForm } from "./ResponseForm";
 
-function renderForm() {
+function renderForm(sessionDisplayName: string | null = null) {
   return render(
     <ResponseForm
       locale="nb-NO"
@@ -12,6 +12,7 @@ function renderForm() {
       journalistName="Kari Journalist"
       organizationName="Avisa Eksempel"
       sessionEmail="respondent@example.com"
+      sessionDisplayName={sessionDisplayName}
     />
   );
 }
@@ -34,6 +35,16 @@ describe("ResponseForm", () => {
     await userEvent.click(screen.getByRole("button", { name: "Gå videre til bekreftelse" }));
     expect(screen.queryByText("Bekreft innsending")).not.toBeInTheDocument();
     expect(screen.getAllByText("Dette feltet er obligatorisk.").length).toBeGreaterThan(0);
+  });
+
+  it("SPEC-V1.md 12.1: visningsnavnet forhåndsutfylles fra kontoen", () => {
+    renderForm("Kari Nordmann");
+    expect(screen.getByLabelText("Visningsnavn (valgfritt)")).toHaveValue("Kari Nordmann");
+  });
+
+  it("visningsnavnet er tomt når kontoen ikke har noe (skjemaet viser da eksempeltekst)", () => {
+    renderForm(null);
+    expect(screen.getByLabelText("Visningsnavn (valgfritt)")).toHaveValue("");
   });
 
   it("SPEC-V1.md 12.2: 'ikke del e-postadressen min' er standardvalget i bekreftelsen", async () => {

@@ -34,6 +34,7 @@ function makeSession(overrides: Partial<CurrentSession> = {}): CurrentSession {
     countryCode: TEST_COUNTRY_CODE,
     locale: "nb-NO",
     email: "test@example.invalid",
+    displayName: null,
     ...overrides,
   };
 }

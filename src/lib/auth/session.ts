@@ -62,6 +62,10 @@ export interface CurrentSession {
   countryCode: string;
   locale: string;
   email: string;
+  // SPEC-V1.md 12.1: svarskjemaets visningsnavn-felt skal være "forhåndsutfylt
+  // fra kontoen" — se ResponseForm.tsx, som trengte dette feltet men ikke
+  // hadde det (rettet, se NATTLOGG.md).
+  displayName: string | null;
 }
 
 /** Slår opp gjeldende bruker fra sesjonscookien. Returnerer null dersom
@@ -107,6 +111,7 @@ export async function getCurrentSession(): Promise<CurrentSession | null> {
       countryCode: users.countryCode,
       locale: users.locale,
       email: users.email,
+      displayName: users.displayName,
     })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
@@ -130,6 +135,7 @@ export async function getCurrentSession(): Promise<CurrentSession | null> {
     countryCode: row.countryCode,
     locale: row.locale,
     email: row.email,
+    displayName: row.displayName,
   };
 }
 

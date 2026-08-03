@@ -56,6 +56,7 @@ export default async function RespondPage({
         journalistName={request.journalistFullName}
         organizationName={request.organizationName}
         sessionEmail={session.email}
+        sessionDisplayName={session.displayName}
       />
     </main>
   );

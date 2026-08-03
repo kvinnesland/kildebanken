@@ -180,6 +180,7 @@ describe("getAssignedCountryCodes mot ekte Postgres", () => {
       countryCode: TEST_COUNTRY_CODE,
       locale: "nb-NO",
       email: "admin@example.invalid",
+      displayName: null,
     });
 
     expect(result).toBe("all");
@@ -198,6 +199,7 @@ describe("getAssignedCountryCodes mot ekte Postgres", () => {
       countryCode: TEST_COUNTRY_CODE,
       locale: "nb-NO",
       email: "moderator@example.invalid",
+      displayName: null,
     });
 
     expect(result).toEqual([TEST_COUNTRY_CODE]);
@@ -226,6 +228,7 @@ describe("getAssignedCountryCodes mot ekte Postgres", () => {
       countryCode: TEST_COUNTRY_CODE,
       locale: "nb-NO",
       email: "moderator@example.invalid",
+      displayName: null,
     });
 
     expect(result).toEqual([]);

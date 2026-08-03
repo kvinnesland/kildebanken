@@ -155,6 +155,23 @@ describe("getCurrentSession mot ekte Postgres", () => {
     expect(session?.userId).toBe(journalist.id);
     expect(session?.role).toBe("journalist");
     expect(session?.email).toBe(journalist.email);
+    // Fixturen setter ikke displayName — bekrefter null-tilfellet, se den
+    // egne testen under for tilfellet der kontoen FAKTISK har et.
+    expect(session?.displayName).toBeNull();
+  });
+
+  it("SPEC-V1.md 12.1: CurrentSession bærer kontoens displayName — svarskjemaet skal kunne forhåndsutfylles med det (rettet, se NATTLOGG.md)", async () => {
+    await ensureTestCountry();
+    const recipient = await createActiveRecipient();
+    await db.update(users).set({ displayName: "Kari Nordmann" }).where(eq(users.id, recipient.id));
+    const rawToken = await insertSession(recipient.id);
+    const { store } = installFakeCookieJar();
+    store.set("kb_session", rawToken);
+    const { getCurrentSession } = await import("./session");
+
+    const session = await getCurrentSession();
+
+    expect(session?.displayName).toBe("Kari Nordmann");
   });
 
   it("6.1: skyver expires_at frem til ~30 dager frem OG setter last_used_at for mottaker/journalist", async () => {

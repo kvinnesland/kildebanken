@@ -16157,3 +16157,109 @@ gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 71: dekket seksjon 6 (Autentisering), 7 (Registrering) og 11
+(Forespørselsside) — fant og rettet ETT genuint hull i svarskjemaet
+(12.1)
+
+Leste alle tre seksjonene linje for linje mot faktisk kode, som Økt 70
+sin "Neste økt" foreslo.
+
+**Seksjon 6 (Autentisering):** fullstendig korrekt allerede. 6.1 (15
+minutters engangstoken, 5 forespørsler/15 min rate-limit, økt satt på
+kontoens locale, `email_verified_at` settes ved vellykket innlogging),
+6.2 (digest-tilgangstoken — bevisst GJENBRUKBART, ikke engangsbruk, se
+egen kommentar i `digest-access/[token]/route.ts` — og "viser alltid
+hvilken e-post man er innlogget som", bekreftet i `svar/page.tsx` sin
+`response.form.logged_in_as`) og 6.3 (12 timers økt for
+moderator/administrator, ingen fornyelse, ingen 2FA — et eksplisitt
+akseptert avvik i spec-en selv) stemte alle med koden. Kontosletting
+(6.2: "krever ny innlogging via magic link, uavhengig av aktiv økt") er
+dekket av et eget `delete_account`-formål-token
+(`account-deletion.ts`), IKKE en ren gjenbruk av `login`-tokenet — en
+enda strengere løsning enn spec-teksten strengt tatt krever, ikke et
+brudd. De to andre handlingene 6.2 nevner (endring av e-postadresse,
+nedlasting av egne data) finnes ikke som selvbetjente funksjoner i det
+hele tatt (17.3: begge er eksplisitt "manuelt i v1"), så det finnes
+ingen kode å sjekke kravet mot der.
+
+**Seksjon 7 (Registrering):** også fullstendig korrekt. 7.1
+(mottakerregistrering — de tre obligatoriske samtykkene, ingen
+forhåndsavkrysning, samtykketekster lastes på nytt OG avkryssingene
+nullstilles ved endring av land ELLER språk, sperreliste sjekket FØR
+allerede-registrert-sjekken), 7.2 (journalistsøknad — alle obligatoriske
+felt, disclaimer om at e-post aldri vises, `verification_status`
+uendret av bekreftelsesflyten) og 7.3 (landbytte — nytt samtykke,
+gammelt trukket, abonnement flyttet, journalist kan ikke bytte land
+selv) stemte alle med `src/lib/registration/recipient.ts`,
+`journalist.ts` og `src/lib/me/change-country.ts` — sistnevnte allerede
+grundig lest i en tidligere økt (se forrige økts kommentar i
+change-country.ts).
+
+**Seksjon 11 (Forespørselsside):** også korrekt — alle listede felt
+vises (tittel, redaksjon, journalistnavn, publiseringsdato, svarfrist
+MED tidssone, oppsummering, full beskrivelse, hvem søkes,
+anonymitet/opptak/foto-info, status, svarknapp, rapporteringslenke),
+fremmedspråk-merkelapp, lukket/utløpt-merking uten svarknapp,
+kanonisk URL + hreflang per locale-variant, og `noindex` som plattform-
+standard (layout.tsx) eksplisitt overstyrt til `index` KUN på denne
+sidetypen. Journalistens e-post vises aldri. Eneste kjente, allerede
+dokumenterte avvik (delingsbilde/OG-bilde) var bevisst utelatt fra
+før, ikke noe nytt.
+
+**Hullet, funnet ved siden av (12.1, tett koblet til 11's svarknapp):**
+"Visningsnavn | valgfritt, forhåndsutfylt fra kontoen | 80 tegn" —
+`ResponseForm.tsx` sitt visningsnavnfelt startet alltid tomt
+(`useState("")`), uansett hva brukerens konto faktisk hadde lagret.
+Roten: `CurrentSession` (`src/lib/auth/session.ts`) bar aldri
+`displayName` i utgangspunktet — 56 kallsteder totalt, men INGEN av dem
+trengte feltet før nå, så det var aldri lagt til.
+
+**Retting:** la til `displayName: string | null` i `CurrentSession`,
+hentet fra `users.displayName` i `getCurrentSession()` sitt eneste
+SELECT. Rent additivt for de 55 andre kallstedene (ingen av dem
+destrukturerer hele objektet mot en literal type). `svar/page.tsx`
+sender nå `session.displayName` videre som en ny
+`sessionDisplayName`-prop til `ResponseForm`, som bruker den som
+startverdi (`useState(sessionDisplayName ?? "")`) i stedet for en fast
+tom streng.
+
+**Test-hygiene:** 8 eksisterende testfiler konstruerte et
+`CurrentSession`-objekt uten det nye, nå påkrevde `displayName`-feltet
+(`tsc --noEmit` fanget alle 9 stedene på tvers av 7 filer) — rettet med
+`displayName: null` i hvert tilfelle, samme mønster alle steder.
+
+**Nye tester:** to i `ResponseForm.test.tsx` (feltet forhåndsutfylles
+når `sessionDisplayName` er satt; er tomt når kontoen ikke har noe), og
+én i `session.integration.test.ts` (bekrefter at `getCurrentSession()`
+faktisk leser den ekte DB-verdien, ikke bare at typen tillater den).
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: fant de 9 manglende `displayName`-feltene i test-
+  fixtures (se over) — rettet; deretter ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 465 tester
+  (463 + 2 nye).
+- `npx tsx src/i18n/check-keys.ts`: OK — 532 nøkler (uendret — ingen nye
+  i18n-nøkler i denne fiksen).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 342
+  tester, ALLE bestod (341 + 1 ny).
+
+### Neste økt
+
+Seksjon 6, 7 og 11 er nå ferdig gjennomgått, i tillegg til 5, 9, 13 og
+14 fra tidligere økter (Økt 67-71). Gjenstår av det opprinnelig
+foreslåtte settet: ingen — alle fire seksjoner Økt 69 og 70 pekte på er
+nå dekket. Fortsett seksjon-for-seksjon-gjennomsynet med en ny,
+selvvalgt seksjon fra RESTEN (se Økt 69 sin liste over hvilke seksjoner
+som allerede er dekket av tidligere, dedikerte revisjonsøkter — 1-4,
+8, 10, 12, 15, 16.3+, 24-26 er blant dem som ikke er eksplisitt
+gjennomgått linje-for-linje på denne måten ennå). Uendret: de to
+gjenværende GENUINE åpne spec-spørsmålene, fortsatt bevisst latt åpne
+for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
