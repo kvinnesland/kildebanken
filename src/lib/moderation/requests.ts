@@ -1,12 +1,10 @@
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { auditLogs, journalistProfiles, requests, users } from "@/db/schema";
+import { auditLogs, countries, journalistProfiles, requests, users } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { resolveSenderIdentity } from "@/lib/email/sender-identity";
 import { checkModeratorForCountry, getAssignedCountryCodes } from "@/lib/auth/authorize";
 import type { CurrentSession } from "@/lib/auth/session";
-
-const MAX_CONCURRENT_PUBLISHED = 5; // FR-029, samme grense som src/lib/requests/requests.ts
 
 export type ModerationActionResult = { ok: true } | { ok: false; error: string };
 
@@ -70,6 +68,18 @@ export async function publishRequest(requestId: string): Promise<ModerationActio
   if (check.status === "wrong_country") return { ok: false, error: "errors.not_found" };
   const session = check.session;
 
+  // FR-029, SPEC-V1.md 9.2: "er konfigurasjon, ikke en hardkodet konstant" —
+  // samme rettelse som src/lib/requests/requests.ts sin egen kommentar (se
+  // NATTLOGG.md). Lest FØR transaksjonen — ren konfigurasjon, endres ikke av
+  // selve publiseringen, og trenger derfor ikke ligge bak
+  // advisory-låsen under.
+  const [country] = await db
+    .select({ maxConcurrentPublishedRequests: countries.maxConcurrentPublishedRequests })
+    .from(countries)
+    .where(eq(countries.code, request.countryCode))
+    .limit(1);
+  const maxConcurrentPublished = country?.maxConcurrentPublishedRequests ?? 5;
+
   // FR-029: tellingen av allerede publiserte forespørsler og selve
   // publiseringen må skje ATOMISK sammen, låst per journalist
   // (`pg_advisory_xact_lock`, samme mønster som `checkRateLimit()` i
@@ -78,7 +88,7 @@ export async function publishRequest(requestId: string): Promise<ModerationActio
   // SAMME rad publiseres to ganger (via status="submitted" i selve
   // UPDATE-ens WHERE), ikke for at to FORSKJELLIGE innsendte forespørsler
   // fra SAMME journalist godkjennes nesten samtidig — begge kunne da lese
-  // samme (for lave) antall og begge bestå 5-grensen. Reelt hull, bekreftet
+  // samme (for lave) antall og begge bestå grensen. Reelt hull, bekreftet
   // empirisk: 8 samtidige godkjenninger av forskjellige forespørsler fra én
   // journalist med 4 allerede publiserte ga opptil 11 publiserte FØR denne
   // fiksen (se NATTLOGG.md).
@@ -89,7 +99,7 @@ export async function publishRequest(requestId: string): Promise<ModerationActio
       .select({ value: count() })
       .from(requests)
       .where(and(eq(requests.journalistId, request.journalistId), eq(requests.status, "published")));
-    if ((publishedRow?.value ?? 0) >= MAX_CONCURRENT_PUBLISHED) return "too_many_published";
+    if ((publishedRow?.value ?? 0) >= maxConcurrentPublished) return "too_many_published";
 
     const now = new Date();
     const [updated] = await tx

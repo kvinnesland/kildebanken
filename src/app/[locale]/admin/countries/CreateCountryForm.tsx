@@ -25,6 +25,9 @@ export function CreateCountryForm({ locale }: { locale: SupportedLocale }) {
   const [timezone, setTimezone] = useState("");
   const [minimumAge, setMinimumAge] = useState("18");
   const [digestSendTime, setDigestSendTime] = useState("07:00");
+  // FR-029, SPEC-V1.md 9.2/26.1 punkt 5 — samme standardverdi som
+  // DB-kolonnens egen DEFAULT (schema.ts).
+  const [maxConcurrentPublishedRequests, setMaxConcurrentPublishedRequests] = useState("5");
   const [senderNameKey, setSenderNameKey] = useState("");
   const [supportEmail, setSupportEmail] = useState("");
 
@@ -52,6 +55,7 @@ export function CreateCountryForm({ locale }: { locale: SupportedLocale }) {
         digestSendTime,
         senderNameKey,
         supportEmail,
+        maxConcurrentPublishedRequests: Number(maxConcurrentPublishedRequests),
       }),
     });
 
@@ -137,6 +141,13 @@ export function CreateCountryForm({ locale }: { locale: SupportedLocale }) {
         value={minimumAge}
         onChange={setMinimumAge}
         inputProps={{ type: "number", min: 0, max: 100 }}
+        isRequired
+      />
+      <TextField
+        label={t("admin.countries.max_concurrent_published_requests_label")}
+        value={maxConcurrentPublishedRequests}
+        onChange={setMaxConcurrentPublishedRequests}
+        inputProps={{ type: "number", min: 1 }}
         isRequired
       />
       <TextField

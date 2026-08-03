@@ -16071,3 +16071,89 @@ gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 70: fortsatte seksjon-for-seksjon-gjennomsynet (Økt 69 sin
+anbefaling) — seksjon 9 (Forespørsel): fant og rettet FR-029 sin
+"konfigurasjon, ikke hardkodet"-brudd
+
+Leste seksjon 9 (Forespørsel) linje for linje mot faktisk kode. FR-029
+(9.2) sier eksplisitt: "en journalist kan ha maks 5 forespørsler med
+status published samtidig ... Grensen er satt lavt bevisst – se 26.1,
+punkt 5 – og er konfigurasjon, ikke en hardkodet konstant." Koden hadde
+derimot `const MAX_CONCURRENT_PUBLISHED = 5;` hardkodet i BÅDE
+`src/lib/requests/requests.ts` (submitRequest, sjekk ved innsending) OG
+`src/lib/moderation/requests.ts` (publishRequest, re-sjekk under
+`pg_advisory_xact_lock` ved publisering — se Økt 49/95 sin TOCTOU-
+fiksing av nettopp dette stedet). Spec-teksten er entydig og korrekt;
+kun KODEN trengte retting (samme mønster som tidligere økter når spec
+allerede er presis).
+
+**Retting**: ny kolonne `countries.max_concurrent_published_requests`
+(integer, NOT NULL DEFAULT 5 — samme standardverdi som den fjernede
+konstanten, migrasjon `0009_kind_black_tom.sql`, kjørt mot BÅDE
+`kildebanken` og `kildebanken_test`), lest i begge de to nevnte
+funksjonene i stedet for den hardkodede konstanten (i publishRequest
+hentes den FØR `db.transaction()`-blokken, siden det er statisk,
+skrivebeskyttet konfigurasjon som ikke kan endres av selve
+publiseringen — bevarer TOCTOU-egenskapen fra Økt 49/95 uendret).
+Lagt til som et valgfritt felt (`?`, i motsetning til `minimumAge`/
+`digestSendTime` som er påkrevd) i `admin/countries.ts` sin
+`CreateCountryInput`/`UpdateCountryInput` (med samme validering:
+heltall, minst 1) — valgfritt fordi de fleste land aldri vil trenge å
+endre spec-ens tilsiktede standardverdi 5, og utelatelse faller da
+tilbake til DB-kolonnens egen DEFAULT. Tilsvarende valgfritt felt i
+Zod-schemaene for `POST /api/admin/countries` og
+`PATCH /api/admin/countries/[code]`. Nytt tekstfelt i BÅDE
+`CreateCountryForm.tsx` (forhåndsutfylt "5") og `CountryCard.tsx`
+(visning + redigering), ny i18n-nøkkel
+`admin.countries.max_concurrent_published_requests_label` (begge
+locales), og prop-videreføring i `admin/countries/page.tsx`.
+
+**Nye tester**: én i `requests.integration.test.ts` (submitRequest) og
+én i `moderation/requests.integration.test.ts` (publishRequest) — begge
+bruker en NY dedikert testlandkode `"XV"` (bekreftet ubrukt andre
+steder via grep) med `maxConcurrentPublishedRequests: 2` (satt via
+`.onConflictDoUpdate`, ikke `.onConflictDoNothing`, siden selve
+konfigurasjonsVERDIEN som testes må tvinges uansett forhåndstilstand).
+Valgt en verdi ULIK 5 med vilje — en test der landets grense tilfeldigvis
+er 5 ville IKKE skille "leser fra konfigurasjon" fra "fortsatt hardkodet
+til 5". Begge tester bekrefter at den TREDJE publiserte/innsendte
+forespørselen for et land med grense 2 nektes med
+`errors.too_many_published_requests`, mens de to eksisterende testene
+(grense 5) fortsatt bekrefter standardverdien uendret.
+
+### Verifisert før commit
+
+- Grep etter gjenværende referanser til den fjernede konstanten
+  `MAX_CONCURRENT_PUBLISHED`: null treff (kun to forklarende kommentarer
+  som nevner navnet i fortid).
+- `npx tsc --noEmit`: fant 8 feil i `CountryCard.test.tsx` (delt
+  `baseCountry`-fixture manglet det nye påkrevde feltet i
+  `CountryData`) — rettet med ett linjetillegg
+  (`maxConcurrentPublishedRequests: 5`); deretter ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 463 tester
+  (uendret — ingen enhetstest berørt av denne fiksen).
+- `npx tsx src/i18n/check-keys.ts`: OK — 532 nøkler (opp fra 529 — tre
+  nye siden Økt 69, hvorav én er denne øktens
+  `max_concurrent_published_requests_label`).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts` for de to berørte
+  filene direkte: begge nye tester bestod (43 tester totalt i de to
+  filene).
+- `npx vitest run -c vitest.integration.config.ts` (full pakke): 33
+  filer, 341 tester, ALLE bestod (339 + 2 nye).
+
+### Neste økt
+
+Seksjon 9 er nå ferdig gjennomgått. Fortsett seksjon-for-seksjon-
+gjennomsynet av SPEC-V1.md — 5, 9, 13 og 14 er nå dekket (Økt 67-70).
+Foreslått neste: seksjon 6 (Autentisering), 7 (Registrering) eller 11
+(Forespørselsside) — disse er IKKE nevnt i noen tidligere økts "allerede
+dekket"-liste. Uendret: de to gjenværende GENUINE åpne
+spec-spørsmålene, fortsatt bevisst latt åpne for menneskelig
+gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.

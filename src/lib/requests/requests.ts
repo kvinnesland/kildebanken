@@ -18,8 +18,6 @@ import { checkRateLimit } from "@/lib/security/rate-limit";
 import { slugify, withDisambiguator } from "./slug";
 import { validateForSubmit, validatePatchedFields, type SubmitValidationError } from "./validate";
 
-const MAX_CONCURRENT_PUBLISHED = 5; // FR-029, SPEC-V1.md 9.2
-
 // SPEC-V1.md 18: "20 forespørselsopprettelser per journalist per døgn."
 const CREATE_DRAFT_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 const CREATE_DRAFT_RATE_LIMIT_MAX = 20;
@@ -275,18 +273,27 @@ export async function submitRequest(
     return { ok: false, error: "errors.validation_failed", fieldErrors };
   }
 
-  // FR-029: maks 5 samtidig PUBLISERTE. Sjekket her ved submit OG re-sjekket
-  // ved faktisk publisering (src/lib/moderation/requests.ts,
-  // publishRequest()) — to sjekker, ikke fordi den ene er nok, men fordi
-  // tiden mellom submit og moderatorgodkjenning gjør at flere innsendte
-  // forespørsler i prinsippet kunne bli godkjent omtrent samtidig og bryte
-  // grensen hvis bare denne fantes.
+  // FR-029: maks N samtidig PUBLISERTE, N = landets
+  // `max_concurrent_published_requests` (SPEC-V1.md 9.2: "er konfigurasjon,
+  // ikke en hardkodet konstant" — reelt hull frem til nå, se NATTLOGG.md).
+  // Sjekket her ved submit OG re-sjekket ved faktisk publisering
+  // (src/lib/moderation/requests.ts, publishRequest()) — to sjekker, ikke
+  // fordi den ene er nok, men fordi tiden mellom submit og
+  // moderatorgodkjenning gjør at flere innsendte forespørsler i prinsippet
+  // kunne bli godkjent omtrent samtidig og bryte grensen hvis bare denne
+  // fantes.
+  const [country] = await db
+    .select({ maxConcurrentPublishedRequests: countries.maxConcurrentPublishedRequests })
+    .from(countries)
+    .where(eq(countries.code, existing.countryCode))
+    .limit(1);
+
   const [publishedRow] = await db
     .select({ value: count() })
     .from(requests)
     .where(and(eq(requests.journalistId, journalistUserId), eq(requests.status, "published")));
 
-  if ((publishedRow?.value ?? 0) >= MAX_CONCURRENT_PUBLISHED) {
+  if ((publishedRow?.value ?? 0) >= (country?.maxConcurrentPublishedRequests ?? 5)) {
     return { ok: false, error: "errors.too_many_published_requests" };
   }
 

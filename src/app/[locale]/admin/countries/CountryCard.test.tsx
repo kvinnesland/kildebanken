@@ -12,6 +12,7 @@ const baseCountry = {
   timezone: "Europe/Oslo",
   minimumAge: 18,
   digestSendTime: "07:00",
+  maxConcurrentPublishedRequests: 5,
   senderNameKey: "email.sender_name.test",
   supportEmail: "test@example.invalid",
   status: "draft" as const,

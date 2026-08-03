@@ -76,6 +76,7 @@ export default async function AdminCountriesPage({
                 digestSendTime: country.digestSendTime,
                 senderNameKey: country.senderNameKey,
                 supportEmail: country.supportEmail,
+                maxConcurrentPublishedRequests: country.maxConcurrentPublishedRequests,
                 status: country.status,
                 statusLabel: t(`admin.countries.status.${country.status}`),
               }}

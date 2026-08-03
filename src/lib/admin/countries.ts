@@ -47,6 +47,10 @@ export interface CreateCountryInput {
   digestSendTime: string;
   senderNameKey: string;
   supportEmail: string;
+  // FR-029, SPEC-V1.md 9.2. Valgfritt her (i motsetning til feltene over) —
+  // utelates den, faller innsettingen tilbake til DB-kolonnens egen
+  // DEFAULT 5 (schema.ts), samme tall spec-en selv begrunner i 26.1 punkt 5.
+  maxConcurrentPublishedRequests?: number;
 }
 
 /**
@@ -85,6 +89,14 @@ export async function createCountry(input: CreateCountryInput): Promise<CountryA
   }
   // Se DIGEST_SEND_TIME_PATTERN sin egen kommentar over.
   if (!DIGEST_SEND_TIME_PATTERN.test(input.digestSendTime)) {
+    return { ok: false, error: "errors.validation_failed" };
+  }
+  // FR-029: må være et positivt heltall — en verdi på 0 ville gjort det
+  // umulig for landets journalister å noensinne publisere noe som helst.
+  if (
+    input.maxConcurrentPublishedRequests !== undefined &&
+    (!Number.isInteger(input.maxConcurrentPublishedRequests) || input.maxConcurrentPublishedRequests < 1)
+  ) {
     return { ok: false, error: "errors.validation_failed" };
   }
 
@@ -136,6 +148,8 @@ export interface UpdateCountryInput {
   digestSendTime?: string;
   senderNameKey?: string;
   supportEmail?: string;
+  // FR-029, SPEC-V1.md 9.2 — se CreateCountryInput sin egen kommentar.
+  maxConcurrentPublishedRequests?: number;
 }
 
 // PATCH /admin/countries/:code — redigering av landkonfigurasjon (3.3).
@@ -168,6 +182,13 @@ export async function updateCountry(
   }
   // Samme begrunnelse som createCountry() (se DIGEST_SEND_TIME_PATTERN).
   if (input.digestSendTime !== undefined && !DIGEST_SEND_TIME_PATTERN.test(input.digestSendTime)) {
+    return { ok: false, error: "errors.validation_failed" };
+  }
+  // Samme begrunnelse som createCountry() (se der).
+  if (
+    input.maxConcurrentPublishedRequests !== undefined &&
+    (!Number.isInteger(input.maxConcurrentPublishedRequests) || input.maxConcurrentPublishedRequests < 1)
+  ) {
     return { ok: false, error: "errors.validation_failed" };
   }
 

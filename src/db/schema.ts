@@ -158,6 +158,14 @@ export const countries = pgTable("countries", {
   timezone: text("timezone").notNull(), // IANA
   minimumAge: integer("minimum_age").notNull(),
   digestSendTime: text("digest_send_time").notNull(), // "HH:MM" i landets tidssone
+  // FR-029, SPEC-V1.md 9.2: "Grensen er satt lavt bevisst ... og er
+  // konfigurasjon, ikke en hardkodet konstant." Reelt hull frem til nå (se
+  // NATTLOGG.md): var en hardkodet `MAX_CONCURRENT_PUBLISHED = 5` i BÅDE
+  // requests.ts og moderation/requests.ts, til tross for at spec-teksten selv
+  // eksplisitt sier den ikke skal være det. Standardverdi 5, samme tall som
+  // 26.1 punkt 5 begrunner ("heves når reelle journalister melder at det
+  // begrenser dem, ikke før").
+  maxConcurrentPublishedRequests: integer("max_concurrent_published_requests").notNull().default(5),
   senderNameKey: text("sender_name_key").notNull(),
   supportEmail: text("support_email").notNull(),
   status: countryStatus("status").notNull().default("draft"),

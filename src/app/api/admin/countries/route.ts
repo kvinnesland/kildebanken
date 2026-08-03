@@ -25,6 +25,7 @@ const bodySchema = z.object({
   digestSendTime: z.string().regex(/^\d{2}:\d{2}$/),
   senderNameKey: z.string().min(1),
   supportEmail: z.string().email(),
+  maxConcurrentPublishedRequests: z.number().int().min(1).optional(),
 });
 
 // POST /admin/countries (3.3) — opprettes alltid i status "draft".

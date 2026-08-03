@@ -250,6 +250,7 @@
   "admin.countries.available_locales_label": "Tilgjengelige språk",
   "admin.countries.timezone_label": "Tidssone (IANA)",
   "admin.countries.minimum_age_label": "Minstealder",
+  "admin.countries.max_concurrent_published_requests_label": "Maks samtidig publiserte forespørsler per journalist",
   "admin.countries.digest_send_time_label": "Sendetidspunkt for daglig e-post (TT:MM)",
   "admin.countries.sender_name_key_label": "Avsendernavn (i18n-nøkkel)",
   "admin.countries.sender_name_key_help": "Samme forutsetning som navnenøkkelen over.",

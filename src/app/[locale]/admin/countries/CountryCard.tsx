@@ -22,6 +22,7 @@ interface CountryData {
   digestSendTime: string;
   senderNameKey: string;
   supportEmail: string;
+  maxConcurrentPublishedRequests: number;
   status: "draft" | "active" | "paused";
   statusLabel: string;
 }
@@ -52,6 +53,9 @@ export function CountryCard({
   const [timezone, setTimezone] = useState(country.timezone);
   const [minimumAge, setMinimumAge] = useState(String(country.minimumAge));
   const [digestSendTime, setDigestSendTime] = useState(country.digestSendTime);
+  const [maxConcurrentPublishedRequests, setMaxConcurrentPublishedRequests] = useState(
+    String(country.maxConcurrentPublishedRequests)
+  );
   const [senderNameKey, setSenderNameKey] = useState(country.senderNameKey);
   const [supportEmail, setSupportEmail] = useState(country.supportEmail);
 
@@ -90,6 +94,7 @@ export function CountryCard({
         digestSendTime,
         senderNameKey,
         supportEmail,
+        maxConcurrentPublishedRequests: Number(maxConcurrentPublishedRequests),
       }),
     });
 
@@ -186,6 +191,12 @@ export function CountryCard({
                   <dd className={styles.fieldValue}>{country.minimumAge}</dd>
                 </div>
                 <div className={styles.field}>
+                  <dt className={styles.fieldLabel}>
+                    {t("admin.countries.max_concurrent_published_requests_label")}
+                  </dt>
+                  <dd className={styles.fieldValue}>{country.maxConcurrentPublishedRequests}</dd>
+                </div>
+                <div className={styles.field}>
                   <dt className={styles.fieldLabel}>{t("admin.countries.digest_send_time_label")}</dt>
                   <dd className={styles.fieldValue}>{country.digestSendTime}</dd>
                 </div>
@@ -250,6 +261,13 @@ export function CountryCard({
                 value={minimumAge}
                 onChange={setMinimumAge}
                 inputProps={{ type: "number", min: 0, max: 100 }}
+                isRequired
+              />
+              <TextField
+                label={t("admin.countries.max_concurrent_published_requests_label")}
+                value={maxConcurrentPublishedRequests}
+                onChange={setMaxConcurrentPublishedRequests}
+                inputProps={{ type: "number", min: 1 }}
                 isRequired
               />
               <TextField

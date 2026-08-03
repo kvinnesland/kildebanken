@@ -64,6 +64,13 @@
       "when": 1785477519944,
       "tag": "0008_skinny_black_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785782630114,
+      "tag": "0009_kind_black_tom",
+      "breakpoints": true
     }
   ]
 }

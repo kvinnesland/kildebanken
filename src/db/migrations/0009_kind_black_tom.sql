@@ -1,0 +1,1 @@
+ALTER TABLE "countries" ADD COLUMN "max_concurrent_published_requests" integer DEFAULT 5 NOT NULL;

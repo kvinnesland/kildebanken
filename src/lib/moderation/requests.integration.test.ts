@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { auditLogs, journalistProfiles, moderatorCountries, requests, sessions, users } from "@/db/schema";
+import { auditLogs, countries, journalistProfiles, moderatorCountries, requests, sessions, users } from "@/db/schema";
 import {
   ensureSecondTestCountry,
   ensureTestCountry,
@@ -205,6 +205,62 @@ describe("publishRequest/rejectRequest/requestChanges mot ekte Postgres", () => 
 
       expect(sixthResult).toEqual({ ok: false, error: "errors.too_many_published_requests" });
       const [after] = await db.select().from(requests).where(eq(requests.id, sixth.id));
+      expect(after?.status).toBe("submitted");
+    } finally {
+      await db.delete(requests).where(eq(requests.journalistId, journalist.id));
+    }
+  });
+
+  it("publishRequest(): bruker LANDETS EGEN grense, ikke en hardkodet 5 (FR-029, SPEC-V1.md 9.2: 'er konfigurasjon, ikke en hardkodet konstant')", async () => {
+    // Samme rettelse og samme lav-tak-testland ("XV") som den tilsvarende
+    // testen i requests/requests.integration.test.ts (se NATTLOGG.md) — men
+    // her for RE-sjekken ved selve publiseringen, ikke bare den tidlige
+    // sjekken ved submit.
+    const lowCapCountryCode = "XV";
+    await db
+      .insert(countries)
+      .values({
+        code: lowCapCountryCode,
+        nameKey: "country.test.name",
+        defaultLocale: "nb-NO",
+        availableLocales: ["nb-NO"],
+        timezone: "Europe/Oslo",
+        minimumAge: 18,
+        digestSendTime: "07:00",
+        senderNameKey: "email.sender_name.test",
+        supportEmail: "test@example.invalid",
+        status: "active",
+        maxConcurrentPublishedRequests: 2,
+      })
+      .onConflictDoUpdate({
+        target: countries.code,
+        set: { maxConcurrentPublishedRequests: 2 },
+      });
+
+    vi.stubEnv("BREVO_API_KEY", "");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const journalist = await createActiveJournalistPlain(lowCapCountryCode);
+    const moderator = await createModerator(lowCapCountryCode);
+    await loginAs(moderator.id);
+
+    try {
+      for (let i = 0; i < 2; i++) {
+        const submitted = await createSubmittedRequest(journalist.id, {
+          countryCode: lowCapCountryCode,
+          title: `Testforespørsel til moderering (lavt tak) ${i}`,
+        });
+        const result = await publishRequest(submitted.id);
+        expect(result.ok).toBe(true);
+      }
+
+      const third = await createSubmittedRequest(journalist.id, {
+        countryCode: lowCapCountryCode,
+        title: "Testforespørsel til moderering (lavt tak) 2",
+      });
+      const thirdResult = await publishRequest(third.id);
+
+      expect(thirdResult).toEqual({ ok: false, error: "errors.too_many_published_requests" });
+      const [after] = await db.select().from(requests).where(eq(requests.id, third.id));
       expect(after?.status).toBe("submitted");
     } finally {
       await db.delete(requests).where(eq(requests.journalistId, journalist.id));

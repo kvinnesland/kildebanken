@@ -1,7 +1,15 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { auditLogs, journalistProfiles, moderatorCountries, requests, responses, users } from "@/db/schema";
+import {
+  auditLogs,
+  countries,
+  journalistProfiles,
+  moderatorCountries,
+  requests,
+  responses,
+  users,
+} from "@/db/schema";
 import {
   createActiveJournalist,
   createActiveRecipient,
@@ -556,6 +564,88 @@ describe("submitRequest mot ekte Postgres (draft/changes_requested → submitted
       expect(result).toEqual({ ok: false, error: "errors.too_many_published_requests" });
       const [after] = await db.select().from(requests).where(eq(requests.id, requestId));
       expect(after?.status).toBe("draft");
+    } finally {
+      await db.delete(requests).where(inArray(requests.id, [...publishedIds, requestId]));
+    }
+  });
+
+  it("bruker LANDETS EGEN grense, ikke en hardkodet 5 (FR-029, SPEC-V1.md 9.2: 'er konfigurasjon, ikke en hardkodet konstant')", async () => {
+    // Eget testland med en LAVERE grense (2) enn TEST_COUNTRY_CODE sin
+    // DB-standard (5) — beviser at verdien faktisk leses fra
+    // countries.max_concurrent_published_requests, ikke en konstant i
+    // koden. Reelt hull frem til nå (se NATTLOGG.md): spec-en krevde
+    // eksplisitt at grensen skulle være konfigurasjon, men koden hadde en
+    // hardkodet `MAX_CONCURRENT_PUBLISHED = 5` i BÅDE denne filen og
+    // moderation/requests.ts.
+    const lowCapCountryCode = "XV";
+    await db
+      .insert(countries)
+      .values({
+        code: lowCapCountryCode,
+        nameKey: "country.test.name",
+        defaultLocale: "nb-NO",
+        availableLocales: ["nb-NO"],
+        timezone: "Europe/Oslo",
+        minimumAge: 18,
+        digestSendTime: "07:00",
+        senderNameKey: "email.sender_name.test",
+        supportEmail: "test@example.invalid",
+        status: "active",
+        maxConcurrentPublishedRequests: 2,
+      })
+      .onConflictDoUpdate({
+        target: countries.code,
+        set: { maxConcurrentPublishedRequests: 2 },
+      });
+
+    const [journalistUser] = await db
+      .insert(users)
+      .values({
+        email: uniqueTestEmail("journalist-low-cap"),
+        role: "journalist",
+        status: "active",
+        countryCode: lowCapCountryCode,
+        locale: "nb-NO",
+        emailVerifiedAt: new Date(),
+      })
+      .returning({ id: users.id });
+    if (!journalistUser) throw new Error("Klarte ikke opprette test-journalist");
+    await db.insert(journalistProfiles).values({
+      userId: journalistUser.id,
+      fullName: "Test Journalist",
+      jobTitle: "Journalist",
+      organizationName: "Testavisen",
+      organizationUrl: "https://example.invalid",
+      verificationStatus: "approved",
+    });
+
+    const publishedIds: string[] = [];
+    for (let i = 0; i < 2; i++) {
+      const [row] = await db
+        .insert(requests)
+        .values({
+          journalistId: journalistUser.id,
+          countryCode: lowCapCountryCode,
+          contentLanguage: "nb-NO",
+          title: `Allerede publisert (lavt tak) ${i}`,
+          summary: "sum",
+          description: "desc",
+          targetPersonDescription: "target",
+          responseDeadline: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+          status: "published",
+          allowsAnonymousParticipation: true,
+          mayBeRecorded: false,
+          mayInvolvePhotoVideo: false,
+          publishedAt: new Date(),
+        })
+        .returning({ id: requests.id });
+      if (row) publishedIds.push(row.id);
+    }
+    const requestId = await createSubmittableDraft(journalistUser.id);
+
+    try {
+      const result = await submitRequest(requestId, journalistUser.id);
+      expect(result).toEqual({ ok: false, error: "errors.too_many_published_requests" });
     } finally {
       await db.delete(requests).where(inArray(requests.id, [...publishedIds, requestId]));
     }

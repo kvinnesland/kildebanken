@@ -250,6 +250,7 @@
   "admin.countries.available_locales_label": "Available locales",
   "admin.countries.timezone_label": "Timezone (IANA)",
   "admin.countries.minimum_age_label": "Minimum age",
+  "admin.countries.max_concurrent_published_requests_label": "Max concurrent published requests per journalist",
   "admin.countries.digest_send_time_label": "Daily email send time (HH:MM)",
   "admin.countries.sender_name_key_label": "Sender name (i18n key)",
   "admin.countries.sender_name_key_help": "Same requirement as the name key above.",

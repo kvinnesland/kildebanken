@@ -20,6 +20,7 @@ const bodySchema = z.object({
     .optional(),
   senderNameKey: z.string().min(1).optional(),
   supportEmail: z.string().email().optional(),
+  maxConcurrentPublishedRequests: z.number().int().min(1).optional(),
   status: z.enum(["draft", "active", "paused"]).optional(),
 });
 
