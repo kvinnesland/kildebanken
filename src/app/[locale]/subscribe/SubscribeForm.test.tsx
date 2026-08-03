@@ -58,6 +58,14 @@ describe("SubscribeForm", () => {
     expect(within(screen.getByRole("listbox")).getByText("Norge")).toBeInTheDocument();
   });
 
+  it("begrenser visningsnavn til 80 tegn i selve inputfeltet, samme grense som POST /subscribe håndhever server-side", async () => {
+    render(<SubscribeForm locale="nb-NO" />);
+    await screen.findByRole("button", { name: /Land/ });
+
+    const input = screen.getByLabelText("Visningsnavn (valgfritt)");
+    expect(input).toHaveAttribute("maxLength", "80");
+  });
+
   it("viser ikke samtykkene før land og språk er valgt (SPEC-V1.md 7.1)", async () => {
     render(<SubscribeForm locale="nb-NO" />);
     await screen.findByRole("button", { name: /Land/ });

@@ -15600,3 +15600,71 @@ for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 64: fant og rettet et EKTE hull — SubscribeForm.tsx manglet
+`maxLength` på visningsnavn-feltet
+
+Fulgte Økt 63 sin anbefaling om å sjekke DESIGN.md 9s gjenstående
+kriterier — alle 8 viste seg allerede verifiserte og fortsatt grønne
+(bekreftet på nytt: `npx tsx src/styles/check-tokens.ts` for kriterium 2
+kjørte fortsatt rent, "54 komponent-CSS-fil(er) sjekket, ingen rå verdier
+funnet"). I stedet for enda en null-funn-runde, sjekket jeg om den
+SAMME bugklassen som ble rettet to ganger tidligere (Økt-oppgave #57:
+PATCH /me sitt Zod-skjema 200→80, og #59: `ProfileForm.tsx` sin
+tilsvarende klientsidegrense) hadde sneket seg inn et TREDJE sted —
+og fant den:
+
+**`src/app/[locale]/subscribe/SubscribeForm.tsx`** (registreringsskjemaet
+for mottakere, `POST /subscribe`) hadde INGEN `maxLength` i det hele
+tatt på visningsnavn-feltets `TextField`, til tross for at
+`POST /subscribe` sitt Zod-skjema (`src/app/api/subscribe/route.ts`)
+allerede håndhever `z.string().max(80)`. En bruker som skrev inn (eller
+limte inn) mer enn 80 tegn ville fått en generisk, feltløs
+`errors.generic`-feilmelding ved innsending i stedet for å bli stanset i
+selve feltet — nøyaktig samme brukeropplevelses-bug som de to tidligere
+rettelsene, bare på et tredje skjema ingen av de to tidligere øktene
+hadde sjekket. Fant den ved å grep'e etter `displayName.*max\(` på tvers
+av hele `src/` og krysse resultatet mot HVER frontend-komponent som
+faktisk viser et visningsnavn-felt (`ResponseForm.tsx` hadde allerede
+`LIMITS.displayName = 80`; `ProfileForm.tsx` hadde `maxLength: 80`;
+`SubscribeForm.tsx` hadde INGEN).
+
+**Retting**: la til `inputProps={{ maxLength: 80 }}` på
+`TextField`-en, med samme forklarende kommentarstil som
+`ProfileForm.tsx` sin egen (peker til `POST /subscribe` sitt skjema som
+autoriteten, ikke et vilkårlig tall).
+
+**Ny test** i `SubscribeForm.test.tsx`, samme mønster som den
+tilsvarende testen i `ProfileForm.test.tsx` (som nettopp DENNE typen
+regresjon — server-/klient-grense kommer ut av synk — er skrevet for å
+fange): `expect(input).toHaveAttribute("maxLength", "80")`, oppslått via
+`screen.getByLabelText("Visningsnavn (valgfritt)")`.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 460 tester (459 +
+  1 ny).
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret (ingen nye
+  i18n-nøkler trengtes, teksten var allerede oversatt).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 337
+  tester, ALLE bestod uendret (rent frontend-skjema, ingen
+  server-/DB-logikk endret, men kjørt likevel per den stående regelen).
+
+### Neste økt
+
+Samme bugklasse (server-/klient-lengdegrense ute av synk) er nå rettet
+tre ganger på tre ulike skjemaer — verdt å sjekke om ENDA et skjema et
+sted i kodebasen har et fritekstfelt med en server-side Zod
+`.max(...)`-grense uten en tilsvarende `maxLength` på klientsiden (et
+raskt grep etter `.max(` i alle `route.ts`-filers Zod-skjemaer, krysset
+mot de tilhørende frontend-skjemaene, ville avdekket dette systematisk
+i stedet for stykkevis). Uendret: de to gjenværende GENUINE åpne
+spec-spørsmålene, fortsatt bevisst latt åpne for menneskelig
+gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.

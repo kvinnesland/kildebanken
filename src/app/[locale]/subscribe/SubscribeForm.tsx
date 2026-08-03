@@ -182,6 +182,13 @@ export function SubscribeForm({ locale }: { locale: SupportedLocale }) {
         label={t("recipient.register.display_name_label")}
         value={displayName}
         onChange={setDisplayName}
+        // 80, samme grense som POST /subscribe sitt Zod-skjema
+        // (src/app/api/subscribe/route.ts) håndhever server-side — samme
+        // bugklasse som ProfileForm.tsx sin egen kommentar beskriver (se
+        // NATTLOGG.md): uten denne kunne en bruker skrive inn mer enn
+        // serverens grense og få en uforklarlig, feltløs feilmelding ved
+        // innsending i stedet for å bli stanset i selve feltet.
+        inputProps={{ maxLength: 80 }}
       />
 
       <Select
