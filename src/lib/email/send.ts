@@ -47,12 +47,13 @@ import type { RenderedEmail } from "./templates/simple-cta-email";
 const BREVO_SEND_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
 
 interface BrevoEmailPayload {
-  sender: { email: string };
+  sender: { email: string; name?: string };
   to: [{ email: string }];
   subject: string;
   htmlContent: string;
   textContent: string;
   headers?: Record<string, string>;
+  replyTo?: { email: string };
 }
 
 /**
@@ -348,6 +349,16 @@ export interface SendBulkEmailInput {
   // (src/lib/email/digest.ts) — e-postklienten POSTer rett til denne uten å
   // rendre noen side (RFC 8058, "one-click").
   listUnsubscribeUrl: string;
+  // SPEC-V1.md 10.4: "From-navnet lokaliseres per land og språk via
+  // sender_name_key, og Reply-To settes til landets support_email." Reelt
+  // hull frem til nå (se NATTLOGG.md): `countries.senderNameKey` og
+  // `countries.supportEmail` ble lagret og administrert i admin-UI-et, men
+  // ALDRI faktisk lest av selve sendekoden — hver digest gikk ut med bare
+  // den rå avsender-e-postadressen som synlig navn, og uten noen Reply-To i
+  // det hele tatt. Begge obligatoriske, samme begrunnelse som
+  // `listUnsubscribeUrl` over.
+  senderName: string;
+  replyTo: string;
 }
 
 /**
@@ -391,11 +402,12 @@ export async function sendBulkEmail(input: SendBulkEmailInput): Promise<string |
   }
 
   return sendViaBrevo(apiKey, {
-    sender: { email: senderEmail },
+    sender: { email: senderEmail, name: input.senderName },
     to: [{ email: input.to.email }],
     subject: input.subject,
     htmlContent: input.html,
     textContent: input.text,
+    replyTo: { email: input.replyTo },
     headers: {
       "List-Unsubscribe": `<${input.listUnsubscribeUrl}>`,
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",

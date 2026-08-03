@@ -2,6 +2,7 @@ import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   auditLogs,
+  countries,
   digestDeliveries,
   digests,
   emailSubscriptions,
@@ -11,6 +12,7 @@ import {
 } from "@/db/schema";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
 import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
+import { createTranslator } from "@/i18n/get-messages";
 import { sendBulkEmail } from "@/lib/email/send";
 import {
   insertPerRecipientTokens,
@@ -116,6 +118,16 @@ export async function retryFailedDigestDeliveries(digestId: string): Promise<Ret
   if (check.status === "wrong_country") return { ok: false, error: "errors.not_found" };
   const session = check.session;
 
+  // SPEC-V1.md 10.4: samme lokaliserte From-navn/Reply-To som selve
+  // førstegangsutsendelsen (tick.ts) — en gjensending skal ikke se
+  // annerledes ut for mottakeren enn originalen ville gjort.
+  const [country] = await db
+    .select({ senderNameKey: countries.senderNameKey, supportEmail: countries.supportEmail })
+    .from(countries)
+    .where(eq(countries.code, digest.countryCode))
+    .limit(1);
+  if (!country) return { ok: false, error: "errors.not_found" };
+
   const failedDeliveries = await db
     .select({
       deliveryId: digestDeliveries.id,
@@ -160,12 +172,14 @@ export async function retryFailedDigestDeliveries(digestId: string): Promise<Ret
   }
 
   const renderedByLocale = new Map<string, RenderedDigest>();
+  const senderNameByLocale = new Map<string, string>();
   let retriedCount = 0;
 
   for (const delivery of failedDeliveries) {
     const locale = isSupportedLocale(delivery.locale) ? delivery.locale : PLATFORM_DEFAULT_LOCALE;
     if (!renderedByLocale.has(locale)) {
       renderedByLocale.set(locale, renderDigestContent(locale, digestItems));
+      senderNameByLocale.set(locale, createTranslator(locale)(country.senderNameKey));
     }
     const rendered = renderedByLocale.get(locale);
     if (!rendered) continue;
@@ -204,6 +218,9 @@ export async function retryFailedDigestDeliveries(digestId: string): Promise<Ret
         text: personalized.text,
         // FR-038, samme som førstegangsutsendelsen i tick.ts.
         listUnsubscribeUrl: `${SITE_ORIGIN}/api/unsubscribe/${unsubscribeToken}`,
+        // SPEC-V1.md 10.4, samme som førstegangsutsendelsen i tick.ts.
+        senderName: senderNameByLocale.get(locale) ?? country.senderNameKey,
+        replyTo: country.supportEmail,
       });
 
       // provider_message_id, samme begrunnelse som førstegangsutsendelsen i

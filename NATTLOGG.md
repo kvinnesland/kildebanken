@@ -14829,3 +14829,106 @@ gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+---
+
+## Økt 54: fulgte opp forrige økts spor (`nameKey`/`senderNameKey`) —
+fant IKKE en valideringsmangel, men et faktisk UBRUKT felt: hele
+SPEC-V1.md 10.4 (lokalisert From-navn + Reply-To) var aldri koblet inn
+
+Forrige økt (53) foreslo å sjekke `nameKey`/`senderNameKey` for samme
+"aksepteres stille, krasjer/feiler langt unna senere"-mønster som
+`timezone`/`digestSendTime`. Sporet dette videre:
+
+**Først avklart: `nameKey` er LAV risiko, ikke samme mønster.**
+`t(c.nameKey)` (bruk i `SubscribeForm.tsx`, admin-dashbordet,
+`ChangeCountryForm.tsx`, `JournalistApplyForm.tsx`) degraderer allerede
+GRASIØST ved en manglende nøkkel — `createTranslator()` (i18n/
+get-messages.ts) logger via `logMissingKey()` og faller tilbake til
+plattformens standardspråk, til slutt til `"…"` — ALDRI en krasj, og
+ALLTID synlig umiddelbart (i motsetning til `digestSendTime`-hullet, som
+kunne vært usynlig i ukevis). Konkluderte at dette IKKE fortjener samme
+hastverk, og gikk videre til å faktisk SPORE hvor `senderNameKey` brukes.
+
+**Reelt (og STØRRE) funn**: `senderNameKey` var IKKE brukt NOE sted i
+faktisk forretningslogikk — kun i `seed.ts`/testfixtures og selve
+CRUD-en (`admin/countries.ts`). Sjekket SPEC-V1.md 10.4 direkte
+(`sender_name_key`, "oversettelsesnøkkel for From-navn"): "From-navnet
+lokaliseres per land og språk via `sender_name_key`, og Reply-To settes
+til landets `support_email`." VERKEN localisert From-navn ELLER
+Reply-To var noensinne implementert — `send.ts` sin `sender`-payload
+til Brevo besto BARE av `{email}`, aldri `{email, name}`, og et
+`replyTo`-felt fantes ikke i det hele tatt NOE sted i kodebasen. Ikke en
+manglende VALIDERING denne gangen, men en HELT MANGLENDE FUNKSJON — hver
+eneste digest-e-post siden natten begynte har gått ut med bare den rå
+avsender-e-postadressen synlig, og uten noen Reply-To.
+
+**Bekreftet Brevo sin API-form via WebSearch** (samme disiplin som Økt
+12/#84): `sender: {email, name}` og `replyTo: {email, name?}` (et
+OBJEKT, ikke et array) — to uavhengige kilder stemte overens, inkludert
+et konkret curl-eksempel.
+
+**Fiks, bevisst SKOPET til bulk-digest-veien**: `BrevoEmailPayload`
+utvidet med valgfri `sender.name` og valgfri `replyTo`.
+`SendBulkEmailInput` fikk to NYE OBLIGATORISKE felt (`senderName`,
+`replyTo`) — samme "obligatorisk, ikke valgfritt, med hensikt"-mønster
+som `listUnsubscribeUrl` allerede bruker, slik at et FREMTIDIG kallested
+ikke kan glemme dem stille. Begge de to kallestedene til `sendBulkEmail`
+oppdatert:
+- `tick.ts` (førstegangsutsendelse): `country`-raden er ALLEREDE i scope
+  i `runDigestTick()`s løkke — ingen ekstra spørring. `senderName`
+  beregnes PER LOCALE FAKTISK I BRUK (samme cache-mønster som selve
+  digest-innholdet, `renderedByLocale`), siden spec-en sier "per land OG
+  språk", ikke bare landets `defaultLocale`.
+- `digests.ts` (`retryFailedDigestDeliveries`, admin "kjør på nytt"):
+  `digests`-raden har bare `countryCode`, ikke landets øvrige felt — la
+  til ÉN liten spørring mot `countries` for `senderNameKey`/
+  `supportEmail`, samme per-locale-cache-mønster.
+
+**Bevisst IKKE gjort denne runden**: `sendTransactionalEmail()` (~20+
+kallesteder på tvers av moderation/, responses/, contact-requests/, osv.)
+rører IKKE `senderNameKey`/`supportEmail` ennå — hvert kallested ville
+måtte slå opp MOTTAKERENS land, en betydelig større og mer risikabel
+endring enn denne kveldens øvrige valideringsfikser. Latt stå som et
+eksplisitt neste spor, IKKE gjort forhastet.
+
+**Empirisk bekreftet feilen var reell**: `git stash push` på `send.ts`
+alene (beholdt `send.test.ts` sine oppdaterte forventninger) → den nye
+`sender`/`replyTo`-assert-testen FEILET som forventet mot den gamle
+koden (`sender` manglet `name`-feltet helt) → `git stash pop`
+gjenopprettet fiksen → alle 32 tester i `send.test.ts` består.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 458 tester,
+  uendret (send.test.ts sine 8 `sendBulkEmail`-kall oppdatert med de to
+  nye obligatoriske feltene, én assert-test utvidet).
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 32 filer, 333
+  tester, ALLE bestod uendret (digest-utsendelsen i både
+  `tick.integration.test.ts` og andre steder kjører allerede i
+  stubb-modus uten `BREVO_API_KEY`, så de nye obligatoriske feltene ble
+  bare sendt gjennom stille, ingen assert-oppdatering nødvendig der).
+  Global-opprydningen fjernet 230 testbrukere, uendret oppførsel.
+- Empirisk `git stash`-kontrast (se over) beviser fiksen løser et reelt,
+  reproduserbart hull, ikke bare en teoretisk bekymring.
+
+### Neste økt
+
+Det eksplisitt utsatte sporet: gjør SAMME lokalisering
+(senderName/Reply-To) for `sendTransactionalEmail()` sine ~20+
+kallesteder — krever at HVERT kallested kan slå opp MOTTAKERENS land
+(de fleste har allerede en bruker-rad i scope med `countryCode`, men
+ikke nødvendigvis landets `senderNameKey`/`supportEmail` uten en ekstra
+spørring per sted). Betydelig større omfang enn dagens fiks — bør gjøres
+FORSIKTIG, gjerne i flere mindre økter (én modul om gangen) fremfor ett
+stort kast, gitt hvor mange kallesteder det er. Ellers uendret: de to
+gjenværende GENUINE åpne spec-spørsmålene, fortsatt bevisst latt åpne
+for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.

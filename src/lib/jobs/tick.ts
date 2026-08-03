@@ -26,6 +26,7 @@ import {
 import { sendTransactionalEmail, sendBulkEmail } from "@/lib/email/send";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
 import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
+import { createTranslator } from "@/i18n/get-messages";
 import { runRetention } from "@/lib/jobs/retention";
 import {
   insertPerRecipientTokens,
@@ -184,6 +185,8 @@ export async function runDigestTick(dbase: Database): Promise<TickResult> {
         digestId: createdDigest.id,
         country: country.code,
         requestIds,
+        senderNameKey: country.senderNameKey,
+        supportEmail: country.supportEmail,
       });
       errors.push(...sendErrors);
 
@@ -204,7 +207,13 @@ export async function runDigestTick(dbase: Database): Promise<TickResult> {
  */
 async function sendDigestToRecipients(
   dbase: Database,
-  args: { digestId: string; country: string; requestIds: string[] }
+  args: {
+    digestId: string;
+    country: string;
+    requestIds: string[];
+    senderNameKey: string;
+    supportEmail: string;
+  }
 ): Promise<string[]> {
   const errors: string[] = [];
 
@@ -271,10 +280,16 @@ async function sendDigestToRecipients(
   // Rendrer én gang per locale FAKTISK i bruk blant mottakerne (FR-032),
   // ikke én gang per mottaker og ikke for hele SUPPORTED_LOCALES.
   const renderedByLocale = new Map<string, RenderedDigest>();
+  // SPEC-V1.md 10.4: From-navnet lokaliseres "per land OG språk" — samme
+  // nøkkel (senderNameKey), men oversatt til HVER locale faktisk i bruk,
+  // ikke bare landets defaultLocale. Skoper naturlig med samme
+  // per-locale-cache som selve digest-innholdet over.
+  const senderNameByLocale = new Map<string, string>();
   for (const recipient of recipients) {
     const locale = isSupportedLocale(recipient.locale) ? recipient.locale : PLATFORM_DEFAULT_LOCALE;
     if (!renderedByLocale.has(locale)) {
       renderedByLocale.set(locale, renderDigestContent(locale, digestItems));
+      senderNameByLocale.set(locale, createTranslator(locale)(args.senderNameKey));
     }
   }
 
@@ -321,6 +336,9 @@ async function sendDigestToRecipients(
         // FR-038 — peker på API-ruten direkte, ikke frontend-siden lenken i
         // selve e-postteksten peker til.
         listUnsubscribeUrl: `${SITE_ORIGIN}/api/unsubscribe/${unsubscribeToken}`,
+        // SPEC-V1.md 10.4 — se senderNameByLocale sin egen kommentar over.
+        senderName: senderNameByLocale.get(locale) ?? args.senderNameKey,
+        replyTo: args.supportEmail,
       });
 
       // provider_message_id (SPEC-V1.md 19.10) — lar en senere webhook-

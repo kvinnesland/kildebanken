@@ -433,6 +433,8 @@ describe("sendBulkEmail", () => {
       html: "<p>hei</p>",
       text: "hei",
       listUnsubscribeUrl: "https://tjenesten.no/api/unsubscribe/tok-1",
+      senderName: "Kildebanken Norge",
+      replyTo: "support@example.invalid",
     });
 
     expect(warnSpy).toHaveBeenCalledTimes(1);
@@ -441,7 +443,7 @@ describe("sendBulkEmail", () => {
     expect(loggedMessage).toContain("tok-1");
   });
 
-  it("poster til v3/smtp/email med bulk-avsender og List-Unsubscribe-headere (FR-038)", async () => {
+  it("poster til v3/smtp/email med bulk-avsender, lokalisert From-navn, Reply-To og List-Unsubscribe-headere (FR-038, SPEC-V1.md 10.4)", async () => {
     vi.stubEnv("BREVO_API_KEY", "test-key-123");
     vi.stubEnv("BREVO_SENDER_BULK", "utsendelse@epost.tjenesten.no");
     const fetchMock = vi.fn().mockResolvedValue({
@@ -457,12 +459,15 @@ describe("sendBulkEmail", () => {
       html: "<p>hei</p>",
       text: "hei",
       listUnsubscribeUrl: "https://tjenesten.no/api/unsubscribe/tok-1",
+      senderName: "Kildebanken Norge",
+      replyTo: "support@example.invalid",
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(options.body as string);
-    expect(body.sender).toEqual({ email: "utsendelse@epost.tjenesten.no" });
+    expect(body.sender).toEqual({ email: "utsendelse@epost.tjenesten.no", name: "Kildebanken Norge" });
+    expect(body.replyTo).toEqual({ email: "support@example.invalid" });
     expect(body.to).toEqual([{ email: "recipient@example.com" }]);
     expect(body.headers).toEqual({
       "List-Unsubscribe": "<https://tjenesten.no/api/unsubscribe/tok-1>",
@@ -483,6 +488,8 @@ describe("sendBulkEmail", () => {
         html: "<p>hei</p>",
         text: "hei",
         listUnsubscribeUrl: "https://tjenesten.no/api/unsubscribe/tok-1",
+        senderName: "Kildebanken Norge",
+        replyTo: "support@example.invalid",
       })
     ).rejects.toThrow(/BREVO_SENDER_BULK/);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -498,6 +505,8 @@ describe("sendBulkEmail", () => {
       html: "<p>hei</p>",
       text: "hei",
       listUnsubscribeUrl: "https://tjenesten.no/api/unsubscribe/tok-1",
+      senderName: "Kildebanken Norge",
+      replyTo: "support@example.invalid",
     });
 
     expect(result).toBeNull();
@@ -521,6 +530,8 @@ describe("sendBulkEmail", () => {
       html: "<p>hei</p>",
       text: "hei",
       listUnsubscribeUrl: "https://tjenesten.no/api/unsubscribe/tok-1",
+      senderName: "Kildebanken Norge",
+      replyTo: "support@example.invalid",
     });
 
     expect(result).toBe("<brevo-msg-123@relay.brevo.com>");
@@ -540,6 +551,8 @@ describe("sendBulkEmail", () => {
       html: "<p>hei</p>",
       text: "hei",
       listUnsubscribeUrl: "https://tjenesten.no/api/unsubscribe/tok-1",
+      senderName: "Kildebanken Norge",
+      replyTo: "support@example.invalid",
     });
 
     expect(result).toBeNull();
@@ -558,6 +571,8 @@ describe("sendBulkEmail", () => {
         html: "<p>hei</p>",
         text: "hei",
         listUnsubscribeUrl: "https://tjenesten.no/api/unsubscribe/tok-1",
+        senderName: "Kildebanken Norge",
+        replyTo: "support@example.invalid",
       })
     ).rejects.toThrow(/BREVO_API_KEY/);
     expect(warnSpy).not.toHaveBeenCalled();
