@@ -16263,3 +16263,90 @@ for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 72: fortsatte seksjon-for-seksjon-gjennomsynet — seksjon 2, 4, 8,
+12 og 15 gjennomgått, INGEN nye hull funnet denne gangen
+
+Ingen kodeendring denne økten — loggført likevel, siden en grundig,
+negativ gjennomgang også er verdifull informasjon for neste økt (samme
+begrunnelse som tidligere "ingen hull funnet"-oppføringer, f.eks. rundt
+linje 1979 i denne loggen).
+
+**Seksjon 2 (Rammer for v1):** rent beskrivende scope/forretnings-
+kontekst, ingenting funksjonelt å sjekke kode mot.
+
+**Seksjon 4 (Roller):** rolletabellen stemmer med faktisk håndhevet
+RBAC overalt (authorize.ts m.fl., allerede grundig dekket av tidligere
+økter). Spesielt sjekket: "Moderator og administrator skal ikke lese
+innholdet i svar uten et tjenstlig behov. Alle slike oppslag logges med
+begrunnelse" — bekreftet i `GET /admin/responses/:id?reason=...`
+(`src/app/api/admin/responses/[id]/route.ts`): begrunnelse er
+OBLIGATORISK fra en lukket liste (`ADMIN_RESPONSE_ACCESS_REASONS`), ikke
+fritekst, og `getResponseForAdmin()` logger den. Denne siden var allerede
+bygget med egen forsiktighet (task #103).
+
+**Seksjon 8 (Godkjenning av journalister):** `approveJournalist()`/
+`rejectJournalist()` (moderation/journalists.ts) stemmer eksakt med
+tabellen i 8.1 — TOCTOU-sikret re-håndhevelse av `pending_review` (samme
+mønster som FR-029), FR-023 sin 404-for-feil-land, avvisningsbegrunnelse
+sendt UOVERSATT på søkerens eget språk (samme prinsipp som moderator-
+kommentarer på forespørsler, 9.3). Suspensjon sjekket separat: publiserte
+forespørsler skjules via en LESESIDE-regel (`getPublicRequest()` filtrerer
+på `users.status = active`, bekreftet direkte i koden), ikke ved å skrive
+noe på selve forespørselsraden — reverseres derfor automatisk av
+`unsuspendUser()`. Åpne kontaktforespørsler kanselleres ved suspensjon.
+`verification_status` røres ikke ved suspensjon/oppheving, som spec-en
+krever.
+
+**Seksjon 12 (Svar):** 12.1 sitt eneste kjente hull ble allerede rettet
+forrige økt (visningsnavn-forhåndsutfylling). Resten stemmer: "Anonym
+respondent" vises på JOURNALISTENS språk (bekreftet — brukes kun i de tre
+journalist-/admin-vendte sidene, aldri på respondentsiden), feltgrensene
+i `validate.ts` stemmer eksakt med tabellen og med `ResponseForm.tsx`
+sine egne grenser, kontaktdeling defaulter til "none" server-side også
+(ikke bare i UI), 12.4 (trekking) hard-sletter svaret umiddelbart og
+kansellerer pending kontaktforespørsler, 12.6 sin utledede status-
+prioritering (`not_selected > contact_requested > viewed > submitted`)
+stemmer ord for ord med koden i `listMineResponses()`. Den juridisk
+sensitive bekreftelsesteksten (12.3) sitt kjente forbehold (ikke
+juristgjennomgått, ikke bygget som egen `legalDocumentType`) var
+allerede flagget i økt 7 — ingen ny risiko funnet, bare bekreftet at
+begge locales fortsatt har full nøkkelparitet (9 `response.confirm.*`-
+nøkler i hver fil).
+
+**Seksjon 15 (E-postmaler):** alle 23 transaksjonelle maler i tabellen
+finnes som egne `TransactionalTemplate`-verdier i `send.ts`, pluss den
+24. raden (digest) som har sin egen renderingsvei i `digest.ts` — ingen
+manglende mal. HTML+ren-tekst sendes alltid sammen (`htmlContent`/
+`textContent` i alle grener av `send.ts`). Unntaket i siste avsnitt
+("maler som gjengir juridisk tekst, faller ikke tilbake") gjelder i
+praksis INGEN bygget mal ennå — `legal_terms_material_change` varsler
+bare OM en endring og lenker til dokumentsiden, den gjengir ikke selve
+den juridiske teksten. Selve den juridiske teksten (legal_documents-
+tabellen) har fra før ingen fallback (`getCurrentLegalDocument()`
+returnerer `null`, aldri en annen locales tekst).
+
+### Verifisert
+
+Ingen kode endret, ingen ny verifisering kjørt (siste kjente grønne
+kjøring er fra Økt 71, uendret siden).
+
+### Neste økt
+
+Fortsett seksjon-for-seksjon-gjennomsynet. Nå dekket: 2, 4, 5, 6, 7, 8,
+9, 11, 12, 13, 14, 15. Gjenstår av hovedseksjonene (1-20): 1 (Formål —
+sannsynligvis rent beskrivende, lav prioritet), 3 (Språk og land — delvis
+dekket via 3.7-fiksen tidligere, men ikke lest linje-for-linje i sin
+helhet), 10 (Daglig utsendelse — digest.ts/tick.ts er allerede kritisk
+lest for TOCTOU i Økt 63, men ALDRI eksplisitt linje-for-linje mot denne
+seksjonens fulle tekst), 16 (Administrasjon — dekket av dedikerte
+byggeøkter, men ikke denne artige gjennomlesningsmetoden), 17-20 (samme
+— dedikerte tidligere økter, ikke denne metoden). Anbefalt neste: seksjon
+3 eller 10, siden begge har substansiell, ukontrollert detalj (locale-
+fallback-kjeden i 3.4, den fulle digest-jobb-spesifikasjonen i 10.1).
+Uendret: de to gjenværende GENUINE åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
