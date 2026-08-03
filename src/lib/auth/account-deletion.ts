@@ -12,6 +12,7 @@ import {
 import { generateToken, hashToken } from "./tokens";
 import { revokeAllSessionsForUser } from "./session";
 import { sendTransactionalEmail } from "@/lib/email/send";
+import { resolveSenderIdentity } from "@/lib/email/sender-identity";
 
 // Samme gyldighetstid som magic link (6.1) — se src/lib/auth/magic-link.ts.
 const TOKEN_TTL_MS = 15 * 60 * 1000;
@@ -27,7 +28,12 @@ export type AccountDeletionResult = { ok: true } | { ok: false; error: string };
  */
 export async function requestAccountDeletion(userId: string): Promise<void> {
   const [user] = await db
-    .select({ email: users.email, locale: users.locale, status: users.status })
+    .select({
+      email: users.email,
+      locale: users.locale,
+      status: users.status,
+      countryCode: users.countryCode,
+    })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
@@ -42,10 +48,15 @@ export async function requestAccountDeletion(userId: string): Promise<void> {
     expiresAt: new Date(Date.now() + TOKEN_TTL_MS),
   });
 
+  // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar.
+  const identity = await resolveSenderIdentity(user.countryCode, user.locale);
+
   await sendTransactionalEmail({
     template: "confirm_account_deletion",
     to: { email: user.email, locale: user.locale },
     data: { token: rawToken },
+    senderName: identity?.senderName,
+    replyTo: identity?.replyTo,
   });
 }
 
@@ -111,7 +122,7 @@ export async function performAccountDeletion(
   actorUserId: string = userId
 ): Promise<void> {
   const [user] = await db
-    .select({ email: users.email, locale: users.locale })
+    .select({ email: users.email, locale: users.locale, countryCode: users.countryCode })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
@@ -143,11 +154,16 @@ export async function performAccountDeletion(
 
   // Sendes FØR anonymisering — bruker den ekte adressen fanget i `user`
   // over, ikke et nytt oppslag (users-raden er allerede anonymisert av
-  // skrivingen over).
+  // skrivingen over). SPEC-V1.md 10.4 — se resolveSenderIdentity() sin
+  // egen kommentar.
+  const identity = await resolveSenderIdentity(user.countryCode, user.locale);
+
   await sendTransactionalEmail({
     template: "account_deletion_confirmed",
     to: { email: user.email, locale: user.locale },
     data: {},
+    senderName: identity?.senderName,
+    replyTo: identity?.replyTo,
   });
 
   await revokeAllSessionsForUser(userId);
@@ -214,15 +230,19 @@ async function anonymizeRecipientContent(respondentUserId: string): Promise<void
     await db.update(contactRequests).set({ status: "cancelled" }).where(eq(contactRequests.id, cr.id));
 
     const [journalist] = await db
-      .select({ email: users.email, locale: users.locale })
+      .select({ email: users.email, locale: users.locale, countryCode: users.countryCode })
       .from(users)
       .where(eq(users.id, cr.journalistId))
       .limit(1);
     if (journalist) {
+      // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar.
+      const identity = await resolveSenderIdentity(journalist.countryCode, journalist.locale);
       await sendTransactionalEmail({
         template: "contact_request_cancelled_account_deleted",
         to: { email: journalist.email, locale: journalist.locale },
         data: {},
+        senderName: identity?.senderName,
+        replyTo: identity?.replyTo,
       });
     }
   }
@@ -266,16 +286,20 @@ async function closeJournalistContentOnDeletion(journalistUserId: string): Promi
       );
 
     const respondents = await db
-      .select({ email: users.email, locale: users.locale })
+      .select({ email: users.email, locale: users.locale, countryCode: users.countryCode })
       .from(responses)
       .innerJoin(users, eq(responses.respondentId, users.id))
       .where(and(eq(responses.requestId, r.id), eq(responses.lifecycleStatus, "submitted")));
 
     for (const respondent of respondents) {
+      // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar.
+      const identity = await resolveSenderIdentity(respondent.countryCode, respondent.locale);
       await sendTransactionalEmail({
         template: "response_request_closed",
         to: { email: respondent.email, locale: respondent.locale },
         data: { requestId: r.id, title: r.title, slug: r.slug },
+        senderName: identity?.senderName,
+        replyTo: identity?.replyTo,
       });
     }
   }

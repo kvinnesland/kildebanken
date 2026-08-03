@@ -15100,3 +15100,62 @@ bevisst latt åpne for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+---
+
+## Økt 57: fortsatte sender-identitet-migreringen (Økt 55/56) —
+`auth/account-deletion.ts`, den mest sammensatte filen så langt
+
+Fulgte forrige økts foreslåtte rekkefølge direkte. Denne filen hadde
+FIRE kallesteder, alle i separate funksjoner, ALLE manglet `countryCode`
+i sin respektive `.select()` (i motsetning til forrige to filer, der
+minst ett kallested allerede hadde det tilgjengelig):
+
+1. `requestAccountDeletion()` — la til `countryCode` i brukerens egen
+   snevre select (`{email, locale, status}` → `+countryCode`).
+2. `performAccountDeletion()` — samme utvidelse
+   (`{email, locale}` → `+countryCode`). Sendes bevisst FØR
+   anonymiseringsskrivingen (eksisterende kommentar), samme rad brukes
+   for både e-postadresse og nå også landkode.
+3. `anonymizeRecipientContent()` sin journalist-varsling (pending
+   kontaktforespørsel kanselleres) — samme utvidelse.
+4. `closeJournalistContentOnDeletion()` sin respondent-varsling
+   (`response_request_closed` ved kontosletting) — samme utvidelse.
+
+Alle fire er nå `resolveSenderIdentity(countryCode, locale)` rett før
+sitt respektive `sendTransactionalEmail()`-kall, samme mønster som de
+to foregående filene.
+
+**Ingen nye tester denne runden** — samme, nå gjentatte, begrunnelse
+som Økt 55/56: selve mekanismen er allerede dekket; en
+per-kallested-kablingssjekk ville krevd disproporsjonal mock-
+kompleksitet for en ren verdi-videreføring.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 459 tester,
+  uendret.
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 337
+  tester, ALLE bestod uendret. Global-opprydningen fjernet 230
+  testbrukere, uendret oppførsel.
+
+### Neste økt
+
+Migreringssporet fortsetter — FEM filer gjenstår (8 kallesteder):
+`requests/requests.ts` (3), `admin/legal-documents.ts` (1),
+`contact-requests/contact-requests.ts` (3), `responses/responses.ts`
+(2), `reports/reports.ts` (1). Foreslått neste: `requests/requests.ts`
+(flest gjenværende kallesteder, verdt å ta som egen økt fremfor å dele
+den). Når ALLE ni filer er migrert: gjør `senderName`/`replyTo`
+OBLIGATORISKE på `SendTransactionalEmailInput` som en siste,
+avsluttende økt. Ellers uendret: de to gjenværende GENUINE åpne
+spec-spørsmålene, fortsatt bevisst latt åpne for menneskelig
+gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
