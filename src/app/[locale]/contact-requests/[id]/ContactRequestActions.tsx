@@ -58,6 +58,13 @@ export function ContactRequestActions({
   return (
     <>
       {errorKey ? <p className={styles.formError}>{t(errorKey)}</p> : null}
+      {/* SPEC-V1.md 14.1: "forklaringen av hva det innebærer å godkjenne" —
+          reelt hull frem til nå (se NATTLOGG.md), aldri bygget: knappene
+          fantes, men ingen egen forklarende tekst — kun antydet av selve
+          knappeteksten ("Godkjenn og del e-postadressen min"), ikke et
+          eget avsnitt slik spec-en beskriver som et tredje, separat element
+          ved siden av malen og knappene. */}
+      <p className={styles.text}>{t("contact_request.approve_explanation")}</p>
       <div className={styles.actions}>
         <Button onPress={() => respond("approve")} isDisabled={status === "busy"}>
           {t("contact_request.approve_button")}

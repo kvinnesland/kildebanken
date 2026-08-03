@@ -13,6 +13,16 @@ describe("ContactRequestActions", () => {
     vi.unstubAllGlobals();
   });
 
+  it("viser en forklaring av hva godkjenning/avslag innebærer, før knappene (SPEC-V1.md 14.1)", () => {
+    render(<ContactRequestActions locale="nb-NO" contactRequestId="cr-1" />);
+
+    expect(
+      screen.getByText(
+        "Godkjenner du, deles e-postadressen din med journalisten, og samtalen fortsetter på e-post utenfor plattformen. Avslår du, varsles journalisten uten begrunnelse, og ingenting deles."
+      )
+    ).toBeInTheDocument();
+  });
+
   it("godkjenner og viser en bekreftelse ved suksess", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
 

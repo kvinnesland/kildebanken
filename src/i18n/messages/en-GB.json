@@ -479,6 +479,7 @@
   "contact_request.message_label": "Message from the journalist",
   "contact_request.method_label": "Preferred contact method",
   "contact_request.expires_label": "Expires {date}",
+  "contact_request.approve_explanation": "If you approve, your email address will be shared with the journalist and the conversation continues by email outside the platform. If you decline, the journalist is notified without a reason, and nothing is shared.",
   "contact_request.approve_button": "Approve and share my email address",
   "contact_request.decline_button": "Decline",
   "contact_request.approved_notice": "You've approved the contact request. Your email address has been shared with the journalist.",

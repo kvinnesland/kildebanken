@@ -16003,3 +16003,71 @@ for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 69: fortsatte seksjon-for-seksjon-gjennomsynet (Økt 68 sin
+anbefaling) — 14 (Videre kontakt): fant og rettet ETT genuint UI-hull
+
+Leste seksjon 14 (Videre kontakt) linje for linje mot faktisk kode.
+14.2/14.3 sitt statusdiagram (`pending → approved/declined/expired/
+cancelled`, inkludert BEGGE triggerne for `expired` — 14 dager ELLER
+forespørselen lukkes — og BEGGE triggerne for `cancelled` — svaret
+trekkes ELLER journalisten suspenderes) stemte allerede fullstendig med
+koden, bekreftet ved samme grundige gjennomgang som Økt 67 allerede
+gjorde av de ni overgangsstedene. 14.3 sin logging til revisjonsloggen
+(`contact_request.approve` med samtykkegrunnlag, uten selve
+e-postadressen i metadata) var også allerede korrekt.
+
+**14.1 sitt UI-krav**: "Rammen rundt – e-postmalen, knappene,
+FORKLARINGEN AV HVA DET INNEBÆRER Å GODKJENNE – vises på respondentens
+locale" lister TRE atskilte elementer. To av tre fantes
+(`contact_request_received`-malen bruker allerede `respondent.locale`,
+og knappene fantes) — men INGEN egen forklarende tekst fantes noe sted:
+`ContactRequestActions.tsx` viste kun to knapper, der selve
+knappeteksten ("Godkjenn og del e-postadressen min") var det ENESTE som
+antydet konsekvensen, ikke et eget avsnitt slik spec-en beskriver som et
+tredje element ved siden av — ikke inni — knappene.
+
+**Retting**: la til `contact_request.approve_explanation` (nytt i18n-
+nøkkel, BEGGE locales) — én setning som dekker BÅDE godkjenning
+("e-postadressen din deles... samtalen fortsetter på e-post utenfor
+plattformen", direkte fra 14.2 sin egen ordlyd) og avslag ("journalisten
+varsles uten begrunnelse, og ingenting deles", også fra 14.2) — vist
+som et eget avsnitt over knappene i `ContactRequestActions.tsx`.
+
+**Ny test** i `ContactRequestActions.test.tsx`: bekrefter forklarings-
+teksten faktisk vises, samme mønster som resten av testfilens
+eksisterende tester (render + `screen.getByText`).
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 463 tester (462 +
+  1 ny).
+- `npx tsx src/i18n/check-keys.ts`: OK — 529 nøkler (opp fra 528 — denne
+  ENE nye nøkkelen ble faktisk fanget av regex-søket, siden den kalles
+  med en bokstavelig streng, i motsetning til tidslinje-nøklene i Økt
+  68).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 339
+  tester, ALLE bestod uendret (rent frontend, ingen server-/DB-logikk
+  endret, men kjørt likevel per den stående regelen).
+
+### Neste økt
+
+Seksjon 14 er nå ferdig gjennomgått. Fortsett seksjon-for-seksjon-
+gjennomsynet av SPEC-V1.md — 5, 13 og 14 er dekket (Økt 67-69), RESTEN
+(1-4, 6-12, 15-26, minus de allerede grundig reviderte 16 (admin,
+Økt 78 tidligere i tasklisten), 17 (personvern/retensjon, Økt 62/67),
+18 (sikkerhet, Økt 66), 19 (datamodell, tidligere diff'et mot schema),
+20 (API-ruter, Økt 62), 21-23 (allerede egne revisjonsøkter)) gjenstår
+for en fremtidig økt. Foreslått neste: seksjon 6 (Autentisering), 7
+(Registrering), 9 (Forespørsel) eller 11 (Forespørselsside) — disse er
+IKKE nevnt i noen tidligere økts "allerede dekket"-liste over, i
+motsetning til resten. Uendret: de to gjenværende GENUINE åpne
+spec-spørsmålene, fortsatt bevisst latt åpne for menneskelig
+gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.

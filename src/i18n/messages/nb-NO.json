@@ -479,6 +479,7 @@
   "contact_request.message_label": "Melding fra journalisten",
   "contact_request.method_label": "Ønsket kontaktform",
   "contact_request.expires_label": "Utløper {date}",
+  "contact_request.approve_explanation": "Godkjenner du, deles e-postadressen din med journalisten, og samtalen fortsetter på e-post utenfor plattformen. Avslår du, varsles journalisten uten begrunnelse, og ingenting deles.",
   "contact_request.approve_button": "Godkjenn og del e-postadressen min",
   "contact_request.decline_button": "Avslå",
   "contact_request.approved_notice": "Du har godkjent kontaktforespørselen. E-postadressen din er delt med journalisten.",
