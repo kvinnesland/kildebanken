@@ -16594,3 +16594,115 @@ de to gjenværende GENUINE åpne spec-spørsmålene, fortsatt bevisst latt
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 76: fulgte opp Økt 75 sin anbefaling (seksjon 17) — INGEN nye
+kodehull funnet; utvidet gjennomgangen til DESIGN.md 9 og
+INFRASTRUCTURE.md 16, samme resultat
+
+Ingen kodeendring denne økten. Grundig, men negativ gjennomgang —
+loggført likevel (samme begrunnelse som Økt 72).
+
+**Seksjon 17 (Personvern), rad for rad:**
+- 17.1 (behandlingsgrunnlag): rent juridisk/beskrivende, ingen kode å
+  sjekke mot.
+- 17.2 (juridiske dokumenter og samtykkelogg): `publishLegalDocument()`
+  varsler berørte mottakere korrekt på riktig locale ved vesentlig
+  endring. De to kjente, allerede grundig begrunnede avgrensningene i
+  funksjonens egen kommentar (ingen tvungen re-samtykke-sperre bygget,
+  siden spec-en ikke sier NÅR/HVORDAN; ingen varsling ved
+  `journalist_terms`-endring) er UENDRET bevisste antagelser, ikke noe
+  jeg fant grunn til å endre.
+- 17.3 (brukerens rettigheter): alle seks selvbetjente rettighetene
+  bekreftet i kode — inkludert at "bytte språk" faktisk er en egen,
+  fungerende `Select` i `ProfileForm.tsx` (`PATCH /me`), ikke bare
+  landbytte.
+- 17.4 (lagringstid): Økt 62 (tidligere i sesjonen) gjorde allerede en
+  fullstendig rad-for-rad-revisjon av denne tabellen mot
+  `jobs/retention.ts` og fant ingen hull — bekreftet uavhengig samme
+  konklusjon her, inkludert at "Sikkerhetslogg (6 måneder)" sin eneste
+  rimelige kandidat (`rateLimitHits`, 19.16) allerede er SELVRENSKENDE
+  (sletter rader eldre enn sitt eget, langt kortere tellevindu ved hvert
+  kall — ingen egen retensjonskategori kan noensinne trenges, raden
+  lever aldri lenge nok). Den kjente TODO-en om at lagringstider bør bli
+  ekte per-land-konfigurasjon (samme prinsipp som FR-029, Økt 70) står
+  ved lag som en bevisst utsatt beslutning, eksplisitt betinget av at et
+  land nummer to faktisk trenger avvikende frister — ikke gjenoppfunnet
+  eller endret her.
+- 17.5 (sletting): alle seks punktene (stans fremtidige utsendelser,
+  anonymiser konto, anonymiser svar, kanseller åpne kontaktforespørsler
+  og varsle journalisten, behold samtykkehistorikk, logg uten unødvendig
+  PII) bekreftet i `account-deletion.ts` sin `performAccountDeletion()`,
+  tidligere grundig lest og allerede TOCTOU-sikret (task #91).
+
+**DESIGN.md 9 (akseptansekriterier)**: kriterium 2 ("CI feiler på
+fargeverdier, px-verdier og lag 1-variabler i komponentfiler") og 3
+(kontrasttest-dekning) var de to gjenværende, ikke tidligere eksplisitt
+krysset av — bekreftet begge: `src/styles/check-tokens.ts` håndhever
+nøyaktig kriterium 2 sin ordlyd (hex/rgb/oklch/rå-px/lag-1-variabler,
+med en dokumentert, bevisst unntak for 1px/2px kantlinjer) og er faktisk
+koblet inn i `.github/workflows/ci.yml` (ikke bare et npm-script ingen
+kjører). Kriterium 3 var allerede lukket av task #111. Med dette er ALLE
+åtte kriteriene i DESIGN.md 9 nå bekreftet — ingen gjenstår uverifisert.
+
+**INFRASTRUCTURE.md 16 (Stadium 0) mot faktisk drift-oppsett**: krysset
+hele 16.2/16.3/16.8 mot `netlify.toml` og `netlify/functions/tick.ts`.
+Alt stemmer presist: 15-minutters cron-skjema identisk på begge steder,
+`netlify/functions/tick.ts` er nøyaktig den tynne adapteren 16.8
+beskriver (importerer og kaller `runTick()`, ingen egen logikk), og
+`runTick()` (`src/lib/jobs/tick.ts`) dispatcher faktisk alle sju jobbene
+16.3 nevner (digest-tick, expire-requests, expire-contact-requests,
+deadline-reminders, stale-request-reminders, purge-unverified,
+retention). 16.8 sitt eget "aksepteringskriterium" (faktisk deploy til
+en Hetzner-VM som en portabilitetstest) er en FREMTIDIG migreringsport,
+ikke noe som skal gjøres nå i Stadium 0 — ingen handling påkrevd.
+
+**Én uavklart observasjon, IKKE rettet** (usikker ekstern kilde, ikke en
+kodefeil): INFRASTRUCTURE.md 6.4 sier "Signatur verifiseres" for
+e-post-webhooks, men `/api/webhooks/email-events/route.ts` bruker en
+delt hemmelighet (query/header), ikke en kryptografisk HMAC-signatur.
+Forsøkte å avklare om Brevo faktisk tilbyr signaturverifisering
+(`X-Mailin-Signature`) via web-søk — resultatene MOTSA hverandre
+direkte (én kilde hevder HMAC-SHA256 finnes, en annen at Brevo ikke
+signerer webhooks i det hele tatt), og Brevos egen dokumentasjonsside
+for "Secure webhook calls" har URL-stien
+`username-and-password-authentication`, som tyder sterkt på at Brevos
+FAKTISKE anbefaling er HTTP Basic Auth i selve URL-en — arkitektonisk
+tilsvarende den delte hemmeligheten som allerede er bygget, ikke en
+kryptografisk signatur. Gitt selvmotsigende kilder og at direkte
+sideoppslag mot Brevos dokumentasjon ga 403, var det tryggere å LA
+koden stå enn å bygge en usikker/muligens ikke-eksisterende
+HMAC-mekanisme basert på upålitelige kilder. Bør bekreftes direkte mot
+en ekte Brevo-konto (webhook-innstillingene der viser nøyaktig hvilke
+sikringsmekanismer som faktisk tilbys) før produksjonssetting — samme
+"MÅ verifiseres før produksjon"-forbehold som allerede står andre
+steder i kodebasen for Brevo-spesifikke antagelser.
+
+### Verifisert
+
+Ingen kode endret, ingen ny verifisering kjørt (siste kjente grønne
+kjøring er fra Økt 75, uendret siden).
+
+### Neste økt
+
+Seksjon 17 er nå ferdig gjennomgått (bekrefter Økt 62), og DESIGN.md 9
+er nå FULLSTENDIG verifisert (alle 8 kriterier). Gjenstår av
+SPEC-V1.md sin linje-for-linje-metode: kun seksjon 1 (Formål,
+sannsynligvis rent beskrivende) og seksjon 18-20 (Sikkerhet/Datamodell/
+API — hver har egne, tidligere dedikerte revisjonsøkter, men ikke denne
+spesifikke metoden). Nytt spor åpnet denne økten: INFRASTRUCTURE.md har
+ALDRI fått en systematisk linje-for-linje-gjennomgang analog til
+SPEC-V1.md sin — kun seksjon 16 er dekket nå. Foreslått neste: fortsett
+INFRASTRUCTURE.md seksjon 2-15 (kjøretidsarkitektur, komponentvalg,
+database, jobbkø, miljøer, utrulling, hemmeligheter, overvåking,
+sikkerhetskopi, sikkerhet i infrastrukturen, kostnad, hva som ryker
+først, åpne beslutninger) mot faktisk kode/config — mye av dette
+beskriver riktignok et FREMTIDIG Stadium 1-oppsett (ikke byttet til
+ennå), så forvent færre kodefunn og mer "beskriver noe som ikke er
+bygget ennå, med hensikt" enn i seksjon 16. Uendret: de to gjenværende
+GENUINE åpne spec-spørsmålene, PLUSS den nye, uavklarte Brevo-webhook-
+signatur-observasjonen over (verifiseres mot ekte Brevo-konto, ikke noe
+å gjette seg til i kode):
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
