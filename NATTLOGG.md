@@ -15743,3 +15743,62 @@ for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 66: fire nye konsistenssjekker (etter samme mønster som
+`.max(...)`-sveipen) — INGEN nye hull, INGEN kodeendring
+
+Med streng-lengde-sveipen ferdig (Økt 65), lette jeg etter BESLEKTEDE
+konsistensklasser samme sted (backend-begrensning vs. frontend-
+håndtering) i stedet for å gjenta samme sveip. Fire sjekker, alle rene:
+
+1. **SPEC-V1.md 18 sine tre rategrenser** — bekreftet at alle tre
+   faktisk er koblet til `checkRateLimit()`: innlogging (5/15 min,
+   `magic-link.ts`, kjent fra tidligere), svarinnsending (10/time,
+   `responses.ts`), OG forespørselsopprettelse (20/døgn,
+   `requests.ts`, `CREATE_DRAFT_RATE_LIMIT_MAX`/`_WINDOW_MS`) — alle
+   tre til stede og verifisert.
+2. **`minimumAge` (numerisk 0-100, ikke streng)** i både
+   `CreateCountryForm.tsx` og `CountryCard.tsx` (redigering) — begge har
+   `inputProps={{ type: "number", min: 0, max: 100 }}`, korrekt
+   samsvarende med `z.number().int().min(0).max(100)` i begge
+   `admin/countries`-rutene. (Mitt første grep etter `min=\|max=` fant
+   dem ikke — feltene bruker objektsyntaks `min: 0, max: 100` inni
+   `inputProps`, ikke JSX-attributter — falsk alarm, rettet ved å lese
+   filen direkte.)
+3. **`contactSharing`-enumen** (`"none" | "email"`) — konsistent på
+   tvers av `schema.ts` (pgEnum), `responses/validate.ts` (TypeScript-
+   typen) og `ResponseForm.tsx` (React-state-typen). Ingen fjerde
+   variant har sneket seg inn noe sted.
+4. **HTTP-statuskode-mapping for `errors.rate_limited` → 429** — kun to
+   ruter (`POST /requests`, `POST /requests/:id/responses`) mapper
+   denne feilen eksplisitt, men det er nettopp DISSE to (pluss
+   innlogging) som faktisk kan returnere den. `POST /auth/request-link`
+   overflater ALDRI rate-limit-tilstanden til klienten i det hele
+   tatt — med hensikt, ikke en mangel: samme svar uansett om
+   e-postadressen finnes, er suspendert, eller har nådd grensen (hindrer
+   brukeroppdagelse/e-postenumerering), allerede dokumentert i selve
+   filen. Ingen inkonsekvens.
+
+**Ingen kodeendring denne økten** — kun denne NATTLOGG-oppføringen.
+Standard verifiseringskjede kjøres derfor ikke på nytt (ingenting i
+kildekoden er endret siden Økt 65s allerede grønne kjøring).
+
+### Neste økt
+
+Fire konsistenssjekker på rad kom tilbake rene — sterkt tegn på at
+prosjektet er grundig herdet mot nettopp denne typen backend-/frontend-
+uoverensstemmelse nå. Videre mekaniske sveip av samme type (enda en
+feltklasse, enda en enum) vil trolig gi stadig avtagende avkastning,
+akkurat som Økt 63 advarte om for rene kritiske gjennomlesninger.
+Anbefaling for en fremtidig økt: vurder om det finnes GENUINT nytt
+funksjonelt arbeid igjen å bygge (ikke bare revidere/rette eksisterende
+kode) — et grundig gjennomsyn av SPEC-V1.md seksjon for seksjon mot
+faktisk bygget funksjonalitet, på jakt etter en hel FUNKSJON eller et
+HELT skjermbilde som aldri er nevnt i noen tidligere økt, fremfor enda
+en konsistens- eller kodekvalitetssveip. Uendret: de to gjenværende
+GENUINE åpne spec-spørsmålene, fortsatt bevisst latt åpne for
+menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
