@@ -15907,3 +15907,99 @@ bevisst latt åpne for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 68: bygget "tidslinje for handlinger" (SPEC-V1.md 13) — det
+gjenstående UI-hullet fra Økt 67
+
+**`journalist-inbox.ts`**: `getResponseDetailForJournalist()` henter nå
+også en eventuell tilknyttet `ContactRequest` (`status`, `createdAt`,
+`respondedAt`, `expiresAt`, `updatedAt`) via en egen spørring — én rad
+maks, siden `contactRequests.responseId` er unik (19.8). Valgte en EGEN
+spørring fremfor en LEFT JOIN på hovedspørringen, for å slippe å skille
+"ingen kontaktforespørsel" fra "kontaktforespørsel med null-felter" i
+selve radformen. `ResponseDetail.contactRequest` er `null` når svaret
+ikke har noen (det vanligste tilfellet).
+
+`updatedAt` tas med SPESIFIKT for `cancelled`-tilfellet, som er den ENE
+statusen uten noe annet tidsstempel-felt (`respondedAt` settes kun ved
+godkjent/avslått, `expiresAt` er en fast frist satt ved opprettelse) —
+pålitelig nettopp fordi Økt 67 rettet ALLE ni stedene som kansellerer/
+utløper en kontaktforespørsel til faktisk å sette denne kolonnen. Uten
+den rettingen ville "kansellert"-tidslinjepunktet vist opprettelses-
+tidspunktet, ikke kanselleringstidspunktet — feil, men ikke synlig som
+en feil siden begge var samme verdi før Økt 67.
+
+**`journalist/responses/[id]/page.tsx`**: bygger en kronologisk sortert
+liste av hendelser server-side (ren datalogikk, ingen ny klientkode):
+"svar sendt inn" (alltid), "sett av deg" (alltid — `viewedAt` settes
+allerede ved samme kalls FØRSTE åpning), og — kun når en
+kontaktforespørsel finnes — "du ba om kontakt", etterfulgt av nøyaktig
+ÉN av fire gjensidig utelukkende avslutningshendelser avhengig av
+`status` (godkjent/avslått bruker `respondedAt`, utløpt bruker
+`expiresAt`, kansellert bruker `updatedAt`; `pending` gir ingen
+avslutningshendelse — forespørselen er fortsatt åpen). Plassert i
+DOM-rekkefølgen SPEC-V1.md 13 selv lister
+detaljvisningen i: "hele svaret, respondentens valg om deling,
+TIDSLINJE FOR HANDLINGER, knapp for kontaktforespørsel, knapp for å
+rapportere" — rett etter delings-avsnittet, rett før
+`ResponseDetailPanel` (som eier kontaktforespørsel-knappen) og
+`ReportForm`.
+
+Ny CSS i `page.module.css` (`.timelineList`/`.timelineItem`/
+`.timelineDate`) bruker utelukkende eksisterende designtokens
+(`var(--space-*)`, `var(--text-*)`, `var(--color-*)`) — ingen nye rå
+verdier. `check-tokens.ts` (DESIGN.md 9 kriterium 2) er strukturell
+håndhevelse — enhver rå verdi ville feilet det scriptet umiddelbart.
+
+**Åtte nye i18n-nøkler** (`journalist.response_detail.timeline_*`) lagt
+til i BÅDE `nb-NO.json` og `en-GB.json` (full parallellitet, samme
+praksis som alle eksisterende nøkler i denne seksjonen). Merk:
+`npx tsx src/i18n/check-keys.ts` sitt regex-baserte "brukt i kode"-søk
+fanger BARE `timeline_title` (kalt med en bokstavelig streng i
+`page.tsx`) — de syv andre kalles via en variabel
+(`t(event.labelKey)`), samme mønster som allerede eksisterer andre
+steder i kodebasen (f.eks. `t(\`journalist.response_detail.marking_${item.journalistMarking}\`)`
+i innboks-listesiden) — en kjent, allerede akseptert begrensning i
+sjekkescriptet, ikke noe denne økten introduserer eller forsøker å
+rette. Nøkkeltellingen gikk derfor bare opp med 1 (527→528), ikke 8,
+men alle åtte FINNES faktisk i begge filer, bekreftet manuelt.
+
+**Nye tester** i `journalist-inbox.integration.test.ts`: to nye
+tester under `getResponseDetailForJournalist` — én som bekrefter
+`contactRequest` er `null` uten noen tilknyttet forespørsel, én som
+oppretter en ekte (via `createContactRequest()`) og bekrefter feltene
+(`status`, `respondedAt`, `createdAt`, `expiresAt`) kommer riktig
+gjennom. Ingen egen test for selve `page.tsx`-rendringen eller
+hendelsessorteringen — samme etablerte konvensjon som resten av
+server-komponentsidene i denne kodebasen (aldri direkte enhetstestet,
+kun det underliggende data-laget), bekreftet ved at INGEN annen
+`page.tsx` under `journalist/`/`admin/` har en egen `.test.tsx`.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 462 tester,
+  uendret (ingen nye enhetstester — begge nye tester er
+  integrasjonstester).
+- `npx tsx src/i18n/check-keys.ts`: OK — 528 nøkler (opp fra 527, se
+  forklaringen over for hvorfor bare 1 av 8 nye nøkler telles av selve
+  scriptet).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 339
+  tester (opp fra 337 — de to nye), ALLE bestod.
+
+### Neste økt
+
+Begge de to konkrete funnene fra Økt 67 er nå fullført. Fortsett Økt 66
+sin opprinnelige anbefaling: et seksjon-for-seksjon-gjennomsyn av RESTEN
+av SPEC-V1.md (kun 5 og 13 er dekket av Økt 67/68 så langt) for flere
+genuint ubygde detaljer — samme metode som avdekket tidslinje-hullet:
+les en seksjon linje for linje, sjekk HVERT konkret substantiv/krav mot
+faktisk kode, ikke bare de store, åpenbare funksjonene. Uendret: de to
+gjenværende GENUINE åpne spec-spørsmålene, fortsatt bevisst latt åpne
+for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.

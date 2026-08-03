@@ -31,6 +31,35 @@ export default async function ResponseDetailPage({
 
   const dateFormatter = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" });
 
+  // SPEC-V1.md 13: "tidslinje for handlinger" — reelt hull frem til nå (se
+  // NATTLOGG.md), aldri bygget til tross for at fire av fem elementer i
+  // samme setning allerede fantes. Sortert kronologisk siden hendelsene ikke
+  // nødvendigvis er tidsstempel-sortert i utgangspunktet (viewedAt kan i
+  // teorien mangle om raden ble hentet uten å utløse den vanlige
+  // set-ved-første-åpning-logikken).
+  const timelineEvents: { labelKey: string; date: Date }[] = [
+    { labelKey: "journalist.response_detail.timeline_submitted", date: response.submittedAt },
+  ];
+  if (response.viewedAt) {
+    timelineEvents.push({ labelKey: "journalist.response_detail.timeline_viewed", date: response.viewedAt });
+  }
+  if (response.contactRequest) {
+    const cr = response.contactRequest;
+    timelineEvents.push({ labelKey: "journalist.response_detail.timeline_contact_requested", date: cr.createdAt });
+    if (cr.status === "approved" && cr.respondedAt) {
+      timelineEvents.push({ labelKey: "journalist.response_detail.timeline_contact_approved", date: cr.respondedAt });
+    } else if (cr.status === "declined" && cr.respondedAt) {
+      timelineEvents.push({ labelKey: "journalist.response_detail.timeline_contact_declined", date: cr.respondedAt });
+    } else if (cr.status === "expired") {
+      timelineEvents.push({ labelKey: "journalist.response_detail.timeline_contact_expired", date: cr.expiresAt });
+    } else if (cr.status === "cancelled") {
+      // `updatedAt` er nå pålitelig her — se ContactRequest sin egen
+      // kommentar i journalist-inbox.ts (Økt 67, NATTLOGG.md).
+      timelineEvents.push({ labelKey: "journalist.response_detail.timeline_contact_cancelled", date: cr.updatedAt });
+    }
+  }
+  timelineEvents.sort((a, b) => a.date.getTime() - b.date.getTime());
+
   return (
     <main className={styles.main}>
       <Link href={`/${locale}/journalist/requests/${response.requestId}/responses`} className={styles.backLink}>
@@ -73,6 +102,18 @@ export default async function ResponseDetailPage({
           {t("contact_request.shared_email_label")}: {response.sharedEmail}
         </p>
       ) : null}
+
+      <section>
+        <h2 className={styles.sectionTitle}>{t("journalist.response_detail.timeline_title")}</h2>
+        <ul className={styles.timelineList}>
+          {timelineEvents.map((event, index) => (
+            <li key={`${event.labelKey}-${index}`} className={styles.timelineItem}>
+              <span>{t(event.labelKey)}</span>
+              <span className={styles.timelineDate}>{dateFormatter.format(event.date)}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <ResponseDetailPanel
         locale={locale}

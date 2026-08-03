@@ -56,3 +56,27 @@
   padding-block: var(--space-2);
   padding-inline: var(--space-3);
 }
+
+/* SPEC-V1.md 13: "tidslinje for handlinger" i detaljvisningen. */
+.timelineList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.timelineItem {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.timelineDate {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}

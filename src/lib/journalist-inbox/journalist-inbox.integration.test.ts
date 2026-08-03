@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { contactRequests, requests, responses } from "@/db/schema";
 import { createActiveJournalist, createActiveRecipient, ensureTestCountry, TEST_COUNTRY_CODE } from "@/db/integration/fixtures";
 import { submitResponse } from "@/lib/responses/responses";
+import { createContactRequest } from "@/lib/contact-requests/contact-requests";
 import {
   getResponseDetailForJournalist,
   listResponsesForRequest,
@@ -210,6 +211,46 @@ describe("journalist-inbox mot ekte Postgres (SPEC-V1.md 13, 13.1)", () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.data.sharedEmail).toBeNull();
+    });
+
+    it("contactRequest er null når svaret ikke har noen tilknyttet kontaktforespørsel (SPEC-V1.md 13, 'tidslinje for handlinger')", async () => {
+      const respondent = await createActiveRecipient();
+      const submitted = await submitResponse(requestId, respondent.id, {
+        relevanceStatement: "Relevant.",
+        answerText: "Svar.",
+        contactSharing: "none",
+      });
+      if (!submitted.ok) throw new Error("fail submit");
+
+      const result = await getResponseDetailForJournalist(submitted.id, journalistId);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.contactRequest).toBeNull();
+    });
+
+    it("contactRequest gjenspeiler den faktiske raden når en kontaktforespørsel finnes (SPEC-V1.md 13, 'tidslinje for handlinger')", async () => {
+      const respondent = await createActiveRecipient();
+      const submitted = await submitResponse(requestId, respondent.id, {
+        relevanceStatement: "Relevant.",
+        answerText: "Svar.",
+        contactSharing: "none",
+      });
+      if (!submitted.ok) throw new Error("fail submit");
+      const created = await createContactRequest(submitted.id, journalistId, {
+        message: "Kan jeg få vite mer?",
+        requestedContactMethod: "e-post",
+      });
+      if (!created.ok) throw new Error("fail create contact request");
+
+      const result = await getResponseDetailForJournalist(submitted.id, journalistId);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.contactRequest?.status).toBe("pending");
+      expect(result.data.contactRequest?.respondedAt).toBeNull();
+      expect(result.data.contactRequest?.createdAt).toBeTruthy();
+      expect(result.data.contactRequest?.expiresAt).toBeTruthy();
     });
   });
 

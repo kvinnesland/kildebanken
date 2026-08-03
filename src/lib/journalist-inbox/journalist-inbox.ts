@@ -126,6 +126,23 @@ export interface ResponseDetail {
   journalistNote: string | null;
   submittedAt: Date;
   viewedAt: Date | null;
+  // SPEC-V1.md 13: detaljvisningen skal vise en "tidslinje for handlinger" —
+  // reelt hull frem til nå (se NATTLOGG.md), aldri bygget til tross for at
+  // fire av fem elementer i samme setning allerede fantes. `null` når svaret
+  // ikke har noen tilknyttet kontaktforespørsel ennå (langt det vanligste
+  // tilfellet — de fleste svar får aldri en).
+  contactRequest: {
+    status: "pending" | "approved" | "declined" | "expired" | "cancelled";
+    createdAt: Date;
+    respondedAt: Date | null;
+    expiresAt: Date;
+    // Brukes KUN for `status === "cancelled"` sin tidslinje-hendelse —
+    // `respondedAt` settes aldri ved kansellering. Pålitelig nettopp fordi
+    // ALLE ni stedene som kansellerer/utløper en kontaktforespørsel nå
+    // setter denne eksplisitt (Økt 67, se NATTLOGG.md) — før den rettingen
+    // ville denne alltid vært lik `createdAt`, uansett faktisk hendelse.
+    updatedAt: Date;
+  } | null;
 }
 
 /**
@@ -170,10 +187,27 @@ export async function getResponseDetailForJournalist(
     row.viewedAt = now;
   }
 
+  // `responseId` er unik på `contactRequests` (schema.ts, 19.8) — høyst én
+  // rad, aldri flere. Egen spørring fremfor en JOIN på hovedspørringen over,
+  // siden en LEFT JOIN her ville krevd å skille "ingen kontaktforespørsel"
+  // fra "kontaktforespørsel med null-felter" i selve radformen.
+  const [contactRequestRow] = await db
+    .select({
+      status: contactRequests.status,
+      createdAt: contactRequests.createdAt,
+      respondedAt: contactRequests.respondedAt,
+      expiresAt: contactRequests.expiresAt,
+      updatedAt: contactRequests.updatedAt,
+    })
+    .from(contactRequests)
+    .where(eq(contactRequests.responseId, responseId))
+    .limit(1);
+
   const { requestJournalistId: _omit, lifecycleStatus: _omit2, respondentEmail, ...rest } = row;
   const detail: ResponseDetail = {
     ...rest,
     sharedEmail: row.contactSharing === "email" ? respondentEmail : null,
+    contactRequest: contactRequestRow ?? null,
   };
   return { ok: true, data: detail };
 }
