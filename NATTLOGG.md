@@ -15159,3 +15159,70 @@ gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+---
+
+## Økt 58: fortsatte sender-identitet-migreringen (Økt 55-57) —
+`requests/requests.ts`
+
+Fulgte forrige økts foreslåtte rekkefølge. Tre kallesteder:
+
+1. `submitRequest()` sin moderator-varsling (`new_request_for_moderation`):
+   brukte `existing.countryCode` (forespørselens land — allerede
+   tilgjengelig fra `findOwnedEditable()` sin fulle `.select()`), IKKE
+   den enkelte moderatorens egen `countryCode`. Bevisst valg: dette er
+   den FØRSTE migrerte varslingen der mottakeren (moderatoren) IKKE
+   nødvendigvis er i samme land som varslingens EGENTLIGE kontekst — en
+   moderator varsles I EGENSKAP AV å moderere nettopp DETTE landet
+   (`moderatorCountries.countryCode`, samme verdi som
+   `existing.countryCode` per selve spørringens WHERE-betingelse), ikke
+   fordi det er deres EGEN registrerte konto. Landet varslingen handler
+   OM er det riktige landet for avsenderidentiteten her, ikke
+   mottakerens personlige konto.
+2. `closeRequest()` sin journalist-varsling (`request_closed`): la til
+   `countryCode` i journalistens select — her brukte jeg i stedet
+   MOTTAKERENS egen `countryCode` (samme mønster som ALLE tidligere
+   migrerte filer), siden en journalist varsles i egenskap av SIN EGEN
+   konto, ikke en annens.
+3. `closeRequest()` sin respondent-varsling (`response_request_closed`):
+   samme som over — la til `countryCode` i respondentenes select,
+   respondentens egen verdi.
+
+Merk at (2) og (3) i praksis ALLTID ville gitt samme resultat som å
+bruke `existing.countryCode` (en forespørsels land er alltid
+journalistens eget, FR-031 håndhever at respondenter alltid er i SAMME
+land som forespørselen) — men brukte likevel mottakerens EGEN
+`countryCode`-kolonne for konsistens med det etablerte mønsteret i (1)
+sitt unntak var det MOTSATTE: der er mottakerens EGEN konto ikke
+nødvendigvis det relevante landet, så `existing.countryCode` var det
+bevisste, riktige valget.
+
+**Ingen nye tester denne runden** — samme begrunnelse som Økt 55-57.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 459 tester,
+  uendret.
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 337
+  tester, ALLE bestod uendret. Global-opprydningen fjernet 230
+  testbrukere, uendret oppførsel.
+
+### Neste økt
+
+Migreringssporet fortsetter — FIRE filer gjenstår (6 kallesteder):
+`admin/legal-documents.ts` (1), `contact-requests/contact-requests.ts`
+(3), `responses/responses.ts` (2), `reports/reports.ts` (1). Foreslått
+neste: `contact-requests/contact-requests.ts` (flest gjenværende
+kallesteder). Når ALLE ni filer er migrert: gjør
+`senderName`/`replyTo` OBLIGATORISKE på `SendTransactionalEmailInput`
+som en siste, avsluttende økt. Ellers uendret: de to gjenværende
+GENUINE åpne spec-spørsmålene, fortsatt bevisst latt åpne for
+menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.

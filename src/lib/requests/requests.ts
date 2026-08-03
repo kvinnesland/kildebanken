@@ -12,6 +12,7 @@ import {
 } from "@/db/schema";
 import { isUniqueViolation } from "@/db/errors";
 import { sendTransactionalEmail } from "@/lib/email/send";
+import { resolveSenderIdentity } from "@/lib/email/sender-identity";
 import { zonedWallTimeToUtc } from "@/lib/datetime/timezone";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { slugify, withDisambiguator } from "./slug";
@@ -303,10 +304,14 @@ export async function submitRequest(
     .where(eq(moderatorCountries.countryCode, existing.countryCode));
 
   for (const moderator of moderators) {
+    // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar.
+    const identity = await resolveSenderIdentity(existing.countryCode, moderator.locale);
     await sendTransactionalEmail({
       template: "new_request_for_moderation",
       to: { email: moderator.email, locale: moderator.locale },
       data: { requestId, title: existing.title },
+      senderName: identity?.senderName,
+      replyTo: identity?.replyTo,
     });
   }
 
@@ -405,15 +410,19 @@ export async function closeRequest(
   // lukket den (journalisten selv eller moderator/administrator), siden
   // spec-raden ikke skiller mellom disse.
   const [journalist] = await db
-    .select({ email: users.email, locale: users.locale })
+    .select({ email: users.email, locale: users.locale, countryCode: users.countryCode })
     .from(users)
     .where(eq(users.id, existing.journalistId))
     .limit(1);
   if (journalist) {
+    // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar.
+    const identity = await resolveSenderIdentity(journalist.countryCode, journalist.locale);
     await sendTransactionalEmail({
       template: "request_closed",
       to: { email: journalist.email, locale: journalist.locale },
       data: { requestId, title: existing.title },
+      senderName: identity?.senderName,
+      replyTo: identity?.replyTo,
     });
   }
 
@@ -427,16 +436,20 @@ export async function closeRequest(
   // respondenter skal varsles uansett hvilken vei som faktisk lukket den.
   // Samme spørring/løkke-mønster som account-deletion.ts sin funksjon.
   const respondents = await db
-    .select({ email: users.email, locale: users.locale })
+    .select({ email: users.email, locale: users.locale, countryCode: users.countryCode })
     .from(responses)
     .innerJoin(users, eq(responses.respondentId, users.id))
     .where(and(eq(responses.requestId, requestId), eq(responses.lifecycleStatus, "submitted")));
 
   for (const respondent of respondents) {
+    // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar.
+    const identity = await resolveSenderIdentity(respondent.countryCode, respondent.locale);
     await sendTransactionalEmail({
       template: "response_request_closed",
       to: { email: respondent.email, locale: respondent.locale },
       data: { requestId, title: existing.title, slug: existing.slug },
+      senderName: identity?.senderName,
+      replyTo: identity?.replyTo,
     });
   }
 
