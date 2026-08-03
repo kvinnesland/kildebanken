@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { contactRequests, journalistProfiles, requests, responses, users } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
+import { resolveSenderIdentity } from "@/lib/email/sender-identity";
 import { isUniqueViolation } from "@/db/errors";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { validateResponseSubmission, type ResponseSubmissionInput } from "./validate";
@@ -27,7 +28,13 @@ export async function submitResponse(
   input: ResponseSubmissionInput
 ): Promise<ResponseActionResult> {
   const [respondent] = await db
-    .select({ status: users.status, role: users.role, locale: users.locale, email: users.email })
+    .select({
+      status: users.status,
+      role: users.role,
+      locale: users.locale,
+      email: users.email,
+      countryCode: users.countryCode,
+    })
     .from(users)
     .where(eq(users.id, respondentUserId))
     .limit(1);
@@ -81,25 +88,33 @@ export async function submitResponse(
 
     if (!created) return { ok: false, error: "errors.generic" };
 
+    // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar.
+    const respondentIdentity = await resolveSenderIdentity(respondent.countryCode, respondent.locale);
     await sendTransactionalEmail({
       template: "response_submitted_receipt",
       to: { email: respondent.email, locale: respondent.locale },
       data: { requestId, requestTitle: request.title, requestSlug: request.slug },
+      senderName: respondentIdentity?.senderName,
+      replyTo: respondentIdentity?.replyTo,
     });
 
     // SPEC-V1.md 20.1 nevner at journalisten varsles "dersom journalisten
     // har valgt umiddelbare varsler" — en preferanse som ikke er modellert
     // ennå. Sender ubetinget inntil videre; se NATTLOGG.md.
     const [journalist] = await db
-      .select({ email: users.email, locale: users.locale })
+      .select({ email: users.email, locale: users.locale, countryCode: users.countryCode })
       .from(users)
       .where(eq(users.id, request.journalistId))
       .limit(1);
     if (journalist) {
+      // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar.
+      const journalistIdentity = await resolveSenderIdentity(journalist.countryCode, journalist.locale);
       await sendTransactionalEmail({
         template: "new_response_received",
         to: { email: journalist.email, locale: journalist.locale },
         data: { requestId, requestTitle: request.title },
+        senderName: journalistIdentity?.senderName,
+        replyTo: journalistIdentity?.replyTo,
       });
     }
 

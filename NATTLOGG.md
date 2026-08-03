@@ -15276,3 +15276,54 @@ menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 60: fortsatte sender-identitet-migreringen (Økt 55-59) —
+`responses/responses.ts`
+
+Fulgte forrige økts foreslåtte rekkefølge. To kallesteder, begge med
+mottakerens EGEN `countryCode` (ingen unntak denne gangen — begge
+mottakere varsles om aktivitet på sin egen konto):
+
+1. `submitResponse()` sin respondent-kvittering
+   (`response_submitted_receipt`) — la til `countryCode` på
+   `respondent`-selecten (som allerede hentet `status`, `role`, `locale`,
+   `email`).
+2. `submitResponse()` sin journalist-varsling
+   (`new_response_received`) — la til `countryCode` på den separate
+   `journalist`-selecten (`email`, `locale`).
+
+Bekreftet ved grep at nøyaktig de to kallestedene i filen er oppdatert.
+
+**Ingen nye tester denne runden** — samme begrunnelse som Økt 55-59:
+selve mekanismen (`send.ts`s valgfrie felt, `resolveSenderIdentity()`s
+oppslag+oversettelse) er allerede dekket av dedikerte tester; en
+wiring-test per kallested her ville kreve mocking av
+`resolveSenderIdentity`/`sendTransactionalEmail` for å fange
+kallargumenter, eller å blande testnivåer — vurdert som uforholdsmessig
+kompleksitet for en rett fram verdi-videreføring.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 459 tester,
+  uendret.
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 337
+  tester, ALLE bestod uendret. Global-opprydningen fjernet 230
+  testbrukere, uendret oppførsel.
+
+### Neste økt
+
+Migreringssporet fortsetter — TO filer gjenstår (2 kallesteder):
+`admin/legal-documents.ts` (1), `reports/reports.ts` (1). Foreslått
+neste: enten av de to, begge har bare ett kallested igjen. Når ALLE ni
+filer er migrert: gjør `senderName`/`replyTo` OBLIGATORISKE på
+`SendTransactionalEmailInput` som en siste, avsluttende økt. Ellers
+uendret: de to gjenværende GENUINE åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
