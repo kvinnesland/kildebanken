@@ -10,6 +10,7 @@ import {
 } from "@/db/schema";
 import { isUniqueViolation } from "@/db/errors";
 import { sendTransactionalEmail } from "@/lib/email/send";
+import { resolveSenderIdentity } from "@/lib/email/sender-identity";
 import { requireAdmin } from "@/lib/auth/authorize";
 
 export interface LegalDocumentSummary {
@@ -160,11 +161,18 @@ export async function publishLegalDocument(
         )
       );
 
+    // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar. Hentet
+    // ÉN gang utenfor loopen: WHERE-betingelsen over sikrer at ALLE
+    // affectedRecipients deler samme countryCode/locale (input.countryCode,
+    // input.locale), så identiteten er identisk for hele batchen.
+    const identity = await resolveSenderIdentity(input.countryCode, input.locale);
     for (const recipient of affectedRecipients) {
       await sendTransactionalEmail({
         template: "legal_terms_material_change",
         to: { email: recipient.email, locale: recipient.locale },
         data: { documentType: input.documentType, countryCode: input.countryCode },
+        senderName: identity?.senderName,
+        replyTo: identity?.replyTo,
       });
     }
   }

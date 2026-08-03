@@ -24,6 +24,7 @@ import {
   users,
 } from "@/db/schema";
 import { sendTransactionalEmail, sendBulkEmail } from "@/lib/email/send";
+import { resolveSenderIdentity } from "@/lib/email/sender-identity";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
 import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
 import { createTranslator } from "@/i18n/get-messages";
@@ -454,15 +455,19 @@ export async function runDeadlineReminders(dbase: Database): Promise<TickResult>
   for (const r of soon) {
     try {
       const [journalist] = await dbase
-        .select({ email: users.email, locale: users.locale })
+        .select({ email: users.email, locale: users.locale, countryCode: users.countryCode })
         .from(users)
         .where(eq(users.id, r.journalistId));
       if (!journalist) continue;
 
+      // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar.
+      const identity = await resolveSenderIdentity(journalist.countryCode, journalist.locale);
       await sendTransactionalEmail({
         template: "deadline_approaching_24h",
         to: { email: journalist.email, locale: journalist.locale },
         data: { requestId: r.id, title: r.title },
+        senderName: identity?.senderName,
+        replyTo: identity?.replyTo,
       });
       await dbase
         .update(requests)
@@ -504,15 +509,19 @@ export async function runStaleRequestReminders(dbase: Database): Promise<TickRes
   for (const r of stale) {
     try {
       const [journalist] = await dbase
-        .select({ email: users.email, locale: users.locale })
+        .select({ email: users.email, locale: users.locale, countryCode: users.countryCode })
         .from(users)
         .where(eq(users.id, r.journalistId));
       if (!journalist) continue;
 
+      // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar.
+      const identity = await resolveSenderIdentity(journalist.countryCode, journalist.locale);
       await sendTransactionalEmail({
         template: "stale_request_reminder_30d",
         to: { email: journalist.email, locale: journalist.locale },
         data: { requestId: r.id, title: r.title },
+        senderName: identity?.senderName,
+        replyTo: identity?.replyTo,
       });
       await dbase
         .update(requests)

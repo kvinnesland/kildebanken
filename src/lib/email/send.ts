@@ -128,17 +128,14 @@ export interface SendTransactionalEmailInput {
   to: { email: string; locale: string };
   data: Record<string, unknown>;
   // SPEC-V1.md 10.4 — se `resolveSenderIdentity()` (./sender-identity.ts).
-  // VALGFRIE, i motsetning til `SendBulkEmailInput` sine tilsvarende
-  // OBLIGATORISKE felt — bevisst en MIDLERTIDIG overgangstilstand under
-  // migrering av denne funksjonens mange kallesteder (ni filer, se
-  // NATTLOGG.md Økt 54/55). Utelates de, er oppførselen UENDRET fra før
-  // migreringen begynte (ingen `name` på avsender, ingen Reply-To) — IKKE
-  // en regresjon for et kallested som ennå ikke er migrert. Planen er å
-  // gjøre dem obligatoriske (samme mønster som `listUnsubscribeUrl`/
-  // `senderName`/`replyTo` i `SendBulkEmailInput`) den dagen ALLE
-  // kallesteder er migrert.
-  senderName?: string;
-  replyTo?: string;
+  // OBLIGATORISKE, samme mønster som `senderName`/`replyTo` i
+  // `SendBulkEmailInput`. Var VALGFRIE under selve migreringen av denne
+  // funksjonens ni kallesteder (Økt 54-60, se NATTLOGG.md) — nå som ALLE er
+  // migrert, gjøres feltene obligatoriske slik at et fremtidig nytt
+  // kallested som glemmer dem feiler med en typefeil i stedet for å stille
+  // sende e-post uten lokalisert avsendernavn/Reply-To.
+  senderName: string | undefined;
+  replyTo: string | undefined;
 }
 
 /**

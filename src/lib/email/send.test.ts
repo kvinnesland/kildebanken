@@ -15,6 +15,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "magic_link",
       to: { email: "test@example.com", locale: "nb-NO" },
       data: { token: "abc123" },
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     expect(warnSpy).toHaveBeenCalledTimes(1);
@@ -31,6 +33,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "journalist_application_received",
       to: { email: "journalist@example.com", locale: "nb-NO" },
       data: { token: "abc123" },
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
@@ -45,6 +49,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "confirm_email",
       to: { email: "test@example.com", locale: "en-GB" },
       data: { token: "xyz789" },
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
@@ -59,6 +65,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "response_submitted_receipt",
       to: { email: "respondent@example.com", locale: "nb-NO" },
       data: { requestId: "req-1", requestTitle: "En testforespørsel", requestSlug: "en-testforesporsel" },
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
@@ -74,6 +82,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "new_response_received",
       to: { email: "journalist@example.com", locale: "nb-NO" },
       data: { requestId: "req-1", requestTitle: "En testforespørsel" },
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
@@ -88,6 +98,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "response_submitted_receipt",
       to: { email: "respondent@example.com", locale: "nb-NO" },
       data: { requestId: "req-1" }, // mangler requestTitle/requestSlug
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     expect(warnSpy).toHaveBeenCalledWith(
@@ -104,6 +116,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "journalist_approved",
       to: { email: "journalist@example.com", locale: "nb-NO" },
       data: {},
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
@@ -118,6 +132,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "confirm_account_deletion",
       to: { email: "test@example.com", locale: "nb-NO" },
       data: { token: "del-token-abc" },
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
@@ -133,6 +149,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "account_deletion_confirmed",
       to: { email: "test@example.com", locale: "nb-NO" },
       data: {},
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
@@ -147,6 +165,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "journalist_rejected",
       to: { email: "journalist@example.com", locale: "nb-NO" },
       data: { reason: "Kunne ikke bekrefte tilknytning til oppgitt redaksjon." },
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
@@ -162,6 +182,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "request_rejected",
       to: { email: "journalist@example.com", locale: "nb-NO" },
       data: { title: "Journalisters spørsmål til kommunen", reason: "Manglet legitimt journalistisk formål." },
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
@@ -177,6 +199,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "request_rejected",
       to: { email: "journalist@example.com", locale: "nb-NO" },
       data: { reason: "Manglet legitimt journalistisk formål." },
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     expect(warnSpy).toHaveBeenCalledWith(
@@ -193,6 +217,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "content_reported",
       to: { email: "moderator@example.com", locale: "nb-NO" },
       data: { entityType: "response", entityId: "response-42", reason: "Upassende innhold", comment: "" },
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
@@ -207,6 +233,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "content_reported",
       to: { email: "moderator@example.com", locale: "nb-NO" },
       data: { entityType: "response", reason: "Upassende innhold", comment: "" },
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     expect(warnSpy).toHaveBeenCalledWith(
@@ -228,6 +256,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
         journalistName: "Kari Journalist",
         organizationName: "Testavisen",
       },
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
@@ -243,6 +273,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "contact_approved",
       to: { email: "journalist@example.com", locale: "nb-NO" },
       data: { contactRequestId: "cr-1" },
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
@@ -257,6 +289,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "contact_declined",
       to: { email: "journalist@example.com", locale: "nb-NO" },
       data: {},
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
@@ -271,6 +305,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "legal_terms_material_change",
       to: { email: "test@example.com", locale: "nb-NO" },
       data: { documentType: "not-a-valid-type" }, // mangler countryCode, ugyldig documentType
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     expect(warnSpy).toHaveBeenCalledWith(
@@ -287,6 +323,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "legal_terms_material_change",
       to: { email: "test@example.com", locale: "nb-NO" },
       data: { documentType: "privacy", countryCode: "NO" },
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
@@ -301,6 +339,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
       template: "request_closed",
       to: { email: "journalist@example.com", locale: "nb-NO" },
       data: { requestId: "req-1", title: "En testforespørsel" },
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     const loggedMessage = warnSpy.mock.calls[0]?.[0] as string;
@@ -322,6 +362,8 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
         template: "magic_link",
         to: { email: "test@example.com", locale: "nb-NO" },
         data: { token: "abc123" },
+        senderName: undefined,
+        replyTo: undefined,
       })
     ).rejects.toThrow(/BREVO_API_KEY/);
     expect(warnSpy).not.toHaveBeenCalled();
@@ -348,6 +390,8 @@ describe("sendTransactionalEmail (ekte Brevo-kall, mocket fetch)", () => {
       template: "magic_link",
       to: { email: "test@example.com", locale: "nb-NO" },
       data: { token: "abc123" },
+      senderName: undefined,
+      replyTo: undefined,
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -363,7 +407,7 @@ describe("sendTransactionalEmail (ekte Brevo-kall, mocket fetch)", () => {
     expect(body.textContent).toContain("abc123");
   });
 
-  it("SPEC-V1.md 10.4: legger på lokalisert From-navn og Reply-To når kalleren oppgir dem (valgfritt under migrering, se sender-identity.ts)", async () => {
+  it("SPEC-V1.md 10.4: legger på lokalisert From-navn og Reply-To når kalleren oppgir dem (se sender-identity.ts)", async () => {
     vi.stubEnv("BREVO_API_KEY", "test-key-123");
     vi.stubEnv("BREVO_SENDER_TRANSACTIONAL", "varsler@tjenesten.no");
     const fetchMock = vi.fn().mockResolvedValue({
@@ -404,6 +448,8 @@ describe("sendTransactionalEmail (ekte Brevo-kall, mocket fetch)", () => {
         template: "magic_link",
         to: { email: "test@example.com", locale: "nb-NO" },
         data: { token: "abc123" },
+        senderName: undefined,
+        replyTo: undefined,
       })
     ).rejects.toThrow(/Brevo-sending feilet \(400\)/);
   });
@@ -419,6 +465,8 @@ describe("sendTransactionalEmail (ekte Brevo-kall, mocket fetch)", () => {
         template: "magic_link",
         to: { email: "test@example.com", locale: "nb-NO" },
         data: { token: "abc123" },
+        senderName: undefined,
+        replyTo: undefined,
       })
     ).rejects.toThrow(/BREVO_SENDER_TRANSACTIONAL/);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -435,6 +483,8 @@ describe("sendTransactionalEmail (ekte Brevo-kall, mocket fetch)", () => {
         template: "response_submitted_receipt",
         to: { email: "test@example.com", locale: "nb-NO" },
         data: { requestId: "req-1" }, // mangler requestTitle/requestSlug
+        senderName: undefined,
+        replyTo: undefined,
       })
     ).rejects.toThrow(/ingen mal bygget/);
     expect(fetchMock).not.toHaveBeenCalled();

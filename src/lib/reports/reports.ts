@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { moderatorCountries, requests, responses, users } from "@/db/schema";
 import { sendTransactionalEmail } from "@/lib/email/send";
+import { resolveSenderIdentity } from "@/lib/email/sender-identity";
 
 export type ReportEntityType = "request" | "response";
 
@@ -42,6 +43,13 @@ export async function submitReport(input: SubmitReportInput): Promise<SubmitRepo
     .where(eq(moderatorCountries.countryCode, countryCode));
 
   for (const moderator of moderators) {
+    // SPEC-V1.md 10.4 — se resolveSenderIdentity() sin egen kommentar. Bruker
+    // det RAPPORTERTE innholdets land (countryCode), ikke moderatorens egen
+    // registrerte countryCode — samme unntak som moderator-varslingen i
+    // requests.ts sin submitRequest() (se NATTLOGG.md, Økt 58): varselet
+    // gjelder "hvilket lands kø trenger moderering", ikke moderatorens egen
+    // konto.
+    const identity = await resolveSenderIdentity(countryCode, moderator.locale);
     await sendTransactionalEmail({
       template: "content_reported",
       to: { email: moderator.email, locale: moderator.locale },
@@ -51,6 +59,8 @@ export async function submitReport(input: SubmitReportInput): Promise<SubmitRepo
         reason: input.reason,
         comment: input.comment ?? "",
       },
+      senderName: identity?.senderName,
+      replyTo: identity?.replyTo,
     });
   }
 

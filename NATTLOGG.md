@@ -15327,3 +15327,108 @@ bevisst latt åpne for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 61: fullførte sender-identitet-migreringen (Økt 54-61) —
+`admin/legal-documents.ts`, `reports/reports.ts`, et OVERSETT
+kallested i `jobs/tick.ts`, og gjorde feltene OBLIGATORISKE
+
+Migrerte de to siste kjente filene, oppdaget SÅ et tredje sted som
+ikke var med i den opprinnelige ni-fil-tellingen, og lukket sporet.
+
+**`admin/legal-documents.ts`** (1 kallested, `publishLegalDocument()`
+sin `legal_terms_material_change`-varsling til berørte mottakere): et
+lite avvik fra standardmønsteret — her varsles et helt KULL av
+mottakere som WHERE-betingelsen allerede har filtrert til NØYAKTIG
+samme `countryCode`/`locale` (`input.countryCode`, `input.locale`), så
+`resolveSenderIdentity()` kalles ÉN gang FØR loopen i stedet for én
+gang per mottaker — samme resultat, men uten å gjenta et identisk
+DB-oppslag+oversettelse per rad i et potensielt stort kull.
+
+**`reports/reports.ts`** (1 kallested, `submitReport()`s
+moderator-varsling `content_reported`): samme unntak som
+`requests.ts` sin `submitRequest()`-varsling (Økt 58) — bruker det
+RAPPORTERTE innholdets `countryCode` (funnet via `findEntityCountry()`),
+ikke hver enkelt moderators egen registrerte `countryCode`. Her varierer
+derimot LOCALE per mottaker (i motsetning til legal-documents-varselet
+over), så identiteten hentes per moderator inne i loopen — landet er
+fast, oversettelsen er det ikke.
+
+**Oppdaget i samme gjennomgang, FØR feltene ble gjort obligatoriske**:
+et grundig grep etter ALLE (ikke bare de ni kjente) `sendTransactionalEmail`-
+kallesteder i hele `src/` avdekket at `jobs/tick.ts` har TO egne
+kallesteder (`deadline_approaching_24h` i `runDeadlineReminders()`,
+`stale_request_reminder_30d` i `runStaleRequestReminders()`) som ALDRI
+var med i den opprinnelige tellingen fra Økt 54/55 — et reelt hull i
+selve migreringssporingen, ikke bare i koden. Begge migrert nå, samme
+mønster som alle andre journalist-varsler (mottakerens egen
+`countryCode`). Uten dette grepet ville neste steg (obligatoriske felt)
+ha brutt disse to jobbene stille — de ville sluttet å kompilere, men
+BARE dersom noen faktisk kjørte `tsc` over HELE `jobs/tick.ts`, noe som
+tilfeldigvis skjedde med en gang siden det er nøyaktig det denne økten
+gjorde rett etterpå.
+
+**Siste steg: gjorde `senderName`/`replyTo` OBLIGATORISKE** på
+`SendTransactionalEmailInput` (`send.ts`), som planlagt siden Økt 55 —
+nå som samtlige 20 kallesteder på tvers av 11 filer faktisk sender dem.
+Typen er `string | undefined` (ikke `string?`) med hensikt: NØKKELEN må
+være til stede i objektlitteralen (en fremtidig ny kallested som glemmer
+den feiler med en typefeil), men VERDIEN kan fortsatt være `undefined` —
+`resolveSenderIdentity()` returnerer defensivt `null` dersom landet ikke
+finnes (kan ikke skje i praksis, `users.countryCode` har en FK mot
+`countries.code`, men en manglende senderidentitet skal ALDRI stoppe
+selve sendingen), og da videreføres `identity?.senderName` som
+`undefined` akkurat som før.
+
+`npx tsc --noEmit` etter denne endringen avdekket at
+`send.test.ts` hadde 25 kallesteder (ikke bare produksjonskoden) som nå
+manglet de to obligatoriske feltene — et Python-skript satte inn
+`senderName: undefined, replyTo: undefined,` i 21 av dem (alle formet
+som `await sendTransactionalEmail({ ... });` på egen linje), de siste 4
+(kallesteder pakket inn i `expect(sendTransactionalEmail({...})).rejects...`,
+en annen linjeform skriptet ikke fanget) ble rettet manuelt. Samtidig
+oppdatert testnavnet som fortsatt omtalte feltene som "valgfritt under
+migrering" — det er de ikke lenger.
+
+**Ingen nye tester utover selve typefiksingen i `send.test.ts`** — de to
+nye kallestedene i `tick.ts` er allerede indirekte dekket av
+`tick.integration.test.ts` sine eksisterende tester for
+`runDeadlineReminders()`/`runStaleRequestReminders()` (som ikke
+inspiserer sendeargumentene i detalj, samme nivå som resten av
+migreringen).
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil (etter at ALLE 25 testkallesteder i
+  `send.test.ts` og BEGGE kallestedene i `tick.ts` var oppdatert).
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 459 tester,
+  uendret.
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 337
+  tester, ALLE bestod uendret. Global-opprydningen fjernet 230
+  testbrukere, uendret oppførsel.
+
+### Neste økt
+
+**SPEC-V1.md 10.4-migreringen er FERDIG** — alle 20 kjente kallesteder
+på tvers av 11 filer sender nå lokalisert avsendernavn og Reply-To, og
+feltene er obligatoriske på typenivå slik at et fremtidig nytt
+kallested ikke kan glemme dem stille. Ingen flere økter trengs på dette
+sporet med mindre noen finner ENDA et kallested jeg har oversett — gitt
+at ETT allerede dukket opp uventet i denne økten (tick.ts), kan det
+være verdt et helt siste, uavhengig grep-søk en fremtidig økt for å
+være helt sikker, men det haster ikke.
+
+Uendret: de to gjenværende GENUINE åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
+
+Neste prioriterte arbeid per den stående rutinens opprinnelige
+rekkefølge (nå at sender-identitet-sporet er lukket): revidere
+retention-jobben (SPEC-V1.md 17.4) og resten av API-rutene i seksjon 20
+for eventuelle gjenstående hull — se tidligere økter for hva som
+allerede er dekket før noe nytt bygges her.
