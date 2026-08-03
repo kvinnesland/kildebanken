@@ -186,6 +186,19 @@ describe("admin/countries.ts mot ekte Postgres", () => {
     expect(notCreated).toBeUndefined();
   });
 
+  it("createCountry(): avviser digestSendTime uten nullutfylling (ville ellers stille deaktivert digesten permanent — se DIGEST_SEND_TIME_PATTERN i countries.ts)", async () => {
+    await ensureTestCountry();
+    const admin = await createAdmin(TEST_COUNTRY_CODE);
+    await loginAs(admin.id);
+    const input = testCountryInput({ digestSendTime: "7:00" });
+
+    const result = await createCountry(input);
+
+    expect(result).toEqual({ ok: false, error: "errors.validation_failed" });
+    const [notCreated] = await db.select().from(countries).where(eq(countries.code, input.code));
+    expect(notCreated).toBeUndefined();
+  });
+
   it("createCountry(): avviser en kode som allerede finnes", async () => {
     await ensureTestCountry();
     const admin = await createAdmin(TEST_COUNTRY_CODE);
@@ -287,6 +300,22 @@ describe("admin/countries.ts mot ekte Postgres", () => {
     expect(result).toEqual({ ok: false, error: "errors.invalid_timezone" });
     const [after] = await db.select().from(countries).where(eq(countries.code, input.code));
     expect(after?.timezone).toBe("Europe/Oslo");
+
+    await deleteTestCountry(input.code);
+  });
+
+  it("updateCountry(): avviser digestSendTime uten nullutfylling", async () => {
+    await ensureTestCountry();
+    const admin = await createAdmin(TEST_COUNTRY_CODE);
+    await loginAs(admin.id);
+    const input = testCountryInput();
+    await createCountry(input);
+
+    const result = await updateCountry(input.code, { digestSendTime: "7:00" });
+
+    expect(result).toEqual({ ok: false, error: "errors.validation_failed" });
+    const [after] = await db.select().from(countries).where(eq(countries.code, input.code));
+    expect(after?.digestSendTime).toBe("07:00");
 
     await deleteTestCountry(input.code);
   });

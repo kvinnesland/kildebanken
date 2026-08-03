@@ -8,6 +8,24 @@ import { isValidTimezone } from "@/lib/me/validate";
 
 export type CountryActionResult = { ok: true } | { ok: false; error: string };
 
+// `digestSendTime` (schema.ts: plain `text`, ingen DB-nivå formathåndhevelse)
+// sammenlignes som en RÅ STRENG mot `localTimeHHMM` i runDigestTick()
+// (jobs/tick.ts: `localTimeHHMM < country.digestSendTime`) — IKKE parset til
+// tall. `localTimeHHMM` er ALLTID nullutfylt to-sifret "HH:MM" (Intl sin
+// "2-digit"-formattering), så strengsammenligningen virker KORREKT bare hvis
+// `digestSendTime` også er akkurat det formatet. En verdi UTEN nullutfylling
+// (f.eks. "7:00" i stedet for "07:00") ville ikke krasjet noe sted — den
+// ville stille fått ALLE døgnets kloge-klokkeslett (som alle starter med
+// sifferet 0, 1 eller 2) til å lekseskografisk sammenlignes som "mindre enn"
+// "7:00" (siden '0'/'1'/'2' < '7' i ASCII), og dermed la denne digest-tikkets
+// gate ALDRI slippe gjennom for det landet — ingen daglig utsendelse i det
+// hele tatt, for alltid, uten en eneste feilmelding noe sted. Reelt hull
+// (samme kveld som `timezone`-valideringen over) i selve
+// UI-inntastingsfeltet (`CreateCountryForm.tsx` sitt `digestSendTime`-felt
+// er et vanlig tekstfelt, ikke en native `<input type="time">` som ville
+// nullutfylt automatisk).
+const DIGEST_SEND_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
 // GET /admin/countries (SPEC-V1.md 16.2, 20) — "kun administrator", ingen
 // landfiltrering (i motsetning til f.eks. listModerationQueue()).
 export async function listAllCountries(): Promise<
@@ -64,6 +82,10 @@ export async function createCountry(input: CreateCountryInput): Promise<CountryA
   // her i stedet for å skrive en ny variant.
   if (!isValidTimezone(input.timezone)) {
     return { ok: false, error: "errors.invalid_timezone" };
+  }
+  // Se DIGEST_SEND_TIME_PATTERN sin egen kommentar over.
+  if (!DIGEST_SEND_TIME_PATTERN.test(input.digestSendTime)) {
+    return { ok: false, error: "errors.validation_failed" };
   }
 
   const [existing] = await db
@@ -143,6 +165,10 @@ export async function updateCountry(
   // allerede lagrede feltet.
   if (input.timezone !== undefined && !isValidTimezone(input.timezone)) {
     return { ok: false, error: "errors.invalid_timezone" };
+  }
+  // Samme begrunnelse som createCountry() (se DIGEST_SEND_TIME_PATTERN).
+  if (input.digestSendTime !== undefined && !DIGEST_SEND_TIME_PATTERN.test(input.digestSendTime)) {
+    return { ok: false, error: "errors.validation_failed" };
   }
 
   await db

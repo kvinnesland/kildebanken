@@ -14744,3 +14744,88 @@ fortsatt bevisst latt åpne for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+---
+
+## Økt 53: fulgte opp forrige økts spor — fant det ALVORLIGSTE
+stille-feil-hullet i natt: en admin-skrivefeil kunne permanent
+deaktivere HELE landets digest, uten en eneste feilmelding noe sted
+
+Forrige økt (52) pekte eksplisitt på `digestSendTime` (og
+`nameKey`/`senderNameKey`) som usjekkede strengfelt i
+`createCountry`/`updateCountry`, ikke undersøkt den gangen. Gikk videre
+på `digestSendTime` først, siden den brukes i en direkte
+tallsammenligning (høyere risiko enn de rene i18n-nøkkel-feltene).
+
+**Reelt funn, alvorligere enn noe annet stille-feil-hull i natt**:
+`runDigestTick()` (jobs/tick.ts) sin gate er en RÅ STRENGSAMMENLIGNING —
+`localTimeHHMM < country.digestSendTime` — IKKE en tallsammenligning.
+`localTimeHHMM` er ALLTID nullutfylt to-sifret "HH:MM" (Intl sin
+"2-digit"-formattering, se `localTimeForTimezone()`). `digestSendTime`
+selv (schema.ts: ren `text`, INGEN databaseformathåndhevelse) ble ALDRI
+validert noe sted, og feltet i selve UI-et
+(`CreateCountryForm.tsx`) er et VANLIG tekstfelt — ikke en native
+`<input type="time">` som ville nullutfylt automatisk.
+
+Konsekvens: en administrator som taster "7:00" i stedet for "07:00" (et
+naturlig, sannsynlig tastefeil — ingen indikasjon i UI-et om at
+nullutfylling er påkrevd utover en placeholder-hint) ville stille fått
+ALLE døgnets kloge-klokkeslett (som ALLE starter med sifferet 0, 1 eller
+2) til å bli lekseskografisk sammenlignet som "mindre enn" "7:00" (siden
+'0'/'1'/'2' < '7' i ASCII) — gate-en `localTimeHHMM < digestSendTime`
+ville dermed ALLTID være sann, og landets digest ville ALDRI sendes,
+noen dag, i det hele tatt, uten en eneste feilmelding, logglinje, eller
+synlig indikasjon NOE sted. Ettersom digest-utsendelsen er selve
+plattformens "trolig mest sentrale funksjon" (kodens egen kommentar i
+tick.ts), er dette det ALVORLIGSTE enkeltfunnet i hele nattens
+stille-feil-jakt (BREVO_API_KEY, NEXT_PUBLIC_SITE_ORIGIN, timezone) —
+de andre lekket i det minste enten en logglinje eller en synlig lenke;
+denne ville vært HELT stille, kanskje i ukevis, inntil noen la merke
+til at INGEN mottakere i det landet fikk noen e-post.
+
+**Fiks**: la til `DIGEST_SEND_TIME_PATTERN`
+(`/^([01]\d|2[0-3]):[0-5]\d$/`, nøyaktig formatet `localTimeHHMM`
+faktisk produserer) og validerte `input.digestSendTime` mot det i begge
+funksjonene, samme sted og mønster som timezone-sjekken fra forrige
+økt. Ingen dedikert i18n-nøkkel fantes for dette (i motsetning til
+`timezone`s allerede-eksisterende `errors.invalid_timezone`) —
+gjenbrukte det generiske `errors.validation_failed` i stedet for å legge
+til en ny nøkkel for et rent formatvalideringstilfelle.
+
+**Empirisk bekreftet feilen var reell**: la til to nye tester (én per
+funksjon, begge med `digestSendTime: "7:00"`). `git stash push` på
+`countries.ts` alene (beholdt testene) → BEGGE nye tester FEILET som
+forventet mot den gamle koden (`{ok: true}` — verdien ble stille
+godtatt) → `git stash pop` gjenopprettet fiksen → alle 23 tester i filen
+består (21 eksisterende + 2 nye).
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 458 tester,
+  uendret.
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 32 filer, **333**
+  tester (331 + 2 nye), alle bestod. Global-opprydningen fjernet 230
+  testbrukere, uendret oppførsel.
+- Empirisk `git stash`-kontrast (se over) beviser fiksen løser et reelt,
+  reproduserbart hull, ikke bare en teoretisk bekymring.
+
+### Neste økt
+
+Gjenstående spor fra forrige økt: `nameKey`/`senderNameKey` (er de
+gyldige i18n-nøkler? — lavere risiko enn `digestSendTime` var, siden en
+manglende oversettelsesnøkkel allerede faller defensivt tilbake et sted
+i i18n-systemet, ikke undersøkt konkret ennå). Vurder også om selve
+UI-feltet (`CreateCountryForm.tsx`) burde bytte til en native
+`<input type="time">` i tillegg til server-valideringen — server-siden
+er nå den reelle sperren, men et bedre UI-felt ville forhindret
+tastefeilen enda tidligere. Ellers uendret: de to gjenværende GENUINE
+åpne spec-spørsmålene, fortsatt bevisst latt åpne for menneskelig
+gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
