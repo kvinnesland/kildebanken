@@ -15432,3 +15432,88 @@ rekkefølge (nå at sender-identitet-sporet er lukket): revidere
 retention-jobben (SPEC-V1.md 17.4) og resten av API-rutene i seksjon 20
 for eventuelle gjenstående hull — se tidligere økter for hva som
 allerede er dekket før noe nytt bygges her.
+
+## Økt 62: revidert retensjonsjobben (17.4) og hele API-ruteoversikten
+(seksjon 20) mot faktisk kode — INGEN nye hull funnet
+
+Fulgte Økt 61 sin egen "neste økt"-anbefaling. Fant INGEN kodeendring
+nødvendig — begge revisjonene bekrefter at tidligere økter allerede har
+lukket det som fantes å lukke. Dokumenteres likevel eksplisitt, slik at
+en fremtidig økt ikke bruker tid på å revidere det samme på nytt uten
+grunn.
+
+**SPEC-V1.md 17.4 (lagringstid) mot `src/lib/jobs/retention.ts`** — gikk
+gjennom hele tabellen i 17.4, rad for rad:
+- Aktiv konto / Avmeldt adresse / Juridiske dokumentversjoner: krever
+  ingen periodisk sletting per spec-en selv (henholdsvis "så lenge
+  aktiv", "ubegrenset", "så lenge et samtykke viser til dem").
+- Ubekreftet konto (14 dager): `runPurgeUnverified()` i `jobs/tick.ts`,
+  ikke `retention.ts` — allerede bygget og FK-herdet (Økt 5/øktnr for
+  task #54).
+- Trukket svar (umiddelbar sletting): skjer i selve
+  `withdrawResponse()` (`responses/responses.ts`), ikke via en periodisk
+  jobb — korrekt per spec-ens egen ordlyd ("slettes umiddelbart").
+- Innsendt svar (12 mnd), Kontaktforespørsel (12 mnd), Avvist
+  journalistsøknad (6 mnd), Revisjonslogg (3 år), Digest og
+  leveringsstatus (12 mnd): alle fem er egne kategorier i
+  `runRetention()`, alle med dry-run-standard og egne tester.
+- Sikkerhetslogg (6 måneder): identifiserte `rateLimitHits`
+  (19.16/`security/rate-limit.ts`) som den eneste kandidaten i
+  skjemaet for "sikkerhetslogg" — men denne tabellen er allerede
+  SELVRENSKENDE: `checkRateLimit()` sletter enhver rad eldre enn sitt
+  EGET tellevindu (15 min/1 time/24 timer, alt sammen langt under 6
+  måneder) på HVERT kall, dokumentert i skjemaets egen 19.16-kommentar.
+  Ingen egen retensjonskategori trengs — raden lever aldri lenge nok
+  til at en daglig jobb ville rukket å se den.
+- Den kjente, allerede dokumenterte TODO-en i filens toppkommentar
+  (lagringstider er hardkodede navngitte konstanter, ikke
+  per-land-konfigurasjon, siden kun ett land (NO, `draft`) finnes ennå)
+  står ved lag — ingen grunn til å bygge ekte per-land-konfigurasjon før
+  et land nummer to faktisk trenger avvikende frister, som filens egen
+  kommentar allerede sier.
+
+**SPEC-V1.md seksjon 20 (API) mot `src/app/api/`** — listet ut alle
+`route.ts`-filer under `src/app/api/` (57 stier) og krysset dem mot
+HVER ENESTE linje i spec-ens rute-liste, inkludert å bekrefte at
+`/requests/[id]/route.ts` faktisk eksporterer alle tre HTTP-metodene
+(`GET`, `PATCH`, `DELETE`) spec-en krever på samme sti. Alle 57 rutene
+fra seksjon 20 (pluss `GET /health`, som med hensikt ligger UTENFOR
+seksjon 20 selv, se INFRASTRUCTURE.md 8.1 og task #40) er til stede.
+Ingen manglende rute funnet — de fire tidligere hullene som ble
+dokumentert direkte i spec-teksten (unsuspend, webhooks/email-events,
+admin/responses GET+hide, suppress-email) er alle bekreftet
+implementert.
+
+**Samtidig bekreftet, som en siste sjekk mot den (foreldede) stående
+rutinepromptens EGEN prioriterte liste** (som selv sier den er avløst
+av NATTLOGG.md sin kontinuitet): punkt (1) `POST /subscribe` og
+`POST /journalists/apply` med samtykkelogging, punkt (2) faktisk
+mottakerlogikk i digest-tick (`sendBulkEmail`, `DigestDelivery`-rader i
+`digests/digests.ts`), og punkt (3) retention-jobben — er ALLE allerede
+bygget og verifisert i tidligere økter. Ingen av dem er reelt
+gjenstående arbeid lenger.
+
+**Ingen kodeendring, ingen ny commit av kildekode** — kun denne
+NATTLOGG-oppdateringen, siden revisjonen ikke fant noe å rette.
+Standard verifiseringskjede kjøres derfor ikke på nytt her (ingenting
+endret siden Økt 61s allerede grønne kjøring).
+
+### Neste økt
+
+Med sender-identitet-sporet lukket (Økt 61) og BÅDE retensjonsjobben og
+hele API-ruteoversikten nå bekreftet fullstendige (denne økten), er den
+stående rutinens opprinnelige firetrinnsliste offisielt ferdigbehandlet
+i sin helhet. Anbefalt retning for en fremtidig økt: et helt nytt,
+uavhengig gjennomsyn av en del av koden som IKKE er nevnt i noen
+tidligere økt ennå — f.eks. en frisk kritisk lesing av
+`src/lib/digests/digests.ts` og `src/lib/jobs/tick.ts` i sin helhet (de
+er ofte redigert stykkevis, aldri lest fra topp til bunn i én økt), eller
+et nytt grep-basert søk etter TODO/FIXME/"reelt hull"-kommentarer på
+tvers av HELE `src/` for å se om noen tidligere dokumentert, men aldri
+fulgt opp, bekymring fortsatt står ubehandlet. Uendret: de to
+gjenværende GENUINE åpne spec-spørsmålene, fortsatt bevisst latt åpne
+for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
