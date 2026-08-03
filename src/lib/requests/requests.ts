@@ -395,9 +395,12 @@ export async function closeRequest(
     .from(responses)
     .where(eq(responses.requestId, requestId));
 
+  // `updatedAt` settes eksplisitt — se contact-requests.ts sin egen
+  // kommentar (retention.ts's purgeOldContactRequests() er avhengig av
+  // dette).
   await db
     .update(contactRequests)
-    .set({ status: "expired" })
+    .set({ status: "expired", updatedAt: new Date() })
     .where(
       and(
         eq(contactRequests.status, "pending"),

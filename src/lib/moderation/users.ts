@@ -136,9 +136,12 @@ export async function suspendUser(userId: string, reason: string): Promise<Suspe
   // ikke tilgjengelige for journalisten" — allerede sant, siden journalisten
   // uansett ikke kan logge inn nå).
   if (user.role === "journalist") {
+    // `updatedAt` settes eksplisitt — se contact-requests.ts sin egen
+    // kommentar (retention.ts's purgeOldContactRequests() er avhengig av
+    // dette).
     await db
       .update(contactRequests)
-      .set({ status: "cancelled" })
+      .set({ status: "cancelled", updatedAt: new Date() })
       .where(and(eq(contactRequests.journalistId, userId), eq(contactRequests.status, "pending")));
   }
 

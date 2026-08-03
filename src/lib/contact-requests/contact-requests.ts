@@ -161,9 +161,19 @@ export async function respondToContactRequest(
     // svaret — se withdrawResponse i responses.ts) ha rukket å endre status
     // i mellomtiden, og denne skrivingen ville da blindt overskrevet det med
     // e-post og revisjonslogg basert på en utdatert lesing.
+    // `updatedAt` settes eksplisitt her (og ved alle andre overganger vekk
+    // fra `pending`, se de tilsvarende stedene i responses.ts, tick.ts,
+    // requests.ts og account-deletion.ts) — SPEC-V1.md 17.4 sin
+    // "kontaktforespørsel: 12 måneder ETTER AVSLUTNING" håndheves av
+    // purgeOldContactRequests() (retention.ts) via nettopp `updatedAt`, og
+    // dens egen kommentar HEVDER at "raden alltid oppdateres idet den
+    // forlater pending" — men INGEN overgang satte den faktisk, noe
+    // som ville gjort retensjonsvinduet ~14 dager for kort (kolonnen
+    // ville aldri endret seg fra innsettingstidspunktet, se NATTLOGG.md).
+    // Reelt hull, rettet her.
     const [updated] = await db
       .update(contactRequests)
-      .set({ status: "approved", sharedEmail: respondent.email, respondedAt: now })
+      .set({ status: "approved", sharedEmail: respondent.email, respondedAt: now, updatedAt: now })
       .where(and(eq(contactRequests.id, contactRequestId), eq(contactRequests.status, "pending")))
       .returning({ id: contactRequests.id });
     if (!updated) return { ok: false, error: "errors.contact_request_not_pending" };
@@ -202,7 +212,7 @@ export async function respondToContactRequest(
     // Samme TOCTOU-lukking som i approved-grenen over.
     const [updated] = await db
       .update(contactRequests)
-      .set({ status: "declined", respondedAt: now })
+      .set({ status: "declined", respondedAt: now, updatedAt: now })
       .where(and(eq(contactRequests.id, contactRequestId), eq(contactRequests.status, "pending")))
       .returning({ id: contactRequests.id });
     if (!updated) return { ok: false, error: "errors.contact_request_not_pending" };

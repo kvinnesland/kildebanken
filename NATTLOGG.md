@@ -15802,3 +15802,108 @@ menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 67: fulgte Økt 66 sin anbefaling (seksjon-for-seksjon mot faktisk
+kode) — fant ETT genuint UI-hull (ikke rettet ennå) og ETT reelt
+datahull i retensjonsjobben (rettet, ni kallesteder)
+
+Gikk gjennom SPEC-V1.md seksjon 5 (brukerreiser) og 13 (journalistens
+svarinnboks) linje for linje mot faktisk bygget kode.
+
+**Seksjon 5**: alle stegene i 5.1 (journalist) og 5.2 (mottaker) er
+allerede bygget og verifisert i tidligere økter — ingen nye funn.
+
+**Seksjon 13, "Detaljvisning"-listen**: krever eksplisitt "hele svaret,
+respondentens valg om deling, tidslinje for handlinger, knapp for
+kontaktforespørsel, knapp for å rapportere." Fire av fem er bekreftet
+til stede i `journalist/responses/[id]/page.tsx`/`ResponseDetailPanel.tsx`
+— MEN "tidslinje for handlinger" (timeline of actions) finnes IKKE noe
+sted i detaljvisningen. Data til å bygge en reell tidslinje finnes
+allerede (submittedAt, viewedAt, og — for svar med en tilknyttet
+kontaktforespørsel — dens createdAt/respondedAt/status), men
+`getResponseDetailForJournalist()` henter i dag ikke kontaktforespørsel-
+dataen i det hele tatt. **IKKE bygget denne økten** — falt tilbake til
+et annet, mer avgrenset og tydeligere korrekt funn (under) i stedet, av
+hensyn til øktens tidsbudsjett. Reelt UI-hull, notert for en fremtidig
+økt, ikke en ny beslutning om å utsette det.
+
+**Reelt datahull funnet OG rettet i samme gjennomgang**: mens jeg
+undersøkte "tidslinje"-hullet, sjekket jeg hvilke tidsstempel-felter
+`ContactRequest` faktisk har for å avgjøre hva en tidslinje kunne vise
+— og oppdaget at `retention.ts` sin `purgeOldContactRequests()` (SPEC-
+V1.md 17.4: "kontaktforespørsel: 12 måneder ETTER AVSLUTNING") stoler
+på `contactRequests.updated_at` som en tilnærming for "avsluttet",
+eksplisitt begrunnet i funksjonens egen docstring: "raden alltid
+oppdateres idet den forlater `pending`". Denne påstanden var USANN:
+grep'et etter HVER `.update(contactRequests)` på tvers av hele `src/`
+og fant NI steder som flytter en rad vekk fra `pending`
+(`contact-requests.ts` x2 — godkjent/avslått, `responses.ts` — trekking
+kansellerer, `jobs/tick.ts` — daglig utløps-jobb, `requests/requests.ts`
+— lukking utløper, `moderation/users.ts` — suspensjon kansellerer,
+`moderation/responses.ts` — skjuling kansellerer, `auth/account-
+deletion.ts` x2 — kontosletting kansellerer/utløper) — INGEN av dem
+satte `updated_at` eksplisitt, og verken en DB-trigger eller en Drizzle
+`$onUpdate`-callback gjorde det for dem. Kolonnen sto derfor FROSSET på
+innsettingstidspunktet (identisk med `created_at`) resten av radens
+levetid.
+
+Praktisk konsekvens: siden en kontaktforespørsel uansett alltid avgjøres
+eller utløper innen 14 dager etter opprettelse (`EXPIRES_AFTER_MS`),
+ville denne jobben slettet rader ca. 14 dager FOR TIDLIG sammenlignet
+med spec-ens "12 måneder etter avslutning" — et lite, men reelt avvik
+fra 17.4, og nøyaktig den typen "spec vs. kode"-hull de stående reglene
+ber om å rette i koden (spec-en selv trengte ingen endring, det var
+funksjonens EGEN dokumenterte forutsetning som ikke stemte med
+implementasjonen).
+
+**Retting**: la til `updatedAt: new Date()` (eller gjenbrukte en
+allerede beregnet `now`-variabel) på alle ni stedene. Oppdaterte
+`purgeOldContactRequests()` sin docstring til å dokumentere hullet og
+rettingen, i stedet for å late som antagelsen alltid har stemt.
+
+**Nye tester**: to eksisterende integrasjonstester i
+`contact-requests.integration.test.ts` ("godkjenner"/"avslår"-grenene
+til `respondToContactRequest()`) utvidet med en direkte
+regresjonssjekk: `updatedAt` etter overgangen er strengt større enn
+`updatedAt` FØR (fanget opp av en ny `before`-spørring), ikke bare
+"truthy". De resterende syv stedene (kansellering/utløp) fikk ikke egne
+nye tester — samme proporsjonalitetsprinsipp som resten av økten:
+selve rettingen er ett felt lagt til en allerede eksisterende, allerede
+testet `.set()`-kall, og de to nye testene beviser allerede at
+mekanismen fungerer riktig for de to mest sentrale banene.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 462 tester,
+  uendret (ingen nye ENHETSTESTER — begge nye assertions er i en
+  integrasjonstestfil).
+- `npx tsx src/i18n/check-keys.ts`: OK — 527 nøkler, uendret.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 337
+  tester, ALLE bestod (samme telling — to EKSISTERENDE tester utvidet
+  med nye assertions, ingen nye `it()`-blokker).
+
+### Neste økt
+
+To ting gjenstår herfra:
+1. **Bygg selve "tidslinje for handlinger"** i journalistens
+   svar-detaljvisning (SPEC-V1.md 13) — det ene gjenværende, bekreftede
+   UI-hullet fra denne økten. Krever å utvide
+   `getResponseDetailForJournalist()` (journalist-inbox.ts) til også å
+   hente en eventuell tilknyttet `ContactRequest` (status, createdAt,
+   respondedAt, expiresAt), og en ny liten komponent i
+   `journalist/responses/[id]/page.tsx` som viser hendelsene i
+   kronologisk rekkefølge (sendt inn → sett → evt. kontaktforespørsel
+   sendt → evt. godkjent/avslått/utløpt).
+2. Fortsett Økt 66 sin anbefaling om et seksjon-for-seksjon-gjennomsyn
+   av RESTEN av SPEC-V1.md (denne økten dekket bare 5 og 13) for flere
+   genuint ubygde detaljer.
+
+Uendret: de to gjenværende GENUINE åpne spec-spørsmålene, fortsatt
+bevisst latt åpne for menneskelig gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.

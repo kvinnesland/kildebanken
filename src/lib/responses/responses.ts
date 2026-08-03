@@ -158,10 +158,13 @@ export async function withdrawResponse(
   }
 
   // Kanseller pending kontaktforespørsler, og sever koblingen for ALLE
-  // (uansett status) siden svaret uansett slettes rett under.
+  // (uansett status) siden svaret uansett slettes rett under. `updatedAt`
+  // settes eksplisitt her — se contact-requests.ts sin egen kommentar for
+  // hvorfor (retention.ts's purgeOldContactRequests() er avhengig av at
+  // denne faktisk endres når raden forlater `pending`).
   await db
     .update(contactRequests)
-    .set({ status: "cancelled" })
+    .set({ status: "cancelled", updatedAt: new Date() })
     .where(and(eq(contactRequests.responseId, responseId), eq(contactRequests.status, "pending")));
 
   await db

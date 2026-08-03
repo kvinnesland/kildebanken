@@ -205,6 +205,8 @@ describe("respondToContactRequest mot ekte Postgres (FR-041, SPEC-V1.md 14.2/14.
     if (!created.ok) throw new Error("fail create");
     warnSpy.mockClear();
 
+    const [before] = await db.select().from(contactRequests).where(eq(contactRequests.id, created.id));
+
     const result = await respondToContactRequest(created.id, respondentId, "approved");
 
     expect(result.ok).toBe(true);
@@ -212,6 +214,13 @@ describe("respondToContactRequest mot ekte Postgres (FR-041, SPEC-V1.md 14.2/14.
     expect(row?.status).toBe("approved");
     expect(row?.sharedEmail).toBeTruthy();
     expect(row?.respondedAt).not.toBeNull();
+    // Reelt hull frem til denne økten (se NATTLOGG.md): `updatedAt` sto
+    // tidligere frosset på innsettingstidspunktet ved ALLE overganger vekk
+    // fra `pending` — ingenting satte den eksplisitt, til tross for at
+    // retention.ts's purgeOldContactRequests() er avhengig av at den
+    // FAKTISK endres (brukes som tilnærming for "avsluttet", SPEC-V1.md
+    // 17.4). Denne testen ville fanget akkurat den regresjonen.
+    expect(row?.updatedAt.getTime()).toBeGreaterThan(before?.updatedAt.getTime() ?? 0);
 
     const [log] = await db
       .select()
@@ -238,12 +247,16 @@ describe("respondToContactRequest mot ekte Postgres (FR-041, SPEC-V1.md 14.2/14.
     if (!created.ok) throw new Error("fail create");
     warnSpy.mockClear();
 
+    const [before] = await db.select().from(contactRequests).where(eq(contactRequests.id, created.id));
+
     const result = await respondToContactRequest(created.id, respondentId, "declined");
 
     expect(result.ok).toBe(true);
     const [row] = await db.select().from(contactRequests).where(eq(contactRequests.id, created.id));
     expect(row?.status).toBe("declined");
     expect(row?.sharedEmail).toBeNull();
+    // Se den tilsvarende kommentaren i "godkjenner"-testen over.
+    expect(row?.updatedAt.getTime()).toBeGreaterThan(before?.updatedAt.getTime() ?? 0);
     expect(
       warnSpy.mock.calls.some((call) => String(call[0]).includes("contact_declined"))
     ).toBe(true);

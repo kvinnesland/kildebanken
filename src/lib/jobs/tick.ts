@@ -400,9 +400,12 @@ export async function runExpireRequests(dbase: Database): Promise<TickResult> {
 export async function runExpireContactRequests(dbase: Database): Promise<TickResult> {
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
+  // `updatedAt` settes eksplisitt her — se contact-requests.ts sin egen
+  // kommentar for hvorfor (retention.ts's purgeOldContactRequests() er
+  // avhengig av at denne faktisk endres når raden forlater `pending`).
   const expired = await dbase
     .update(contactRequests)
-    .set({ status: "expired" })
+    .set({ status: "expired", updatedAt: new Date() })
     .where(
       and(
         eq(contactRequests.status, "pending"),

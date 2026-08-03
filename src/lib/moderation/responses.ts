@@ -78,9 +78,12 @@ export async function hideResponse(responseId: string): Promise<ResponseModerati
     .returning({ id: responses.id });
   if (!updated) return { ok: false, error: "errors.response_not_visible" };
 
+  // `updatedAt` settes eksplisitt — se contact-requests.ts sin egen
+  // kommentar (retention.ts's purgeOldContactRequests() er avhengig av
+  // dette).
   await db
     .update(contactRequests)
-    .set({ status: "cancelled" })
+    .set({ status: "cancelled", updatedAt: new Date() })
     .where(and(eq(contactRequests.responseId, responseId), eq(contactRequests.status, "pending")));
 
   await db.insert(auditLogs).values({

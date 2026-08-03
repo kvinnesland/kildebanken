@@ -137,6 +137,22 @@ async function purgeOldResponses(
  * `resolved_at`-felt (se SPEC-V1.md 19.8) — `updated_at` brukes som
  * tilnærming, siden raden alltid oppdateres idet den forlater `pending`.
  * Kun rader i en terminal status regnes, aldri `pending`.
+ *
+ * Reelt hull frem til nå, rettet natt til 2026-08-03 (se NATTLOGG.md):
+ * dette avsnittets påstand var ØNSKET oppførsel, ikke faktisk oppførsel —
+ * INGEN av de ni stedene i kodebasen som flytter en rad vekk fra `pending`
+ * (contact-requests.ts, responses.ts, tick.ts x2, requests.ts,
+ * moderation/users.ts, moderation/responses.ts, account-deletion.ts x2)
+ * satte faktisk `updated_at` eksplisitt, og verken en DB-trigger eller en
+ * Drizzle `$onUpdate` gjorde det for dem — kolonnen ble derfor stående
+ * FROSSET på innsettingstidspunktet (samme verdi som `created_at`) resten
+ * av radens levetid. Siden en kontaktforespørsel uansett alltid avgjøres
+ * eller utløper innen 14 dager etter opprettelse (`EXPIRES_AFTER_MS`,
+ * contact-requests.ts), var den praktiske konsekvensen at denne jobben
+ * slettet rader ca. 14 dager FOR TIDLIG i forhold til det spec-en her
+ * krever — et lite, men reelt avvik fra "12 måneder etter avslutning".
+ * Alle ni stedene setter nå `updatedAt` eksplisitt ved nettopp den
+ * overgangen, så antagelsen i dette avsnittet er nå sann.
  */
 async function purgeOldContactRequests(
   dbase: Database,

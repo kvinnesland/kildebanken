@@ -227,7 +227,13 @@ async function anonymizeRecipientContent(respondentUserId: string): Promise<void
     .where(and(eq(responses.respondentId, respondentUserId), eq(contactRequests.status, "pending")));
 
   for (const cr of pendingContactRequests) {
-    await db.update(contactRequests).set({ status: "cancelled" }).where(eq(contactRequests.id, cr.id));
+    // `updatedAt` settes eksplisitt — se contact-requests.ts sin egen
+    // kommentar (retention.ts's purgeOldContactRequests() er avhengig av
+    // dette).
+    await db
+      .update(contactRequests)
+      .set({ status: "cancelled", updatedAt: new Date() })
+      .where(eq(contactRequests.id, cr.id));
 
     const [journalist] = await db
       .select({ email: users.email, locale: users.locale, countryCode: users.countryCode })
@@ -278,9 +284,12 @@ async function closeJournalistContentOnDeletion(journalistUserId: string): Promi
       .from(responses)
       .where(eq(responses.requestId, r.id));
 
+    // `updatedAt` settes eksplisitt — se contact-requests.ts sin egen
+    // kommentar (retention.ts's purgeOldContactRequests() er avhengig av
+    // dette).
     await db
       .update(contactRequests)
-      .set({ status: "expired" })
+      .set({ status: "expired", updatedAt: new Date() })
       .where(
         and(eq(contactRequests.status, "pending"), inArray(contactRequests.responseId, responseIdsForRequest))
       );
