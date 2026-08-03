@@ -182,7 +182,10 @@ export async function retryFailedDigestDeliveries(digestId: string): Promise<Ret
   for (const delivery of failedDeliveries) {
     const locale = isSupportedLocale(delivery.locale) ? delivery.locale : PLATFORM_DEFAULT_LOCALE;
     if (!renderedByLocale.has(locale)) {
-      renderedByLocale.set(locale, renderDigestContent(locale, digestItems, country.timezone));
+      renderedByLocale.set(
+        locale,
+        renderDigestContent(locale, digestItems, country.timezone, digest.scheduledFor)
+      );
       senderNameByLocale.set(locale, createTranslator(locale)(country.senderNameKey));
     }
     const rendered = renderedByLocale.get(locale);

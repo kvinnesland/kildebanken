@@ -16425,3 +16425,87 @@ gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 74: fulgte opp Økt 73 sin anbefaling (seksjon 10 i sin helhet) —
+fant og rettet ETT nytt hull: digest-e-posten viste ALDRI noen faktisk
+dato
+
+Leste seksjon 10 (Daglig utsendelse) linje for linje mot
+`tick.ts`/`digest.ts`/`digests.ts`. 10.1 (jobben) stemte HELT med
+koden ved nøye gjennomgang av alle ni nummererte stegene: land
+behandles uavhengig (try/catch per land, FR-036), riktig WHERE-klausul
+for steg 1 (`published` + `included_in_digest_at IS NULL`, PLUSS en
+strengere `users.status = active`-sjekk for suspenderte journalister,
+8.1), tom liste avbryter uten å sende (steg 2), locale-oppdagelse fra
+FAKTISKE abonnenter (steg 3), én rendring per locale i bruk (steg 4,
+FR-032), `Digest`-rad opprettet (steg 5), riktig mottakerfilter (steg
+6), `DigestDelivery` lagrer locale (steg 7), `included_in_digest_at`
+settes (steg 8), webhook-behandling er allerede asynkron (steg 9,
+separat rute). `Digest.status`-overgangen (pending → sent/failed, kun
+failed når ALLE mottakere feilet) og per-mottaker-feilhåndtering
+(FR-036 anvendt også på mottakernivå) stemte også.
+
+**10.2 sitt hull**: innholdslisten er "dato, formatert for mottakerens
+locale — antall nye forespørsler — kort introduksjon — per
+forespørsel: ... — avmeldingslenke." Det FØRSTE elementet, en faktisk
+dato, fantes ALDRI noe sted i verken HTML- eller ren-tekst-varianten —
+kun den relative frasen "i dag" i emnefeltet
+(`digest.subject`: "{count} ny/nye forespørsel/forespørsler I DAG").
+"I dag" er ikke en dato formatert for mottakerens locale; det sier
+ingenting om HVILKEN dag e-posten faktisk gjelder, noe som blir
+tvetydig for en mottaker som åpner e-posten dagen etter, eller som
+sammenligner flere lands utsendelser. `renderDigestContent()` tok ikke
+engang imot noen datoparameter i utgangspunktet.
+
+**Retting**: la til en fjerde, påkrevd parameter
+`digestDate: string` ("YYYY-MM-DD", SAMME verdi som `Digest.scheduledFor`,
+19.9 — landets egen lokale kalenderdag for akkurat denne utsendelsen,
+allerede beregnet i `tick.ts` sin `localTimeForTimezone()`). Formatert
+med `Intl.DateTimeFormat(locale, { dateStyle: "full", timeZone: "UTC" })`
+— `timeZone: "UTC"` er bevisst her (i motsetning til forrige økts
+`countryTimezone`-fiks for selve svarfristen): `digestDate` er ALLEREDE
+en ren kalenderdag uten klokkeslett, og skal derfor vises SOM DEN ER,
+ikke tolkes på nytt inn i en annen tidssone (som kunne forskjøvet den
+til feil dag). Vist som egen linje over introen i BÅDE HTML og
+ren tekst. To kallsteder oppdatert: `tick.ts` sin
+`sendDigestToRecipients()` (fikk allerede `localDate` fra kalleren,
+bare ikke videreført hit) og `digests.ts` sin
+`retryFailedDigestDeliveries()` (brukte `digest.scheduledFor`,
+allerede tilgjengelig fra dens egen `select()` av hele digest-raden —
+ingen ny spørring nødvendig der).
+
+**Ny test** i `digest.test.ts`: bekrefter at BÅDE nb-NO og en-GB faktisk
+viser en fullt utskrevet, korrekt lokalisert dato ("lørdag 15. august
+2026" / "Saturday, 15 August 2026" for samme underliggende dato),
+ikke bare den generiske "i dag"-frasen.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil (bekreftet at nøyaktig de to kjente
+  kallstedene ble oppdatert, siden parameteren er påkrevd).
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 467 tester
+  (466 + 1 ny).
+- `npx tsx src/i18n/check-keys.ts`: OK — 532 nøkler (uendret — datoen
+  er ren `Intl`-formatering, ingen ny oversettelsesnøkkel).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 342
+  tester, ALLE bestod uendret.
+
+### Neste økt
+
+Seksjon 10 er nå ferdig gjennomgått, i tillegg til 2-9 og 11-15 fra
+tidligere økter. Gjenstår av hovedseksjonene (1-20) for denne
+linje-for-linje-metoden: 1 (Formål, sannsynligvis rent beskrivende), 16
+(Administrasjon — dekket av dedikerte byggeøkter, men ikke denne
+metoden), 17-20 (samme). Foreslått neste: seksjon 16, siden den er den
+STØRSTE gjenværende, med flest underseksjoner (16.1-16.3+) og størst
+sannsynlighet for et nytt funn gitt mønsteret denne og forrige økt
+etablerte (funn i felt som allerede var bygget, bare ikke lest MOT
+selve spec-teksten linje for linje). Uendret: de to gjenværende GENUINE
+åpne spec-spørsmålene, fortsatt bevisst latt åpne for menneskelig
+gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.

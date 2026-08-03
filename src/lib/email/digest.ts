@@ -81,9 +81,25 @@ const UNSUBSCRIBE_TOKEN_PLACEHOLDER = "__UNSUBSCRIBE_TOKEN__";
 export function renderDigestContent(
   locale: SupportedLocale,
   requestsForDigest: readonly DigestRequestItem[],
-  countryTimezone: string
+  countryTimezone: string,
+  // "YYYY-MM-DD", landets lokale kalenderdato for denne utsendelsen
+  // (samme verdi som Digest.scheduledFor, 19.9) — IKKE en Date/klokkeslett,
+  // siden dette er en ren kalenderdag, uavhengig av klokkeslett.
+  digestDate: string
 ): RenderedDigest {
   const t = createTranslator(locale);
+  // SPEC-V1.md 10.2: digestens innhold skal inkludere "dato, formatert for
+  // mottakerens locale" som et EGET element, atskilt fra "antall nye
+  // forespørsler" (subject) og introen — reelt hull frem til nå: verken
+  // HTML- eller ren-tekst-varianten viste noen faktisk dato noe sted, kun
+  // den relative frasen "i dag" i emnefeltet (se NATTLOGG.md). `timeZone:
+  // "UTC"` her er bevisst — `digestDate` er allerede landets egen lokale
+  // kalenderdag (beregnet i tick.ts sin `localTimeForTimezone()`), så den
+  // skal vises SLIK DEN ER, ikke tolkes på nytt inn i en annen tidssone.
+  const formattedDigestDate = new Intl.DateTimeFormat(locale, {
+    dateStyle: "full",
+    timeZone: "UTC",
+  }).format(new Date(`${digestDate}T00:00:00Z`));
   // SPEC-V1.md 3.6/10.2: "Svarfrister vises alltid med tidssone angitt" —
   // formatert i LANDETS tidssone (samme kilde som selve utsendelsen
   // planlegges etter, tick.ts sin `localTimeForTimezone`), ikke serverens
@@ -150,6 +166,7 @@ export function renderDigestContent(
     <tr><td align="center" style="padding:24px 12px;">
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" class="eb-card" style="max-width:600px;width:100%;background:${EMAIL_COLORS.surface};border-radius:8px;">
         <tr><td style="padding:24px;">
+          <p class="eb-muted" style="margin:0 0 4px;font-size:13px;color:${EMAIL_COLORS.textMuted};">${escapeHtml(formattedDigestDate)}</p>
           <p class="eb-text" style="margin:0 0 20px;color:${EMAIL_COLORS.text};">${escapeHtml(t("digest.intro"))}</p>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${itemsHtml}</table>
           <p class="eb-muted" style="margin:24px 0 0;font-size:12px;color:${EMAIL_COLORS.textMuted};">
@@ -163,6 +180,7 @@ export function renderDigestContent(
 </html>`;
 
   const text = [
+    formattedDigestDate,
     t("digest.intro"),
     "",
     ...requestsForDigest.map(
