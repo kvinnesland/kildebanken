@@ -49,15 +49,15 @@ const sampleRequest: DigestRequestItem = {
 
 describe("renderDigestContent", () => {
   it("rendrer riktig antall i emnefeltet (ICU-flertall)", () => {
-    const one = renderDigestContent("nb-NO", [sampleRequest]);
+    const one = renderDigestContent("nb-NO", [sampleRequest], "Europe/Oslo");
     expect(one.subject).toContain("1 ny forespørsel i dag");
 
-    const many = renderDigestContent("nb-NO", [sampleRequest, sampleRequest]);
+    const many = renderDigestContent("nb-NO", [sampleRequest, sampleRequest], "Europe/Oslo");
     expect(many.subject).toContain("2 nye forespørsler i dag");
   });
 
   it("inneholder plassholdere, ikke faktiske tokens, før innsetting", () => {
-    const rendered = renderDigestContent("nb-NO", [sampleRequest]);
+    const rendered = renderDigestContent("nb-NO", [sampleRequest], "Europe/Oslo");
     expect(rendered.html).toContain("__ACCESS_TOKEN__");
     expect(rendered.html).toContain("__UNSUBSCRIBE_TOKEN__");
   });
@@ -67,25 +67,25 @@ describe("renderDigestContent", () => {
       ...sampleRequest,
       title: '<script>alert("x")</script>',
     };
-    const rendered = renderDigestContent("nb-NO", [malicious]);
+    const rendered = renderDigestContent("nb-NO", [malicious], "Europe/Oslo");
     expect(rendered.html).not.toContain("<script>");
     expect(rendered.html).toContain("&lt;script&gt;");
   });
 
   it("viser fremmedspråk-varsel når innholdsspråk avviker fra locale", () => {
     const foreign: DigestRequestItem = { ...sampleRequest, contentLanguage: "en-GB" };
-    const rendered = renderDigestContent("nb-NO", [foreign]);
+    const rendered = renderDigestContent("nb-NO", [foreign], "Europe/Oslo");
     expect(rendered.html).toContain("et annet språk enn ditt");
   });
 
   it("viser IKKE fremmedspråk-varsel når språkene stemmer overens", () => {
-    const rendered = renderDigestContent("nb-NO", [sampleRequest]);
+    const rendered = renderDigestContent("nb-NO", [sampleRequest], "Europe/Oslo");
     expect(rendered.html).not.toContain("et annet språk enn ditt");
   });
 
   it("SPEC-V1.md 21.2: setter lang-attributt på tittel/oppsummering/stedsnotat til forespørselens EGET innholdsspråk, ikke digestens locale", () => {
     const foreign: DigestRequestItem = { ...sampleRequest, contentLanguage: "en-GB" };
-    const rendered = renderDigestContent("nb-NO", [foreign]);
+    const rendered = renderDigestContent("nb-NO", [foreign], "Europe/Oslo");
 
     expect(rendered.html).toContain('<h2 lang="en-GB"');
     expect(rendered.html).toContain('<p class="eb-text" lang="en-GB"');
@@ -93,16 +93,29 @@ describe("renderDigestContent", () => {
   });
 
   it("SPEC-V1.md 3.7: bruker locale-ens EGET, oversatte stinavn i lenken, ikke alltid nb-NO sitt", () => {
-    const nbRendered = renderDigestContent("nb-NO", [sampleRequest]);
+    const nbRendered = renderDigestContent("nb-NO", [sampleRequest], "Europe/Oslo");
     expect(nbRendered.html).toContain(encodeURIComponent(`/nb-NO/foresporsler/${sampleRequest.id}/${sampleRequest.slug}`));
 
-    const enRendered = renderDigestContent("en-GB", [sampleRequest]);
+    const enRendered = renderDigestContent("en-GB", [sampleRequest], "Europe/Oslo");
     expect(enRendered.html).toContain(encodeURIComponent(`/en-GB/requests/${sampleRequest.id}/${sampleRequest.slug}`));
     expect(enRendered.html).not.toContain(encodeURIComponent("/en-GB/foresporsler/"));
   });
 
+  it("SPEC-V1.md 3.6/10.2: svarfristen vises i LANDETS tidssone, med tidssonen angitt — ikke serverens egen", () => {
+    const oslo = renderDigestContent("nb-NO", [sampleRequest], "Europe/Oslo");
+    const tokyo = renderDigestContent("nb-NO", [sampleRequest], "Asia/Tokyo");
+
+    // Samme UTC-tidspunkt, ULIKE tidssoner — den formaterte klokkeslettet skal
+    // derfor faktisk avvike (ikke begge falle tilbake til samme, ambigue
+    // serverlokale tidssone).
+    expect(oslo.html).not.toBe(tokyo.html);
+    expect(oslo.html).toContain("(Europe/Oslo)");
+    expect(oslo.text).toContain("(Europe/Oslo)");
+    expect(tokyo.html).toContain("(Asia/Tokyo)");
+  });
+
   it("DESIGN.md 7: mørkt tema via prefers-color-scheme, med color-scheme-metatagger", () => {
-    const rendered = renderDigestContent("nb-NO", [sampleRequest]);
+    const rendered = renderDigestContent("nb-NO", [sampleRequest], "Europe/Oslo");
     expect(rendered.html).toContain("@media (prefers-color-scheme: dark)");
     expect(rendered.html).toContain('<meta name="color-scheme" content="light dark">');
     expect(rendered.html).toContain('class="eb-body"');
@@ -114,7 +127,7 @@ describe("renderDigestContent", () => {
 
 describe("insertPerRecipientTokens", () => {
   it("bytter ut begge plassholderne med de faktiske tokenene", () => {
-    const rendered = renderDigestContent("nb-NO", [sampleRequest]);
+    const rendered = renderDigestContent("nb-NO", [sampleRequest], "Europe/Oslo");
     const personalized = insertPerRecipientTokens(rendered, "access-abc", "unsub-xyz");
 
     expect(personalized.html).not.toContain("__ACCESS_TOKEN__");
@@ -126,7 +139,7 @@ describe("insertPerRecipientTokens", () => {
   });
 
   it("endrer ikke emnefeltet", () => {
-    const rendered = renderDigestContent("nb-NO", [sampleRequest]);
+    const rendered = renderDigestContent("nb-NO", [sampleRequest], "Europe/Oslo");
     const personalized = insertPerRecipientTokens(rendered, "a", "b");
     expect(personalized.subject).toBe(rendered.subject);
   });

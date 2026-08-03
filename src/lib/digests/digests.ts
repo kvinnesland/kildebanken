@@ -122,7 +122,11 @@ export async function retryFailedDigestDeliveries(digestId: string): Promise<Ret
   // førstegangsutsendelsen (tick.ts) — en gjensending skal ikke se
   // annerledes ut for mottakeren enn originalen ville gjort.
   const [country] = await db
-    .select({ senderNameKey: countries.senderNameKey, supportEmail: countries.supportEmail })
+    .select({
+      senderNameKey: countries.senderNameKey,
+      supportEmail: countries.supportEmail,
+      timezone: countries.timezone,
+    })
     .from(countries)
     .where(eq(countries.code, digest.countryCode))
     .limit(1);
@@ -178,7 +182,7 @@ export async function retryFailedDigestDeliveries(digestId: string): Promise<Ret
   for (const delivery of failedDeliveries) {
     const locale = isSupportedLocale(delivery.locale) ? delivery.locale : PLATFORM_DEFAULT_LOCALE;
     if (!renderedByLocale.has(locale)) {
-      renderedByLocale.set(locale, renderDigestContent(locale, digestItems));
+      renderedByLocale.set(locale, renderDigestContent(locale, digestItems, country.timezone));
       senderNameByLocale.set(locale, createTranslator(locale)(country.senderNameKey));
     }
     const rendered = renderedByLocale.get(locale);

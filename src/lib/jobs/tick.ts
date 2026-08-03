@@ -185,6 +185,7 @@ export async function runDigestTick(dbase: Database): Promise<TickResult> {
       const sendErrors = await sendDigestToRecipients(dbase, {
         digestId: createdDigest.id,
         country: country.code,
+        countryTimezone: country.timezone,
         requestIds,
         senderNameKey: country.senderNameKey,
         supportEmail: country.supportEmail,
@@ -211,6 +212,7 @@ async function sendDigestToRecipients(
   args: {
     digestId: string;
     country: string;
+    countryTimezone: string;
     requestIds: string[];
     senderNameKey: string;
     supportEmail: string;
@@ -289,7 +291,7 @@ async function sendDigestToRecipients(
   for (const recipient of recipients) {
     const locale = isSupportedLocale(recipient.locale) ? recipient.locale : PLATFORM_DEFAULT_LOCALE;
     if (!renderedByLocale.has(locale)) {
-      renderedByLocale.set(locale, renderDigestContent(locale, digestItems));
+      renderedByLocale.set(locale, renderDigestContent(locale, digestItems, args.countryTimezone));
       senderNameByLocale.set(locale, createTranslator(locale)(args.senderNameKey));
     }
   }

@@ -80,13 +80,23 @@ const UNSUBSCRIBE_TOKEN_PLACEHOLDER = "__UNSUBSCRIBE_TOKEN__";
  */
 export function renderDigestContent(
   locale: SupportedLocale,
-  requestsForDigest: readonly DigestRequestItem[]
+  requestsForDigest: readonly DigestRequestItem[],
+  countryTimezone: string
 ): RenderedDigest {
   const t = createTranslator(locale);
+  // SPEC-V1.md 3.6/10.2: "Svarfrister vises alltid med tidssone angitt" —
+  // formatert i LANDETS tidssone (samme kilde som selve utsendelsen
+  // planlegges etter, tick.ts sin `localTimeForTimezone`), ikke serverens
+  // egen, ambigue lokale tidssone. Samme mønster (formater + vis IANA-
+  // navnet i parentes) som request-detaljsiden ([slug]/page.tsx) — reelt
+  // hull frem til nå: denne funksjonen tok ikke imot noen tidssone i det
+  // hele tatt (se NATTLOGG.md).
   const dateFormatter = new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: countryTimezone,
   });
+  const formatDeadline = (deadline: Date) => `${dateFormatter.format(deadline)} (${countryTimezone})`;
 
   const subject = t("digest.subject", { count: requestsForDigest.length });
 
@@ -122,7 +132,7 @@ export function renderDigestContent(
         <p class="eb-text" lang="${r.contentLanguage}" style="margin:0 0 8px;color:${EMAIL_COLORS.text};">${escapeHtml(r.summary)}</p>
         <p class="eb-muted" style="color:${EMAIL_COLORS.textMuted};font-size:13px;margin:0;">${escapeHtml(r.organizationName)}</p>
         <p class="eb-muted" style="color:${EMAIL_COLORS.textMuted};font-size:13px;margin:2px 0 0;">${escapeHtml(
-          t("request.deadline_label", { deadline: dateFormatter.format(r.responseDeadline) })
+          t("request.deadline_label", { deadline: formatDeadline(r.responseDeadline) })
         )}</p>
         ${geoLine}${languageNotice}
         <a href="${url}" class="eb-button" style="display:inline-block;margin-top:10px;padding:8px 16px;background:${EMAIL_COLORS.accent};color:${EMAIL_COLORS.accentText};text-decoration:none;border-radius:6px;font-size:14px;">${escapeHtml(
@@ -158,7 +168,7 @@ export function renderDigestContent(
     ...requestsForDigest.map(
       (r) =>
         `${r.title}\n${r.summary}\n${t("request.deadline_label", {
-          deadline: dateFormatter.format(r.responseDeadline),
+          deadline: formatDeadline(r.responseDeadline),
         })}\n${requestUrl(r)}\n`
     ),
     `${t("digest.unsubscribe")}: ${unsubscribeUrl}`,

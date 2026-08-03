@@ -16350,3 +16350,78 @@ bevisst latt åpne for menneskelig gjennomgang:
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 73: fulgte opp Økt 72 sin anbefaling (seksjon 3) — fant og
+rettet et reelt hull i selve digest-e-posten: svarfristen viste ALDRI
+noen tidssone, og brukte ALDRI landets faktiske tidssone
+
+Leste seksjon 3 (Språk og land) linje for linje. 3.6 sier: "Alle
+tidspunkter lagres i UTC. Visning skjer i brukerens `timezone` dersom
+den er satt, ellers i landets tidssone. Svarfrister vises alltid med
+tidssone angitt, slik at en frist ikke misforstås på tvers av
+markeder." Samme krav gjentas i 10.2 ("svarfrist med tidssone").
+
+Sjekket alle stedene et svarfrist faktisk vises. Forespørselssiden
+([slug]/page.tsx) gjør dette RIKTIG allerede (`Intl.DateTimeFormat` med
+`timeZone: request.countryTimezone`, pluss `(${countryTimezone})`
+lagt til teksten manuelt) — dette var den etablerte, korrekte
+referanseimplementasjonen. MEN `renderDigestContent()`
+(`src/lib/email/digest.ts`) — selve funksjonen som bygger INNHOLDET i
+den daglige digest-e-posten, plattformens mest sentrale e-post — hadde
+en `Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle:
+"short" })` UTEN noen `timeZone`-opsjon i det hele tatt, og ingen
+tidssone vist i teksten. Konsekvens: svarfristen i HVER daglig digest
+ble formatert i SERVERENS egen, ambigue lokale tidssone (avhengig av
+driftsmiljøet — potensielt UTC i produksjon, noe helt annet lokalt),
+ikke landets, og uten noen tidssoneindikasjon — nøyaktig scenarioet
+3.6 advarer mot ("en frist... misforstås på tvers av markeder").
+Funksjonen tok ikke engang imot noen tidssoneparameter i utgangspunktet.
+
+**Retting**: la til en påkrevd tredje parameter
+`countryTimezone: string` til `renderDigestContent()`, satt som
+`timeZone` i `Intl.DateTimeFormat` OG lagt til i klammer i selve
+teksten (`${formatert} (${countryTimezone})`) — samme mønster som
+detaljsiden, i BÅDE HTML- og ren-tekst-varianten. To kallsteder fantes
+(ikke bare ett): `tick.ts` sin `sendDigestToRecipients()` (selve
+førstegangsutsendelsen — `country.timezone` var allerede innhentet der
+for `localTimeForTimezone()`, bare ikke videreført til rendringen) OG
+`digests.ts` sin `retryFailedDigestDeliveries()` (admin sin "kjør på
+nytt ved feil", 16.2 — måtte utvide sin egen `countries`-spørring med
+`timezone`, som ikke var med fra før).
+
+**Ny test** i `digest.test.ts`: rendrer SAMME UTC-tidspunkt med to
+ulike tidssoner (Europe/Oslo vs. Asia/Tokyo) og bekrefter at (a) den
+formaterte teksten faktisk AVVIKER mellom dem (ikke begge stille faller
+tilbake til samme serverlokale verdi) og (b) begge tidssonenavnene
+faktisk vises i output. De 12 eksisterende testene i filen fikk en
+tredje `"Europe/Oslo"`-parameter lagt til.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil (fanget automatisk om noe kallsted var
+  glemt, siden parameteren er påkrevd, ikke valgfri — bekreftet at
+  akkurat de to kjente kallstedene fantes).
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 466 tester
+  (465 + 1 ny).
+- `npx tsx src/i18n/check-keys.ts`: OK — 532 nøkler (uendret).
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 342
+  tester, ALLE bestod uendret (ingen integrasjonstest asserterte på den
+  eksakte rendrede digest-teksten, så ingen av dem trengte oppdatering).
+
+### Neste økt
+
+Seksjon 3 er nå ferdig gjennomgått (utover selve funnet over, stemte
+resten — 3.1 til 3.5, 3.7 og 3.8 — allerede med koden). Dekket så
+langt: 2-9, 11-15. Foreslått neste: seksjon 10 (Daglig utsendelse) i sin
+helhet — spesielt verdt å sjekke etter denne øktens funn, siden det
+viser at selv en tidligere "kritisk lest" fil (Økt 63, som lette etter
+TOCTOU) kan ha andre, ikke-TOCTOU-relaterte hull en linje-for-linje
+spec-sammenligning fanger opp. Uendret: de to gjenværende GENUINE åpne
+spec-spørsmålene, fortsatt bevisst latt åpne for menneskelig
+gjennomgang:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
