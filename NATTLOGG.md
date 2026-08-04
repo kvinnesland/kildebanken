@@ -16794,3 +16794,132 @@ spec-spørsmålene, pluss Brevo-webhook-signatur-observasjonen fra Økt 76
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 78: fullførte INFRASTRUCTURE.md sin linje-for-linje-gjennomgang
+(seksjon 2-15), og gjorde en ekte nettleser-verifisering av to tidligere
+kun-jsdom-testede UI-funksjoner
+
+To separate aktiviteter denne økten, ingen kodefeil funnet i noen av dem.
+
+### Del 1: resten av INFRASTRUCTURE.md 2-15 mot faktisk kode
+
+Fulgte opp Økt 77 sin liste over gjenstående seksjoner. Som forventet
+var det aller meste fortsatt ren Stadium 1-beskrivelse uten
+tilsvarende kode (seksjon 2 kjøretidsarkitektur, 3 komponentvalg, 6
+delvis, 11 sikkerhetskopi, 13, 14 hva som ryker først, 15 åpne
+beslutninger) — ingen handling mulig eller nødvendig der, bekreftet
+nok en gang samme mønster som Økt 76/77.
+
+De kode-nivå-punktene som FAKTISK er sjekkbare uavhengig av
+driftsstadium, ble krysset direkte mot kilden og stemte alle:
+
+- Seksjon 5 (jobbkø): `runTick()` i `src/lib/jobs/tick.ts` dispatcher
+  fortsatt alle sju jobbene, og `deadlineReminderSentAt`/
+  `staleReminderSentAt`-feltene i `schema.ts` (linje 308-309) som ble
+  rettet i en tidligere økt (jobbtabell-fiksen, task #29) står fortsatt
+  riktig — ingen regresjon.
+- Seksjon 8.1: `src/app/api/health/route.ts` +
+  `src/lib/health/health.ts` sin `checkHealth()` gjør fortsatt et ekte
+  databaseoppslag mot `drizzle.__drizzle_migrations` for
+  migrasjonsversjon, ikke en plassholderverdi.
+- Seksjon 4: ingen automatisk migrasjonskjøring ved oppstart noe sted i
+  kodebasen — kun det eksplisitte `npm run db:migrate`-steget i
+  `package.json`, som spec-en krever.
+- Seksjon 9: `.env.example` inneholder fortsatt bare variabelnavn og
+  plassholdertekst, ingen ekte hemmeligheter.
+- `DB_POOL_MAX`-standardverdien (3) i `src/db/client.ts` stemmer
+  fortsatt med det dokumenterte tallet.
+
+INFRASTRUCTURE.md sin linje-for-linje-metode (analog til den som
+allerede er kjørt mot hele SPEC-V1.md og DESIGN.md) er dermed nå
+FULLSTENDIG gjennomført — alle 16 seksjoner er lest mot faktisk
+kode/config minst én gang. Ingen nye avvik denne runden; det ENE reelle
+avviket metoden fant totalt (CSP `unsafe-inline` i seksjon 12) ble
+allerede rettet i Økt 77.
+
+### Del 2: ekte nettleser-verifisering (Playwright), ikke bare jsdom
+
+Med linje-for-linje-metoden nå uttømt på alle tre toppdokumentene,
+byttet denne økten til en annen type verifisering — direkte i tråd med
+den stående regelen "For UI or frontend changes, start the dev server
+and use the feature in a browser before reporting the task as
+complete." To funksjoner fra tidligere økter (Økt 71 sin
+visningsnavn-forhåndsutfylling og Økt 75 sitt innholdsspråk-merke i
+modereringskøen) er begge dekket av jsdom-baserte enhetstester, men
+ALDRI faktisk kjørt i en ekte nettleser mot en ekte database før nå.
+
+**Verktøysgap oppdaget og løst**: prosjektet har ingen egen
+`playwright`-avhengighet i `package.json`. Sandkasse-miljøet har derimot
+en global installasjon (`playwright@1.56.1` under
+`/opt/node22/lib/node_modules/playwright`) og en forhåndsinstallert
+Chromium (`/opt/pw-browsers/chromium`). Et første forsøk på å importere
+denne globale pakken via `NODE_PATH` feilet — Nodes ESM-oppløsning
+(utløst av `import`-syntaks i en `.mjs`-fil) leser ikke `NODE_PATH` for
+bare-spesifikke importer slik den eldre CommonJS `require()`-
+oppløsningen gjør. Løsningen var å importere pakkens faktiske
+inngangspunkt direkte via absolutt filsti
+(`/opt/node22/lib/node_modules/playwright/index.mjs`), som Node sin
+ESM-oppløsning håndterer uten problemer.
+
+**Oppsett**: et frittstående, ikke-committet sådd-script opprettet en
+mottaker (med `displayName`), to journalister (én med en publisert
+forespørsel på `nb-NO`, én med en innsendt forespørsel med
+`contentLanguage: "en-GB"`), og en moderator tildelt samme land — alt
+mot en ekte kjørende `next dev`-instans og ekte Postgres (testlandet
+`XT`). Et Playwright-script logget deretter inn som mottakeren (via
+`kb_session`-cookien direkte) og hentet den faktiske verdien i
+visningsnavn-feltet på svarskjemaet, og logget inn som moderatoren for
+å hente den faktiske body-teksten på modereringskø-siden.
+
+**Resultat — begge bestod, ingen kodefeil**:
+- Svarskjemaets visningsnavn-felt var faktisk forhåndsutfylt med
+  `"Live Sjekk Mottaker"` (mottakerens ekte kontonavn), ikke tomt.
+- Modereringskøen viste faktisk teksten "Oppgitt innholdsspråk: Engelsk"
+  for forespørselen med `contentLanguage: "en-GB"`.
+
+Dette er ren bekreftende diligence — ingen kode ble endret, siden begge
+funksjonene allerede var riktig bygget og allerede dekket av grønne
+enhetstester. Verdien er å ha faktisk BEVIST at jsdom-testenes
+antagelser (DOM-struktur, CSS-modul-klassenavn, faktisk renderet tekst)
+stemmer overens med hva en ekte nettleser mot en ekte database faktisk
+viser — ikke bare antatt det.
+
+**Opprydding etter økten**: alle sådde rader (2 brukere +
+journalist-profiler + moderatorland + 2 forespørsler) ble slettet fra
+utviklingsdatabasen igjen, `next dev`-prosessen ble avsluttet, og de to
+ikke-sporede scratch-filene (`scratch-seed-live-check.ts`,
+`scratch-playwright-check.mjs`) ble slettet fra prosjektroten — ingen
+av dem ble noensinne committet.
+
+### Verifisert
+
+Ingen kode endret denne økten (ren verifisering) — ingen ny
+`tsc`/`eslint`/`vitest`/`build`-kjøring var nødvendig eller utført.
+Siste kjente grønne fullkjøring er fortsatt fra Økt 77, uendret siden.
+Playwright-sjekken selv (mot ekte `next dev` + ekte Postgres) er
+beskrevet over og bestod begge assertions.
+
+### Neste økt
+
+Alle tre toppdokumentene (SPEC-V1.md, DESIGN.md, INFRASTRUCTURE.md) har
+nå fått minst én fullstendig linje-for-linje-gjennomgang. Ett lite hull
+gjenstår av selve METODEN (ikke nødvendigvis av innholdet, som er
+sjekket via egne, tidligere dedikerte økter): SPEC-V1.md seksjon 1
+(Formål — sannsynligvis rent beskrivende) og seksjon 18-20 (Sikkerhet/
+Datamodell/API) har aldri fått akkurat DENNE linje-for-linje-metoden
+kjørt mot seg direkte, kun tidligere frittstående revisjoner (task
+#26, #32, #78). Verdt en rask, avsluttende sjekk for å lukke metode-
+dekningen helt, men lav forventet treffrate siden innholdet allerede er
+grundig dekket fra andre vinkler. Utover det: vurder å gjøre flere
+live-nettleser-verifiseringer av andre spec-flyter etter samme mønster
+som denne økten (nå som verktøysgapet er løst — importer Playwright
+via absolutt sti, ikke `NODE_PATH`) — kandidater inkluderer
+journalist-søknadsflyten og selve digest-e-postens faktiske utseende.
+Uendret, fortsatt de tre åpne spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold;
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.
