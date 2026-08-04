@@ -17829,3 +17829,129 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 87: fullførte SPEC-V1.md 3.4-mellomleddet gjennom HELE
+transaksjonell e-post-stien — alle 23 maler, ikke bare avsendernavnet
+
+### Ubrukte-eksporter-metoden, gjentatt: null nye treff (som forventet)
+
+Kjørte samme grep-baserte script som Økt 83-85 (funksjon/const/class/
+interface/type-eksporter i `src/lib`, `src/components`, `src/app/api`,
+`src/i18n`, `src/db` som aldri forekommer noe annet sted i `src/`) på
+nytt, siden fem filer var endret siden forrige kjøring. ~79 treff, ALLE
+av de tre allerede dokumenterte støy-kategoriene fra Økt 85
+(type/interface-returtype-inferens, `pgEnum()`-fabrikkonstanter i
+`schema.ts`, `teardown` sin Vitest-konvensjon) — null treff på
+`function`/`const`/`class`-nivå. Bekrefter Økt 85 sin egen spådom:
+metoden er nå uttømt for denne kodebasens nåværende tilstand. Ingen
+handling.
+
+### Hovedfunn: sendTransactionalEmail() er ÉN sentral dispatcher — langt
+billigere å lukke 3.4-hullet fullt ut enn tidligere antatt
+
+Fulgte opp Økt 86 sitt spor: undersøkte kallestedene til
+`resolveSenderIdentity()` (10 filer) nærmere for å se om noen av de
+~24 e-postmalene kunne kobles til `countryDefaultLocale` billig. Viste
+seg at ALLE transaksjonelle maler rendres FRA ÉTT sted:
+`renderTransactionalEmail()` i `src/lib/email/send.ts`, kalt internt
+av `sendTransactionalEmail()` — de ~10 kallestedene selv kaller ALDRI
+`renderXEmail()` direkte, de sender bare `{ template, to, data,
+senderName, replyTo }` til dispatcheren. Antagelsen fra Økt 86 (at å
+lukke hullet i selve e-postINNHOLDET ville kreve å røre alle ~24
+malfilers individuelle kallesteder) var feil — det er ÉN fil, ikke ti
+eller tjuefire.
+
+**Retting, i fire lag:**
+
+1. `SenderIdentity` (`sender-identity.ts`) fikk et nytt felt
+   `countryDefaultLocale: SupportedLocale` — landraden slås uansett opp
+   der (for `support_email`), så dette er ingen ny spørring, bare et
+   eksponert felt fra en verdi som allerede ble beregnet internt.
+2. `SendTransactionalEmailInput` (`send.ts`) fikk et nytt, VALGFRITT
+   felt `countryDefaultLocale?: string` (valgfritt i motsetning til de
+   nå obligatoriske `senderName`/`replyTo` — noen kallesteder, f.eks.
+   innloggingslenken før brukeren er tilknyttet et land, har ingen
+   landkontekst i det hele tatt). `renderTransactionalEmail()` løser
+   den (samme `isSupportedLocale`-mønster som ellers) og sender den som
+   siste argument til SAMTLIGE 23 malers `renderXEmail()`-kall.
+3. Alle 23 `renderXEmail()`-funksjoner i `src/lib/email/templates/`
+   fikk en ny, valgfri, siste parameter `countryDefaultLocale?:
+   SupportedLocale`, videreført til sitt eget `createTranslator(locale,
+   countryDefaultLocale)`-kall — mekanisk, identisk mønster i hver fil
+   (gjort med et lite Python-script, deretter verifisert fil for fil og
+   med `tsc`/`eslint`). `renderSimpleCtaEmail()` (den delte,
+   underliggende HTML-skallet) trengte INGEN endring — den mottar bare
+   allerede-oversatte strenger, den kaller aldri `createTranslator()`
+   selv.
+4. Alle 20 faktiske `sendTransactionalEmail(...)`-kall (10 filer, siden
+   tre av dem har flere kallesteder hver) fikk en ny linje
+   `countryDefaultLocale: identity?.countryDefaultLocale,` rett etter
+   sin eksisterende `senderName`/`replyTo`-linje — samme `identity`
+   (eller `respondentIdentity`/`journalistIdentity` i responses.ts) som
+   allerede var hentet via `resolveSenderIdentity()` for
+   avsendernavnet.
+
+**Resultat**: SPEC-V1.md 3.4 sin tre-ledds fallback-kjede (forespurt
+locale → landets default_locale → plattformens standardspråk) er nå
+reelt koblet inn i HELE e-poststien — både avsendernavnet (Økt 86) og
+selve emne-/brødteksten (denne økten), for BÅDE transaksjonell e-post
+(alle 23 maler) og digest-e-post (Økt 86). Ingen kjente gjenværende
+kallesteder som bevisst utelater det andre argumentet av annen grunn
+enn manglende landkontekst.
+
+**Bakoverkompatibilitet**: alle 88+ eksisterende kallesteder til
+`createTranslator()` som IKKE oppgir det andre argumentet (typer/
+komponenter/tester som fortsatt bare bruker forespurt locale direkte)
+er upåvirket — feltet er valgfritt hele veien gjennom. De 34
+eksisterende testene i `send.test.ts` (som alle sender `senderName:
+undefined, replyTo: undefined` uten `countryDefaultLocale`) består
+uendret.
+
+**Ny test**: én ny test i `send.test.ts`, samme
+testbarhetsbegrensning som Økt 86 sin `digest.test.ts`-test (nb-NO har
+hver eneste nøkkel som `magic_link`-malen bruker, så en reell
+observerbar forskjell krever en kunstig ufullstendig locale som ikke
+finnes i fixturene) — bekrefter i stedet byte-identisk logget innhold
+med og uten det nye feltet.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 86 filer, 477 tester (476 + 1 ny).
+- `npx tsx src/i18n/check-keys.ts`: OK — 533 nøkler.
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 filer, ingen brudd.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 345
+  tester, ALLE bestod uendret.
+
+Committet: `src/lib/email/send.ts`, `src/lib/email/send.test.ts`,
+`src/lib/email/sender-identity.ts`, alle 23 filer i
+`src/lib/email/templates/` (unntatt `simple-cta-email.ts`, uendret),
+`src/lib/admin/legal-documents.ts`, `src/lib/jobs/tick.ts`,
+`src/lib/auth/account-deletion.ts`, `src/lib/auth/magic-link.ts`,
+`src/lib/moderation/requests.ts`, `src/lib/moderation/journalists.ts`,
+`src/lib/contact-requests/contact-requests.ts`,
+`src/lib/requests/requests.ts`, `src/lib/reports/reports.ts`,
+`src/lib/responses/responses.ts`.
+
+### Neste økt
+
+SPEC-V1.md 3.4-sporet (påbegynt Økt 85, ført videre Økt 86-87) er nå
+trolig FULLFØRT for alle kjente e-postveier — verdt en rask,
+uavhengig bekreftelse neste økt (f.eks. et grep etter alle gjenværende
+`createTranslator(` -kall i `src/lib/email/` for å bekrefte at ingen
+ble oversett), men ikke mer STRUKTURELT arbeid ventet her med mindre
+noe nytt dukker opp. Et friskt spor: det er lenge siden en fullstendig
+SPEC-V1.md-linje-for-linje-sveip ble gjort fra bunnen av (de fleste
+nylige øktene har vært punktvise oppfølginger) — vurder en ny,
+fullstendig gjennomgang av spec-en mot koden, siden mange filer er
+endret siden forrige hele sveip og et nytt hull kan ha sneket seg inn
+utilsiktet. Uendret, fortsatt de tre åpne spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.

@@ -10,8 +10,8 @@ import { renderSimpleCtaEmail, type RenderedEmail } from "./simple-cta-email";
  * det finnes ikke noe token her, godkjenningen er ikke en klikkbar handling,
  * bare en beskjed om at kontoen nå kan brukes.
  */
-export function renderJournalistApprovedEmail(locale: SupportedLocale): RenderedEmail {
-  const t = createTranslator(locale);
+export function renderJournalistApprovedEmail(locale: SupportedLocale, countryDefaultLocale?: SupportedLocale): RenderedEmail {
+  const t = createTranslator(locale, countryDefaultLocale);
 
   return renderSimpleCtaEmail({
     locale,

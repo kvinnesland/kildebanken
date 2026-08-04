@@ -43,6 +43,7 @@ async function notifyJournalist(
       data,
       senderName: identity?.senderName,
       replyTo: identity?.replyTo,
+      countryDefaultLocale: identity?.countryDefaultLocale,
     });
   }
 }

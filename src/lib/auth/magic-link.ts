@@ -68,6 +68,7 @@ export async function requestMagicLink(email: string): Promise<void> {
     data: { token: rawToken },
     senderName: identity?.senderName,
     replyTo: identity?.replyTo,
+    countryDefaultLocale: identity?.countryDefaultLocale,
   });
 }
 

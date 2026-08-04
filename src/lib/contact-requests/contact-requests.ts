@@ -94,6 +94,7 @@ export async function createContactRequest(
         },
         senderName: identity?.senderName,
         replyTo: identity?.replyTo,
+        countryDefaultLocale: identity?.countryDefaultLocale,
       });
     }
 
@@ -206,6 +207,7 @@ export async function respondToContactRequest(
         data: { contactRequestId },
         senderName: identity?.senderName,
         replyTo: identity?.replyTo,
+        countryDefaultLocale: identity?.countryDefaultLocale,
       });
     }
   } else {
@@ -233,6 +235,7 @@ export async function respondToContactRequest(
         data: { contactRequestId },
         senderName: identity?.senderName,
         replyTo: identity?.replyTo,
+        countryDefaultLocale: identity?.countryDefaultLocale,
       });
     }
   }

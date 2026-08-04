@@ -491,6 +491,7 @@ export async function runDeadlineReminders(dbase: Database): Promise<TickResult>
         data: { requestId: r.id, title: r.title },
         senderName: identity?.senderName,
         replyTo: identity?.replyTo,
+        countryDefaultLocale: identity?.countryDefaultLocale,
       });
       await dbase
         .update(requests)
@@ -545,6 +546,7 @@ export async function runStaleRequestReminders(dbase: Database): Promise<TickRes
         data: { requestId: r.id, title: r.title },
         senderName: identity?.senderName,
         replyTo: identity?.replyTo,
+        countryDefaultLocale: identity?.countryDefaultLocale,
       });
       await dbase
         .update(requests)

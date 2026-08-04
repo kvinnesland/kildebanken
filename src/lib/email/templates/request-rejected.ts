@@ -21,9 +21,10 @@ import { renderSimpleCtaEmail, type RenderedEmail } from "./simple-cta-email";
 export function renderRequestRejectedEmail(
   locale: SupportedLocale,
   title: string,
-  reason: string
+  reason: string,
+  countryDefaultLocale?: SupportedLocale
 ): RenderedEmail {
-  const t = createTranslator(locale);
+  const t = createTranslator(locale, countryDefaultLocale);
 
   return renderSimpleCtaEmail({
     locale,

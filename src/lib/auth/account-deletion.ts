@@ -57,6 +57,7 @@ export async function requestAccountDeletion(userId: string): Promise<void> {
     data: { token: rawToken },
     senderName: identity?.senderName,
     replyTo: identity?.replyTo,
+    countryDefaultLocale: identity?.countryDefaultLocale,
   });
 }
 
@@ -164,6 +165,7 @@ export async function performAccountDeletion(
     data: {},
     senderName: identity?.senderName,
     replyTo: identity?.replyTo,
+    countryDefaultLocale: identity?.countryDefaultLocale,
   });
 
   await revokeAllSessionsForUser(userId);
@@ -249,6 +251,7 @@ async function anonymizeRecipientContent(respondentUserId: string): Promise<void
         data: {},
         senderName: identity?.senderName,
         replyTo: identity?.replyTo,
+        countryDefaultLocale: identity?.countryDefaultLocale,
       });
     }
   }
@@ -309,6 +312,7 @@ async function closeJournalistContentOnDeletion(journalistUserId: string): Promi
         data: { requestId: r.id, title: r.title, slug: r.slug },
         senderName: identity?.senderName,
         replyTo: identity?.replyTo,
+        countryDefaultLocale: identity?.countryDefaultLocale,
       });
     }
   }

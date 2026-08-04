@@ -8,8 +8,8 @@ import { renderSimpleCtaEmail, type RenderedEmail } from "./simple-cta-email";
  * `reason`-data sendes med, og ingen CTA (ingenting igjen å gjøre noe med,
  * samme begrunnelse som `journalist_rejected`).
  */
-export function renderContactDeclinedEmail(locale: SupportedLocale): RenderedEmail {
-  const t = createTranslator(locale);
+export function renderContactDeclinedEmail(locale: SupportedLocale, countryDefaultLocale?: SupportedLocale): RenderedEmail {
+  const t = createTranslator(locale, countryDefaultLocale);
 
   return renderSimpleCtaEmail({
     locale,

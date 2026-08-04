@@ -1,4 +1,4 @@
-import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
+import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE, type SupportedLocale } from "@/i18n/config";
 import { renderMagicLinkEmail } from "./templates/magic-link";
 import { renderConfirmEmailEmail } from "./templates/confirm-email";
 import { renderJournalistApplicationReceivedEmail } from "./templates/journalist-application-received";
@@ -136,6 +136,16 @@ export interface SendTransactionalEmailInput {
   // sende e-post uten lokalisert avsendernavn/Reply-To.
   senderName: string | undefined;
   replyTo: string | undefined;
+  // SPEC-V1.md 3.4 sitt mellomledd i fallback-kjeden (landets
+  // default_locale, mellom forespurt locale og plattformens standardspråk)
+  // — se createTranslator() sin egen kommentar (src/i18n/get-messages.ts).
+  // VALGFRITT: `resolveSenderIdentity()` returnerer nå denne verdien fra
+  // samme landoppslag den uansett gjør for `senderName`/`replyTo`, så et
+  // kallested som allerede kaller den kan sende `identity?.countryDefaultLocale`
+  // her uten en ny spørring. Valgfri (ikke obligatorisk som senderName/
+  // replyTo over) fordi noen kallesteder ikke har noen landkontekst i det
+  // hele tatt (f.eks. innloggingslenken før brukeren er tilknyttet et land).
+  countryDefaultLocale?: string;
 }
 
 /**
@@ -150,6 +160,14 @@ export interface SendTransactionalEmailInput {
  */
 function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedEmail | null {
   const locale = isSupportedLocale(input.to.locale) ? input.to.locale : PLATFORM_DEFAULT_LOCALE;
+  // SPEC-V1.md 3.4 sitt mellomledd — se feltets egen kommentar på
+  // `SendTransactionalEmailInput` over. Et ustøttet/manglende locale-navn
+  // blir `undefined`, samme som å ikke sende det andre argumentet i det
+  // hele tatt (createTranslator()/resolveMessage() sin egen etablerte
+  // "hopp over ukjent ledd i kjeden"-oppførsel, se get-messages.ts).
+  const countryDefaultLocale = isSupportedLocale(input.countryDefaultLocale ?? "")
+    ? (input.countryDefaultLocale as SupportedLocale)
+    : undefined;
 
   switch (input.template) {
     case "magic_link":
@@ -158,22 +176,26 @@ function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedE
     case "confirm_account_deletion": {
       const token = input.data.token;
       if (typeof token !== "string") return null;
-      if (input.template === "magic_link") return renderMagicLinkEmail(locale, token);
-      if (input.template === "confirm_email") return renderConfirmEmailEmail(locale, token);
-      if (input.template === "journalist_application_received") {
-        return renderJournalistApplicationReceivedEmail(locale, token);
+      if (input.template === "magic_link") {
+        return renderMagicLinkEmail(locale, token, countryDefaultLocale);
       }
-      return renderConfirmAccountDeletionEmail(locale, token);
+      if (input.template === "confirm_email") {
+        return renderConfirmEmailEmail(locale, token, countryDefaultLocale);
+      }
+      if (input.template === "journalist_application_received") {
+        return renderJournalistApplicationReceivedEmail(locale, token, countryDefaultLocale);
+      }
+      return renderConfirmAccountDeletionEmail(locale, token, countryDefaultLocale);
     }
     case "journalist_approved":
     case "account_deletion_confirmed":
       return input.template === "journalist_approved"
-        ? renderJournalistApprovedEmail(locale)
-        : renderAccountDeletionConfirmedEmail(locale);
+        ? renderJournalistApprovedEmail(locale, countryDefaultLocale)
+        : renderAccountDeletionConfirmedEmail(locale, countryDefaultLocale);
     case "journalist_rejected": {
       const reason = input.data.reason;
       if (typeof reason !== "string") return null;
-      return renderJournalistRejectedEmail(locale, reason);
+      return renderJournalistRejectedEmail(locale, reason, countryDefaultLocale);
     }
     case "response_submitted_receipt": {
       const { requestId, requestTitle, requestSlug } = input.data;
@@ -184,12 +206,18 @@ function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedE
       ) {
         return null;
       }
-      return renderResponseSubmittedReceiptEmail(locale, requestId, requestTitle, requestSlug);
+      return renderResponseSubmittedReceiptEmail(
+        locale,
+        requestId,
+        requestTitle,
+        requestSlug,
+        countryDefaultLocale
+      );
     }
     case "new_response_received": {
       const { requestId, requestTitle } = input.data;
       if (typeof requestId !== "string" || typeof requestTitle !== "string") return null;
-      return renderNewResponseReceivedEmail(locale, requestId, requestTitle);
+      return renderNewResponseReceivedEmail(locale, requestId, requestTitle, countryDefaultLocale);
     }
     case "contact_request_received": {
       const { contactRequestId, requestTitle, journalistName, organizationName } = input.data;
@@ -206,59 +234,72 @@ function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedE
         contactRequestId,
         requestTitle,
         journalistName,
-        organizationName
+        organizationName,
+        countryDefaultLocale
       );
     }
     case "contact_approved": {
       const contactRequestId = input.data.contactRequestId;
       if (typeof contactRequestId !== "string") return null;
-      return renderContactApprovedEmail(locale, contactRequestId);
+      return renderContactApprovedEmail(locale, contactRequestId, countryDefaultLocale);
     }
     case "contact_declined":
-      return renderContactDeclinedEmail(locale);
+      return renderContactDeclinedEmail(locale, countryDefaultLocale);
     case "request_closed": {
       const { requestId, title } = input.data;
       if (typeof requestId !== "string" || typeof title !== "string") return null;
-      return renderRequestClosedEmail(locale, requestId, title);
+      return renderRequestClosedEmail(locale, requestId, title, countryDefaultLocale);
     }
     case "request_approved_published": {
       const { requestId, title, slug } = input.data;
       if (typeof requestId !== "string" || typeof title !== "string" || typeof slug !== "string") {
         return null;
       }
-      return renderRequestApprovedPublishedEmail(locale, requestId, title, slug);
+      return renderRequestApprovedPublishedEmail(
+        locale,
+        requestId,
+        title,
+        slug,
+        countryDefaultLocale
+      );
     }
     case "changes_requested": {
       const { requestId, comment } = input.data;
       if (typeof requestId !== "string" || typeof comment !== "string") return null;
-      return renderChangesRequestedEmail(locale, requestId, comment);
+      return renderChangesRequestedEmail(locale, requestId, comment, countryDefaultLocale);
     }
     case "request_rejected": {
       const { title, reason } = input.data;
       if (typeof title !== "string" || typeof reason !== "string") return null;
-      return renderRequestRejectedEmail(locale, title, reason);
+      return renderRequestRejectedEmail(locale, title, reason, countryDefaultLocale);
     }
     case "deadline_approaching_24h": {
       const { requestId, title } = input.data;
       if (typeof requestId !== "string" || typeof title !== "string") return null;
-      return renderDeadlineApproaching24hEmail(locale, requestId, title);
+      return renderDeadlineApproaching24hEmail(locale, requestId, title, countryDefaultLocale);
     }
     case "stale_request_reminder_30d": {
       const { requestId, title } = input.data;
       if (typeof requestId !== "string" || typeof title !== "string") return null;
-      return renderStaleRequestReminder30dEmail(locale, requestId, title);
+      return renderStaleRequestReminder30dEmail(locale, requestId, title, countryDefaultLocale);
     }
     case "response_request_closed": {
       const { requestId, title, slug } = input.data;
       if (typeof requestId !== "string" || typeof title !== "string" || typeof slug !== "string") {
         return null;
       }
-      return renderResponseRequestClosedEmail(locale, requestId, title, slug);
+      return renderResponseRequestClosedEmail(
+        locale,
+        requestId,
+        title,
+        slug,
+        countryDefaultLocale
+      );
     }
     case "new_request_for_moderation": {
       const title = input.data.title;
       if (typeof title !== "string") return null;
-      return renderNewRequestForModerationEmail(locale, title);
+      return renderNewRequestForModerationEmail(locale, title, countryDefaultLocale);
     }
     case "content_reported": {
       const { entityType, entityId, reason, comment } = input.data;
@@ -270,10 +311,17 @@ function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedE
       ) {
         return null;
       }
-      return renderContentReportedEmail(locale, entityType, entityId, reason, comment);
+      return renderContentReportedEmail(
+        locale,
+        entityType,
+        entityId,
+        reason,
+        comment,
+        countryDefaultLocale
+      );
     }
     case "contact_request_cancelled_account_deleted":
-      return renderContactRequestCancelledAccountDeletedEmail(locale);
+      return renderContactRequestCancelledAccountDeletedEmail(locale, countryDefaultLocale);
     case "legal_terms_material_change": {
       const { documentType, countryCode } = input.data;
       if (
@@ -282,7 +330,12 @@ function renderTransactionalEmail(input: SendTransactionalEmailInput): RenderedE
       ) {
         return null;
       }
-      return renderLegalTermsMaterialChangeEmail(locale, documentType, countryCode);
+      return renderLegalTermsMaterialChangeEmail(
+        locale,
+        documentType,
+        countryCode,
+        countryDefaultLocale
+      );
     }
     default:
       return null;

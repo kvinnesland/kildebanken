@@ -21,9 +21,10 @@ import { renderSimpleCtaEmail, type RenderedEmail } from "./simple-cta-email";
  */
 export function renderJournalistApplicationReceivedEmail(
   locale: SupportedLocale,
-  token: string
+  token: string,
+  countryDefaultLocale?: SupportedLocale
 ): RenderedEmail {
-  const t = createTranslator(locale);
+  const t = createTranslator(locale, countryDefaultLocale);
   const verifyUrl = `${SITE_ORIGIN}/api/auth/verify?token=${encodeURIComponent(token)}&locale=${locale}`;
 
   return renderSimpleCtaEmail({

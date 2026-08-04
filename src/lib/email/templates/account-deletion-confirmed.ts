@@ -8,8 +8,8 @@ import { renderSimpleCtaEmail, type RenderedEmail } from "./simple-cta-email";
  * e-postadressen fortsatt er kjent). Ingen CTA — det er ingenting igjen å
  * gjøre noe med, samme begrunnelse som `journalist_rejected`.
  */
-export function renderAccountDeletionConfirmedEmail(locale: SupportedLocale): RenderedEmail {
-  const t = createTranslator(locale);
+export function renderAccountDeletionConfirmedEmail(locale: SupportedLocale, countryDefaultLocale?: SupportedLocale): RenderedEmail {
+  const t = createTranslator(locale, countryDefaultLocale);
 
   return renderSimpleCtaEmail({
     locale,

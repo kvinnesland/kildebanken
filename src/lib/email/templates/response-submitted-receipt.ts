@@ -15,9 +15,10 @@ export function renderResponseSubmittedReceiptEmail(
   locale: SupportedLocale,
   requestId: string,
   requestTitle: string,
-  requestSlug: string
+  requestSlug: string,
+  countryDefaultLocale?: SupportedLocale
 ): RenderedEmail {
-  const t = createTranslator(locale);
+  const t = createTranslator(locale, countryDefaultLocale);
   const requestUrl = `${SITE_ORIGIN}${requestDetailPath(locale, requestId, requestSlug)}`;
 
   return renderSimpleCtaEmail({

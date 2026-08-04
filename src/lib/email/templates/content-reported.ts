@@ -27,9 +27,10 @@ export function renderContentReportedEmail(
   entityType: "request" | "response",
   entityId: string,
   reason: string,
-  comment: string
+  comment: string,
+  countryDefaultLocale?: SupportedLocale
 ): RenderedEmail {
-  const t = createTranslator(locale);
+  const t = createTranslator(locale, countryDefaultLocale);
   const url =
     entityType === "response"
       ? `${SITE_ORIGIN}/${locale}/admin/responses/${entityId}`

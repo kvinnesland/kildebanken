@@ -14,9 +14,10 @@ import { renderSimpleCtaEmail, type RenderedEmail } from "./simple-cta-email";
 export function renderStaleRequestReminder30dEmail(
   locale: SupportedLocale,
   requestId: string,
-  title: string
+  title: string,
+  countryDefaultLocale?: SupportedLocale
 ): RenderedEmail {
-  const t = createTranslator(locale);
+  const t = createTranslator(locale, countryDefaultLocale);
   const url = `${SITE_ORIGIN}/${locale}/journalist/requests/${requestId}`;
 
   return renderSimpleCtaEmail({

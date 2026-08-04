@@ -12,8 +12,8 @@ import { renderSimpleCtaEmail, type RenderedEmail } from "./simple-cta-email";
  * `/logg-inn/bekreft` eller noe tilsvarende, siden selve økt-opprettelsen
  * må skje i en Route Handler, ikke en side.
  */
-export function renderMagicLinkEmail(locale: SupportedLocale, token: string): RenderedEmail {
-  const t = createTranslator(locale);
+export function renderMagicLinkEmail(locale: SupportedLocale, token: string, countryDefaultLocale?: SupportedLocale): RenderedEmail {
+  const t = createTranslator(locale, countryDefaultLocale);
   const verifyUrl = `${SITE_ORIGIN}/api/auth/verify?token=${encodeURIComponent(token)}&locale=${locale}`;
 
   return renderSimpleCtaEmail({

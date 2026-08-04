@@ -16,9 +16,10 @@ import { renderSimpleCtaEmail, type RenderedEmail } from "./simple-cta-email";
 export function renderLegalTermsMaterialChangeEmail(
   locale: SupportedLocale,
   documentType: "terms" | "privacy",
-  countryCode: string
+  countryCode: string,
+  countryDefaultLocale?: SupportedLocale
 ): RenderedEmail {
-  const t = createTranslator(locale);
+  const t = createTranslator(locale, countryDefaultLocale);
   const url = `${SITE_ORIGIN}/${locale}/legal/${countryCode.toLowerCase()}/${locale}/${documentType}`;
   const documentLabel = t(`email.legal_terms_material_change.document_type.${documentType}`);
 

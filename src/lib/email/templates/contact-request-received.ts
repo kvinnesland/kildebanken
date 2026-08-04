@@ -15,9 +15,10 @@ export function renderContactRequestReceivedEmail(
   contactRequestId: string,
   requestTitle: string,
   journalistName: string,
-  organizationName: string
+  organizationName: string,
+  countryDefaultLocale?: SupportedLocale
 ): RenderedEmail {
-  const t = createTranslator(locale);
+  const t = createTranslator(locale, countryDefaultLocale);
   const url = `${SITE_ORIGIN}/${locale}/contact-requests/${contactRequestId}`;
 
   return renderSimpleCtaEmail({

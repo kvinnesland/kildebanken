@@ -14,9 +14,10 @@ import { renderSimpleCtaEmail, type RenderedEmail } from "./simple-cta-email";
  */
 export function renderConfirmAccountDeletionEmail(
   locale: SupportedLocale,
-  token: string
+  token: string,
+  countryDefaultLocale?: SupportedLocale
 ): RenderedEmail {
-  const t = createTranslator(locale);
+  const t = createTranslator(locale, countryDefaultLocale);
   const confirmUrl = `${SITE_ORIGIN}/${locale}/me/slett-konto?token=${encodeURIComponent(token)}`;
 
   return renderSimpleCtaEmail({

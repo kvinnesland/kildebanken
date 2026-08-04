@@ -96,6 +96,7 @@ export async function submitResponse(
       data: { requestId, requestTitle: request.title, requestSlug: request.slug },
       senderName: respondentIdentity?.senderName,
       replyTo: respondentIdentity?.replyTo,
+      countryDefaultLocale: respondentIdentity?.countryDefaultLocale,
     });
 
     // SPEC-V1.md 20.1 nevner at journalisten varsles "dersom journalisten
@@ -115,6 +116,7 @@ export async function submitResponse(
         data: { requestId, requestTitle: request.title },
         senderName: journalistIdentity?.senderName,
         replyTo: journalistIdentity?.replyTo,
+        countryDefaultLocale: journalistIdentity?.countryDefaultLocale,
       });
     }
 

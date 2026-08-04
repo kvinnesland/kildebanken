@@ -87,6 +87,7 @@ export async function approveJournalist(journalistUserId: string): Promise<Moder
     data: {},
     senderName: identity?.senderName,
     replyTo: identity?.replyTo,
+    countryDefaultLocale: identity?.countryDefaultLocale,
   });
 
   return { ok: true };
@@ -153,6 +154,7 @@ export async function rejectJournalist(
     data: { reason },
     senderName: identity?.senderName,
     replyTo: identity?.replyTo,
+    countryDefaultLocale: identity?.countryDefaultLocale,
   });
 
   return { ok: true };

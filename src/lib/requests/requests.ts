@@ -319,6 +319,7 @@ export async function submitRequest(
       data: { requestId, title: existing.title },
       senderName: identity?.senderName,
       replyTo: identity?.replyTo,
+      countryDefaultLocale: identity?.countryDefaultLocale,
     });
   }
 
@@ -433,6 +434,7 @@ export async function closeRequest(
       data: { requestId, title: existing.title },
       senderName: identity?.senderName,
       replyTo: identity?.replyTo,
+      countryDefaultLocale: identity?.countryDefaultLocale,
     });
   }
 
@@ -460,6 +462,7 @@ export async function closeRequest(
       data: { requestId, title: existing.title, slug: existing.slug },
       senderName: identity?.senderName,
       replyTo: identity?.replyTo,
+      countryDefaultLocale: identity?.countryDefaultLocale,
     });
   }
 

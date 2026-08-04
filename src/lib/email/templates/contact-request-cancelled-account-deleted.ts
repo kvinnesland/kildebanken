@@ -9,8 +9,8 @@ import { renderSimpleCtaEmail, type RenderedEmail } from "./simple-cta-email";
  * er slettet, det finnes ingenting igjen å handle på (samme begrunnelse
  * som `contact_declined`/`journalist_rejected`).
  */
-export function renderContactRequestCancelledAccountDeletedEmail(locale: SupportedLocale): RenderedEmail {
-  const t = createTranslator(locale);
+export function renderContactRequestCancelledAccountDeletedEmail(locale: SupportedLocale, countryDefaultLocale?: SupportedLocale): RenderedEmail {
+  const t = createTranslator(locale, countryDefaultLocale);
 
   return renderSimpleCtaEmail({
     locale,

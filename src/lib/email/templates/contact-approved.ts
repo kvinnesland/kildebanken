@@ -13,9 +13,10 @@ import { renderSimpleCtaEmail, type RenderedEmail } from "./simple-cta-email";
  */
 export function renderContactApprovedEmail(
   locale: SupportedLocale,
-  contactRequestId: string
+  contactRequestId: string,
+  countryDefaultLocale?: SupportedLocale
 ): RenderedEmail {
-  const t = createTranslator(locale);
+  const t = createTranslator(locale, countryDefaultLocale);
   const url = `${SITE_ORIGIN}/${locale}/contact-requests/${contactRequestId}`;
 
   return renderSimpleCtaEmail({

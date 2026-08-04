@@ -61,6 +61,7 @@ export async function submitReport(input: SubmitReportInput): Promise<SubmitRepo
       },
       senderName: identity?.senderName,
       replyTo: identity?.replyTo,
+      countryDefaultLocale: identity?.countryDefaultLocale,
     });
   }
 

@@ -25,6 +25,39 @@ describe("sendTransactionalEmail (stub uten BREVO_API_KEY)", () => {
     expect(loggedMessage).toContain("/api/auth/verify?token=abc123&locale=nb-NO");
   });
 
+  // SPEC-V1.md 3.4 sitt mellomledd (landets default_locale), nå tredd
+  // gjennom HELE veien fra sendTransactionalEmail() til selve malen (se
+  // NATTLOGG.md, økt 87) — bakoverkompatibilitet: identisk logget innhold
+  // med og uten det nye, valgfrie feltet, siden nb-NO faktisk har hver
+  // eneste nøkkel som brukes her (samme testbarhetsbegrensning som
+  // digest.test.ts sin tilsvarende test).
+  it("gir identisk rendret innhold med og uten countryDefaultLocale når forespurt locale allerede har nøkkelen", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await sendTransactionalEmail({
+      template: "magic_link",
+      to: { email: "test@example.com", locale: "nb-NO" },
+      data: { token: "abc123" },
+      senderName: undefined,
+      replyTo: undefined,
+    });
+    const withoutArg = warnSpy.mock.calls[0]?.[0] as string;
+    warnSpy.mockClear();
+
+    await sendTransactionalEmail({
+      template: "magic_link",
+      to: { email: "test@example.com", locale: "nb-NO" },
+      data: { token: "abc123" },
+      senderName: undefined,
+      replyTo: undefined,
+      countryDefaultLocale: "en-GB",
+    });
+    const withArg = warnSpy.mock.calls[0]?.[0] as string;
+
+    expect(withArg).toBe(withoutArg);
+  });
+
   it("logger den faktisk rendrede malen for journalist_application_received", async () => {
     vi.stubEnv("BREVO_API_KEY", "");
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});

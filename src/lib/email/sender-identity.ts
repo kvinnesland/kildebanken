@@ -2,11 +2,19 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { countries } from "@/db/schema";
 import { createTranslator } from "@/i18n/get-messages";
-import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
+import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE, type SupportedLocale } from "@/i18n/config";
 
 export interface SenderIdentity {
   senderName: string;
   replyTo: string;
+  // SPEC-V1.md 3.4 sitt mellomledd i fallback-kjeden — landets EGET
+  // default_locale, allerede slått opp her (samme spørring som resten av
+  // denne funksjonen). Eksponert slik at en kaller som allerede henter en
+  // `SenderIdentity` (for `senderName`/`replyTo` til selve e-postutsendelsen)
+  // kan sende DENNE videre til `sendTransactionalEmail()`s
+  // `countryDefaultLocale`-felt for å lukke det samme hullet i selve
+  // e-postens INNHOLD, uten en ny spørring — se send.ts sin egen kommentar.
+  countryDefaultLocale: SupportedLocale;
 }
 
 /**
@@ -52,5 +60,6 @@ export async function resolveSenderIdentity(
   return {
     senderName: createTranslator(resolvedLocale, countryDefaultLocale)(country.senderNameKey),
     replyTo: country.supportEmail,
+    countryDefaultLocale,
   };
 }

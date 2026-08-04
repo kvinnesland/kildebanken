@@ -173,6 +173,7 @@ export async function publishLegalDocument(
         data: { documentType: input.documentType, countryCode: input.countryCode },
         senderName: identity?.senderName,
         replyTo: identity?.replyTo,
+        countryDefaultLocale: identity?.countryDefaultLocale,
       });
     }
   }

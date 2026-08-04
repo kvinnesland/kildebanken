@@ -12,8 +12,8 @@ import { renderSimpleCtaEmail, type RenderedEmail } from "./simple-cta-email";
  * at dette FØRSTE klikket bekrefter adressen — SPEC-V1.md 6.1: "Vellykket
  * innlogging setter email_verified_at dersom den er tom."
  */
-export function renderConfirmEmailEmail(locale: SupportedLocale, token: string): RenderedEmail {
-  const t = createTranslator(locale);
+export function renderConfirmEmailEmail(locale: SupportedLocale, token: string, countryDefaultLocale?: SupportedLocale): RenderedEmail {
+  const t = createTranslator(locale, countryDefaultLocale);
   const verifyUrl = `${SITE_ORIGIN}/api/auth/verify?token=${encodeURIComponent(token)}&locale=${locale}`;
 
   return renderSimpleCtaEmail({
