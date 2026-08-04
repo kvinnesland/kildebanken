@@ -1,6 +1,12 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { digestDeliveries, emailSubscriptions, suppressions, users } from "@/db/schema";
+import {
+  digestDeliveries,
+  emailSubscriptions,
+  processedEmailWebhookEvents,
+  suppressions,
+  users,
+} from "@/db/schema";
 import { hashToken } from "@/lib/auth/tokens";
 import { SOFT_BOUNCE_STREAK_TO_HARD_BOUNCE } from "./bounce-policy";
 
@@ -38,6 +44,28 @@ export interface ProcessEmailEventResult {
 export async function processEmailEvent(
   input: ProcessEmailEventInput
 ): Promise<ProcessEmailEventResult> {
+  // INFRASTRUCTURE.md 6.4: "Endepunktet er idempotent på leverandørens
+  // meldings-ID. Webhooks leveres mer enn én gang." Reelt hull frem til nå
+  // (se NATTLOGG.md, økt 92): INGENTING i denne funksjonen faktisk
+  // håndhevet dette — en gjentatt `soft_bounce`-levering for SAMME melding
+  // ville økt `consecutiveSoftBounces` én gang PER LEVERING i stedet for én
+  // gang per faktisk hendelse, og dermed kunne trigge 10.3 sin
+  // "tre myke bounces PÅ RAD"-eskalering etter bare to REELLE bounces.
+  // `(providerMessageId, event)` er en unik nøkkel (19.17) — et forsøk på å
+  // sette inn samme par to ganger avvises stille, og selve side-effektene
+  // under hoppes over andre gang. KUN mulig når leverandøren faktisk oppgir
+  // en meldings-ID (se webhook-ruten sin egen kommentar om at enkelte
+  // hendelsestyper mangler den) — uten en ID er funksjonen fortsatt IKKE
+  // idempotent, samme begrensning som før denne rettingen.
+  if (input.providerMessageId) {
+    const [inserted] = await db
+      .insert(processedEmailWebhookEvents)
+      .values({ providerMessageId: input.providerMessageId, event: input.event })
+      .onConflictDoNothing()
+      .returning({ id: processedEmailWebhookEvents.id });
+    if (!inserted) return { handled: true };
+  }
+
   // 16.2 ("se ... bounces, klager" per digest) / 19.10: uavhengig av (og i
   // TILLEGG til) den globale abonnements-/sperrelistehåndteringen under —
   // kobler hendelsen til den SPESIFIKKE DigestDelivery-raden e-posten kom

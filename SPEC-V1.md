@@ -1465,6 +1465,38 @@ Bevisst ikke koblet til `User` med en fremmednøkkel: `login`-bucketen er
 en RÅ e-postadresse, ikke en bruker-ID, siden grensen gjelder selv når
 kontoen ikke finnes (18: samme "avslør ingenting"-prinsipp som 6.1).
 
+### 19.17 ProcessedEmailWebhookEvent
+
+**Lagt til under autonomt arbeid** (se `NATTLOGG.md`): `INFRASTRUCTURE.md`
+6.4 sier eksplisitt at "Endepunktet er idempotent på leverandørens
+meldings-ID. Webhooks leveres mer enn én gang" — men datamodellen hadde
+ingen tabell som faktisk husket hvilke (meldings-ID, hendelsestype)-par
+som allerede var behandlet. Uten den var ikke løftet innfridd i praksis: en
+gjentatt levering av samme myk-bounce-hendelse ville økt telleren i 10.3
+sin "tre myke bounces PÅ RAD"-eskalering én gang PER LEVERING, ikke én
+gang per faktisk hendelse.
+
+```
+id
+provider_message_id        leverandørens meldings-ID (samme felt som
+                             Digest­Delivery.provider_message_id)
+event                       den NORMALISERTE hendelsestypen (delivered/
+                             soft_bounce/hard_bounce/complaint), ikke
+                             leverandørens rå streng
+created_at
+```
+
+Unik indeks på `(provider_message_id, event)` — selve idempotens-
+garantien. Et forsøk på å sette inn samme par to ganger avvises stille
+(`ON CONFLICT DO NOTHING`), og selve side-effektene (telling,
+statusoppdatering) hoppes over andre gang. Samme melding kan likevel få
+FLERE ULIKE hendelsestyper over tid (f.eks. først `delivered`, senere en
+`complaint`) — disse er ikke duplikater av hverandre. Kun mulig når
+leverandøren faktisk oppgir en meldings-ID (ikke alle hendelsestyper gjør
+det, se webhook-ruten sin egen kommentar); uten en ID er endepunktet
+fortsatt ikke idempotent for den hendelsen, samme begrensning som før
+denne rettingen.
+
 ---
 
 ## 20. API

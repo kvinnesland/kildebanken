@@ -537,3 +537,25 @@ export const rateLimitHits = pgTable(
     ),
   })
 );
+
+// ---------------------------------------------------------------------------
+// 19.17 ProcessedEmailWebhookEvent — INFRASTRUCTURE.md 6.4 ("Endepunktet er
+// idempotent på leverandørens meldings-ID. Webhooks leveres mer enn én
+// gang."). Se src/lib/subscriptions/email-events.ts.
+// ---------------------------------------------------------------------------
+
+export const processedEmailWebhookEvents = pgTable(
+  "processed_email_webhook_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerMessageId: text("provider_message_id").notNull(),
+    event: text("event").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    messageEventIdx: uniqueIndex("processed_email_webhook_events_message_event_idx").on(
+      table.providerMessageId,
+      table.event
+    ),
+  })
+);

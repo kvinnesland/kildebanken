@@ -269,5 +269,69 @@ describe("processEmailEvent mot ekte Postgres (10.3, FR-037)", () => {
         .where(eq(digestDeliveries.id, delivery.deliveryId));
       expect(row?.status).toBe("sent");
     });
+
+    // INFRASTRUCTURE.md 6.4: "Endepunktet er idempotent på leverandørens
+    // meldings-ID. Webhooks leveres mer enn én gang." Reelt hull frem til nå
+    // (se NATTLOGG.md, økt 92): en gjentatt levering av SAMME
+    // soft_bounce-hendelse økte telleren én gang PER LEVERING i stedet for
+    // én gang per faktisk hendelse.
+    describe("idempotens på (providerMessageId, event) — 19.17", () => {
+      it("en GJENTATT levering av samme soft_bounce-hendelse øker IKKE telleren på nytt", async () => {
+        const sub = await createSubscribedRecipient();
+        createdUserIds.push(sub.userId);
+        const providerMessageId = `<test-${generateToken()}@relay.brevo.com>`;
+
+        await processEmailEvent({ email: sub.email, event: "soft_bounce", providerMessageId });
+        await processEmailEvent({ email: sub.email, event: "soft_bounce", providerMessageId });
+        await processEmailEvent({ email: sub.email, event: "soft_bounce", providerMessageId });
+
+        const [row] = await db
+          .select()
+          .from(emailSubscriptions)
+          .where(eq(emailSubscriptions.id, sub.subscriptionId));
+        // Tre LEVERINGER av samme underliggende hendelse skal telle som ÉN,
+        // ikke eskalere til hard bounce (10.3: "tre PÅ RAD" betyr tre REELLE
+        // hendelser).
+        expect(row?.consecutiveSoftBounces).toBe(1);
+        expect(row?.status).toBe("active");
+      });
+
+      it("to ULIKE hendelsestyper for SAMME meldings-ID er ikke duplikater av hverandre", async () => {
+        const sub = await createSubscribedRecipient();
+        createdUserIds.push(sub.userId);
+        createdEmailHashes.push(hashToken(sub.email));
+        const providerMessageId = `<test-${generateToken()}@relay.brevo.com>`;
+
+        await processEmailEvent({ email: sub.email, event: "delivered", providerMessageId });
+        const complaintResult = await processEmailEvent({
+          email: sub.email,
+          event: "complaint",
+          providerMessageId,
+        });
+
+        expect(complaintResult.handled).toBe(true);
+        const [row] = await db
+          .select()
+          .from(emailSubscriptions)
+          .where(eq(emailSubscriptions.id, sub.subscriptionId));
+        expect(row?.status).toBe("unsubscribed");
+      });
+
+      it("uten en providerMessageId (f.eks. en hendelsestype leverandøren ikke oppgir ID for) telles hver levering fortsatt", async () => {
+        // Dokumenterer den GJENVÆRENDE begrensningen eksplisitt (se 19.17 sin
+        // egen spec-tekst) — ikke en feil, bare rekkevidden til rettingen.
+        const sub = await createSubscribedRecipient();
+        createdUserIds.push(sub.userId);
+
+        await processEmailEvent({ email: sub.email, event: "soft_bounce" });
+        await processEmailEvent({ email: sub.email, event: "soft_bounce" });
+
+        const [row] = await db
+          .select()
+          .from(emailSubscriptions)
+          .where(eq(emailSubscriptions.id, sub.subscriptionId));
+        expect(row?.consecutiveSoftBounces).toBe(2);
+      });
+    });
   });
 });

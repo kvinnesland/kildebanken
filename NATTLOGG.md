@@ -18394,3 +18394,111 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 92: fant og rettet en reell idempotens-svikt i e-post-webhooken —
+en gjentatt bounce-levering kunne trigge for tidlig suspensjon
+
+Fulgte opp Økt 91 sitt spor: kjørte "ubrukte eksporter"-grepet på nytt
+først (samme metode som Økt 83-85) — null nye treff, som forventet
+(bekrefter metoden fortsatt er uttømt). Gikk deretter i gang med en
+fornyet INFRASTRUCTURE.md-gjennomgang fra bunnen av, seksjon 1-8 denne
+økten.
+
+### Kvitteringer, ingen handling
+
+- Seksjon 1-5: to-stadier-arkitekturen, komponentvalgene, databasen
+  (unik indeks på `(country_code, local_date)` for digest, ingen
+  destruktive migrasjoner), og jobbtabellen (7 jobber, alle stemmer
+  eksakt med `tick.ts`/`retention.ts` sine faktiske eksporterte
+  funksjoner — verifisert på nytt etter task #29 sin tidligere retting).
+- 6.3 (domener/SPF/DKIM/DMARC), 7-8 (miljøer, utrulling,
+  helsesjekk-rettingen fra en tidligere natt) — alt stemmer, ingen
+  kodenivå å verifisere utover det som allerede er sjekket.
+
+### Reelt funn: 6.4 sitt idempotens-løfte var ALDRI faktisk innfridd
+
+6.4 sier eksplisitt: "Endepunktet er idempotent på leverandørens
+meldings-ID. Webhooks leveres mer enn én gang." Gjennomgikk
+`processEmailEvent()` (`src/lib/subscriptions/email-events.ts`) linje
+for linje og fant at INGENTING i funksjonen faktisk håndhevet dette.
+`soft_bounce`-grenen gjør en atomisk `+1` PÅ `consecutiveSoftBounces`
+UBETINGET, uten noen sjekk mot om akkurat denne leveransen allerede er
+behandlet. Siden 6.4 selv sier webhooks LEVERES MER ENN ÉN GANG (en
+normal, forventet leverandøroppførsel, ikke en sjelden feilsituasjon),
+ville en dobbelt levering av ÉN reell myk-bounce-hendelse økt telleren
+til 2 — og en tredje, faktisk ULIK hendelse ville da feilaktig utløst
+10.3 sin "tre myke bounces PÅ RAD"-eskalering til hard bounce (adressen
+sperres permanent) etter bare TO reelle bounces.
+
+De øvrige tre hendelsestypene (`delivered`, `hard_bounce`, `complaint`)
+er alle idempotente AV NATUR (rene `SET`-operasjoner, ikke
+inkrementer — å sette samme status to ganger er harmløst), og
+`updateDigestDeliveryStatus()` likeens. `soft_bounce` sin
+tellerøkning var det ENESTE stedet i hele funksjonen som faktisk
+krevde en eksplisitt idempotens-sperre for å stemme med 6.4s løfte.
+
+**Retting**: ny tabell `processed_email_webhook_events` (SPEC-V1.md
+19.17, ny seksjon lagt til FØR koden — spec først, deretter koden, se
+README.md/INFRASTRUCTURE.md 16.8 sitt eget prinsipp), med en unik
+indeks på `(provider_message_id, event)`. `processEmailEvent()` forsøker
+nå å sette inn dette paret FØRST (`ON CONFLICT DO NOTHING`); lykkes ikke
+innsettingen (paret finnes fra før), hoppes ALLE side-effekter over og
+funksjonen returnerer tidlig. Samme melding kan fortsatt få FLERE ULIKE
+hendelsestyper over tid (f.eks. `delivered` etterfulgt av en senere
+`complaint`) — disse behandles fortsatt som separate, ekte hendelser,
+ikke duplikater av hverandre.
+
+**Kjent, eksplisitt dokumentert gjenværende begrensning**: bare mulig
+når leverandøren faktisk oppgir en meldings-ID — webhook-ruten sin egen,
+tidligere kommentar bekrefter at enkelte hendelsestyper kan mangle den.
+For de sjeldne tilfellene uten en ID, er endepunktet fortsatt IKKE
+idempotent — samme begrensning som før denne rettingen, ikke noe verre.
+
+**Ny migrasjon**: `0010_charming_gideon.sql`
+(`npx drizzle-kit generate`), kjørt mot testdatabasen
+(`npm run db:migrate`).
+
+**Nye tester**: tre nye i `email-events.integration.test.ts` — (1) tre
+GJENTATTE leveringer av samme `soft_bounce`-hendelse (samme
+`providerMessageId`) øker telleren KUN til 1, eskalerer ikke; (2) to
+ULIKE hendelsestyper for samme meldings-ID (`delivered` så `complaint`)
+behandles begge som ekte, separate hendelser; (3) uten en
+`providerMessageId` telles hver levering fortsatt for seg (dokumenterer
+den bevisste, gjenværende begrensningen eksplisitt, ikke en
+regresjonstest for noe uønsket).
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 87 filer, 482 tester, alle bestod uendret (denne
+  rettingen berører kun integrasjonstestet kode).
+- `npx tsx src/i18n/check-keys.ts`: OK — 535 nøkler.
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 filer, ingen brudd.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 349
+  tester (346 + 3 nye), ALLE bestod — inkludert alle 11 eksisterende
+  `email-events.integration.test.ts`-testene, uendret av rettingen.
+
+Committet: `SPEC-V1.md`, `src/db/schema.ts`,
+`src/db/migrations/0010_charming_gideon.sql`,
+`src/db/migrations/meta/*`, `src/lib/subscriptions/email-events.ts`,
+`src/lib/subscriptions/email-events.integration.test.ts`.
+
+### Neste økt
+
+Fortsett den fornyede INFRASTRUCTURE.md-gjennomgangen fra der denne
+økten sluttet: seksjon 9-16 (Hemmeligheter, Overvåking, Sikkerhetskopi/
+gjenoppretting, Sikkerhet i infrastrukturen, Kostnad, Hva som ryker
+først, Åpne beslutninger, og Stadium 0-oppsettet i 16 — sistnevnte er
+det FAKTISKE, kjørende oppsettet i denne kodebasen akkurat nå, så verdt
+ekstra grundighet siden det er der virkeligheten faktisk er). Deretter,
+en tilsvarende fornyet DESIGN.md-gjennomgang fra bunnen av. Uendret,
+fortsatt de tre åpne spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.
