@@ -86,19 +86,31 @@ export function getMessagesForLocale(locale: SupportedLocale): Record<string, st
  * mønsteret `src/i18n/check-keys.ts` (FR-012) faktisk leter etter i
  * kildekoden — bruk denne i stedet for å lese `messages[...]` direkte, slik
  * at nøkkelbruk forblir grep-bar og CI-sjekkbar.
+ *
+ * `countryDefaultLocale` er det andre leddet i 3.4 sin fallback-kjede
+ * ("forespurt locale → landets default_locale → plattformens
+ * standardspråk") — VALGFRITT, siden de aller fleste kallesteder (statiske
+ * sidekomponenter uten et kjent lands kontekst) ikke har denne informasjonen
+ * lett tilgjengelig. Reelt hull frem til nå, funnet ved et grep etter
+ * eksporterte-men-aldri-brukte navn (se NATTLOGG.md, samme metode som
+ * avdekket `tokensMatch()`): `resolveMessage()` under implementerte
+ * nøyaktig denne tre-ledds-kjeden allerede, men var aldri faktisk koblet inn
+ * her — `createTranslator()` hoppet rett fra forespurt locale til
+ * plattformens standardspråk, uten å noensinne prøve landets eget
+ * `default_locale` i mellom. Uten observerbar effekt i dagens v1 (kun ett
+ * land, og de to eneste locale-ene er alltid fullstendig synkronisert — se
+ * `check-keys.ts` sin egen advarsel-mekanisme), men ville blitt en reell,
+ * synlig feil den dagen land nummer to legges til med en egen,
+ * ikke-standard `default_locale` og en ufullstendig tredje locale (21.3
+ * tillater nettopp det). Bakoverkompatibel: uendret oppførsel for alle
+ * eksisterende kallesteder, som fortsatt kun oppgir `locale`.
  */
-export function createTranslator(locale: SupportedLocale) {
-  const messages = MESSAGE_SETS[locale];
-  return function t(
-    key: string,
-    values?: Record<string, string | number | Date>
-  ): string {
-    const raw = messages[key];
-    if (raw === undefined) {
-      logMissingKey(key, [locale]);
-      const platformRaw = MESSAGE_SETS[PLATFORM_DEFAULT_LOCALE][key];
-      return platformRaw !== undefined ? format(platformRaw, PLATFORM_DEFAULT_LOCALE, values) : "…";
-    }
-    return format(raw, locale, values);
+export function createTranslator(locale: SupportedLocale, countryDefaultLocale?: SupportedLocale) {
+  const fallbackChain =
+    countryDefaultLocale && countryDefaultLocale !== locale
+      ? [locale, countryDefaultLocale]
+      : [locale];
+  return function t(key: string, values?: Record<string, string | number | Date>): string {
+    return resolveMessage(key, fallbackChain, values);
   };
 }

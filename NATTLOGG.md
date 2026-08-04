@@ -17619,3 +17619,122 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 85: utvidet ubrukte-eksporter-søket til typer/interfacer og flere
+mapper — mest støy, men ett reelt, arkitektonisk hull i selve
+i18n-fallback-kjeden
+
+Utvidet gårsdagens script (Økt 83/84) til også å dekke
+`src/app/api/`, `src/i18n/`, `src/db/`, og flere eksport-former
+(`interface`/`type`, ikke bare `function`/`const`/`class`).
+
+**Nesten alt var forventet støy**, av tre distinkte, gode grunner —
+verdifullt å ha bekreftet, men ingen handling:
+- ~70 av ~80 treff var `interface`/`type`-eksporter. TypeScript sin
+  returtype-inferens gjør at et kallested SJELDEN trenger å skrive
+  typenavnet eksplisitt (`const result = await performAccountDeletion(...)`
+  bruker `AccountDeletionResult` sin form uten noensinne å nevne NAVNET) —
+  scriptets enkle navne-grep kan strukturelt ikke se denne bruken. Ikke en
+  bugklasse denne metoden kan si noe fornuftig om.
+- `pgEnum()`-konstantene i `schema.ts` (`countryStatus`, `userRole` osv.)
+  brukes bare INNE I schema.ts selv, som kolonnetype-fabrikker
+  (`role: userRole("role")`) — scriptet ekskluderer bevisst treff i egen
+  fil, så disse regnes som "ubrukt ANDRE steder", som er nettopp deres
+  eneste og korrekte jobb.
+- `teardown` i `global-teardown.ts` refereres av `vitest.integration.config.ts`
+  sin `globalSetup`-sti (Vitest sin egen konvensjon, ikke en vanlig
+  import) — usynlig for et navne-grep.
+
+**Ett reelt, funksjons-nivå treff**: `resolveMessage()` i
+`src/i18n/get-messages.ts`. SPEC-V1.md 3.4 krever eksplisitt en
+TRE-ledds fallback-kjede for grensesnitt og e-poster: "forespurt locale
+→ landets `default_locale` → plattformens standardspråk."
+`resolveMessage()` implementerer nøyaktig denne kjeden korrekt — men
+`createTranslator()`, funksjonen ALLE 88 faktiske kallesteder i
+appen bruker, implementerte bare et TO-ledds hopp (forespurt locale →
+plattformens standardspråk direkte), og hoppet ALDRI innom landets
+eget `default_locale` i mellom. `resolveMessage()` var aldri faktisk
+koblet inn noe sted — ren, testet, men helt frakoblet logikk.
+
+**Hvorfor dette er reelt, men ufarlig akkurat nå**: v1 har ett land og
+to locale-er som er FULLSTENDIG synkronisert (ingen advarsler fra
+`check-keys.ts` sin egen lokale-gap-sjekk noensinne denne natten) — det
+manglende mellomleddet kan derfor ALDRI observeres i dagens
+konfigurasjon, siden den forespurte locale-en alltid enten treffer
+direkte eller ville truffet uansett hvilket mellomledd som var der.
+Hullet blir en EKTE, synlig feil den dagen land nummer to legges til
+med et eget, ikke-standard `default_locale` OG en tredje, ufullstendig
+locale (21.3 tillater eksplisitt akkurat det scenarioet) — da ville en
+bruker med den ufullstendige locale-en hoppe rett til plattformens
+standardspråk for en manglende nøkkel, i stedet for først å prøve LANDETS
+egen, kanskje faktisk komplette, oversettelse.
+
+**Retting, minimal og bakoverkompatibel**: `createTranslator()` fikk en
+NY, VALGFRI andre parameter (`countryDefaultLocale?`), og bygger nå selv
+en fallback-kjede som delegeres til `resolveMessage()` — i stedet for å
+duplisere reservevei-logikken selv (DRY, samme prinsipp som Økt 84 sin
+`FIELD_LIMITS`-retting). Alle 88 eksisterende kallesteder (som kun
+oppgir ett argument) får BYTE-IDENTISK oppførsel som før — ingen
+side-effekt for eksisterende kode. En FREMTIDIG kaller med kjent
+landkontekst (f.eks. en server-komponent som allerede har slått opp
+landet) kan nå velge å sende det andre argumentet for å faktisk lukke
+3.4-hullet der det trengs, uten at HELE appen måtte bygges om i én
+runde.
+
+**Bonus-funn under samme retting**: den gamle, inline
+`createTranslator()`-logikken logget ALLTID `console.warn` ved en
+manglende nøkkel, selv når nøkkelen manglet i BÅDE forespurt locale OG
+plattformens standardspråk (en reell totalmiss) — `resolveMessage()`
+sin egen, allerede korrekte alvorlighetsgrad-distinksjon
+(`console.warn` for en løst reservevei, `console.error` for en total
+miss) ble aldri faktisk utnyttet via `createTranslator()` frem til nå.
+Retter seg selv som en naturlig bieffekt av delegeringen — ingen egen
+kode trengtes.
+
+**Nye tester**: 4 nye tester i `get-messages.test.ts` — bekrefter
+bakoverkompatibilitet (samme locale to ganger = samme resultat som én
+gang), at forespurt locale fortsatt vinner når den faktisk har
+nøkkelen, at et ukjent/ustøttet locale-navn i kjeden hoppes over til
+neste ledd, og at en reell totalmiss fortsatt returnerer "…" i stedet
+for en rå nøkkel.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 86 filer, 475 tester (471 + 4 nye).
+- `npx tsx src/i18n/check-keys.ts`: OK — 533 nøkler.
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 filer, ingen brudd.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 345
+  tester, ALLE bestod uendret — inkludert
+  `sender-identity.integration.test.ts` sin bevisst-fake-nøkkel-test,
+  som nå (korrekt) logger `console.error` i stedet for `console.warn`
+  for akkurat den totalmiss-en, uten at noen test faktisk asserterer på
+  selve konsoll-alvorlighetsgraden.
+
+Committet: `src/i18n/get-messages.ts`, `src/i18n/get-messages.test.ts`.
+
+### Neste økt
+
+Ubrukte-eksporter-metoden er nå trolig uttømt for `function`/`const`
+-nivå funn (fire reelle ting funnet over tre økter: `tokensMatch()`,
+`FIELD_LIMITS`/`RESPONSE_FIELD_LIMITS`, `getRespondentView()`,
+`resolveMessage()`) — videre kjøringer av akkurat DENNE metoden har
+lav forventet avkastning fremover, siden treelisten nå er null og de
+færreste NYE eksporter vil oppstå uten bruk fra samme økt som skriver
+dem. Et friskt spor for neste økt: nå som `createTranslator()` faktisk
+STØTTER landets `default_locale` som mellomledd, vurder om det finnes
+NOEN kallesteder i faktisk server-rendret kode (sidekomponenter som
+allerede har slått opp landet fra databasen, f.eks. digest-relatert
+rendering eller e-postmaler som allerede mottar `countryCode`) der det
+ville vært billig og riktig å FAKTISK sende det andre argumentet — ikke
+en påkrevd endring, men en naturlig, lavthengende oppfølging av denne
+økten. Uendret, fortsatt de tre åpne spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.
