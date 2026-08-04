@@ -11,7 +11,7 @@ import {
   users,
 } from "@/db/schema";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
-import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
+import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE, type SupportedLocale } from "@/i18n/config";
 import { createTranslator } from "@/i18n/get-messages";
 import { sendBulkEmail } from "@/lib/email/send";
 import {
@@ -126,11 +126,19 @@ export async function retryFailedDigestDeliveries(digestId: string): Promise<Ret
       senderNameKey: countries.senderNameKey,
       supportEmail: countries.supportEmail,
       timezone: countries.timezone,
+      defaultLocale: countries.defaultLocale,
     })
     .from(countries)
     .where(eq(countries.code, digest.countryCode))
     .limit(1);
   if (!country) return { ok: false, error: "errors.not_found" };
+
+  // SPEC-V1.md 3.4 sitt mellomledd i fallback-kjeden — se
+  // renderDigestContent()/createTranslator() sin egen kommentar
+  // (src/lib/email/digest.ts, src/i18n/get-messages.ts) for hvorfor.
+  const countryDefaultLocale: SupportedLocale = isSupportedLocale(country.defaultLocale)
+    ? country.defaultLocale
+    : PLATFORM_DEFAULT_LOCALE;
 
   const failedDeliveries = await db
     .select({
@@ -184,9 +192,18 @@ export async function retryFailedDigestDeliveries(digestId: string): Promise<Ret
     if (!renderedByLocale.has(locale)) {
       renderedByLocale.set(
         locale,
-        renderDigestContent(locale, digestItems, country.timezone, digest.scheduledFor)
+        renderDigestContent(
+          locale,
+          digestItems,
+          country.timezone,
+          digest.scheduledFor,
+          countryDefaultLocale
+        )
       );
-      senderNameByLocale.set(locale, createTranslator(locale)(country.senderNameKey));
+      senderNameByLocale.set(
+        locale,
+        createTranslator(locale, countryDefaultLocale)(country.senderNameKey)
+      );
     }
     const rendered = renderedByLocale.get(locale);
     if (!rendered) continue;

@@ -85,9 +85,17 @@ export function renderDigestContent(
   // "YYYY-MM-DD", landets lokale kalenderdato for denne utsendelsen
   // (samme verdi som Digest.scheduledFor, 19.9) — IKKE en Date/klokkeslett,
   // siden dette er en ren kalenderdag, uavhengig av klokkeslett.
-  digestDate: string
+  digestDate: string,
+  // SPEC-V1.md 3.4 sitt mellomledd i fallback-kjeden ("forespurt locale →
+  // landets default_locale → plattformens standardspråk") — reelt hull frem
+  // til nå (se NATTLOGG.md, økt 85/86): createTranslator() støtter dette nå,
+  // men digesten er selve teksten som sendes til FLEST mottakere i hele
+  // plattformen, og var det mest opplagte, allerede lands-kontekst-bærende
+  // stedet å faktisk koble det inn. Valgfritt for bakoverkompatibilitet med
+  // eksisterende tester som ikke (ennå) har grunn til å bry seg om det.
+  countryDefaultLocale?: SupportedLocale
 ): RenderedDigest {
-  const t = createTranslator(locale);
+  const t = createTranslator(locale, countryDefaultLocale);
   // SPEC-V1.md 10.2: digestens innhold skal inkludere "dato, formatert for
   // mottakerens locale" som et EGET element, atskilt fra "antall nye
   // forespørsler" (subject) og introen — reelt hull frem til nå: verken

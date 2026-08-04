@@ -31,15 +31,26 @@ export async function resolveSenderIdentity(
   locale: string
 ): Promise<SenderIdentity | null> {
   const [country] = await db
-    .select({ senderNameKey: countries.senderNameKey, supportEmail: countries.supportEmail })
+    .select({
+      senderNameKey: countries.senderNameKey,
+      supportEmail: countries.supportEmail,
+      defaultLocale: countries.defaultLocale,
+    })
     .from(countries)
     .where(eq(countries.code, countryCode))
     .limit(1);
   if (!country) return null;
 
   const resolvedLocale = isSupportedLocale(locale) ? locale : PLATFORM_DEFAULT_LOCALE;
+  // SPEC-V1.md 3.4 sitt mellomledd i fallback-kjeden — se createTranslator()
+  // sin egen kommentar (src/i18n/get-messages.ts) for hvorfor. Denne
+  // funksjonen har landraden i scope uansett (for support_email), så
+  // landets default_locale er allerede tilgjengelig her uten en ny spørring.
+  const countryDefaultLocale = isSupportedLocale(country.defaultLocale)
+    ? country.defaultLocale
+    : PLATFORM_DEFAULT_LOCALE;
   return {
-    senderName: createTranslator(resolvedLocale)(country.senderNameKey),
+    senderName: createTranslator(resolvedLocale, countryDefaultLocale)(country.senderNameKey),
     replyTo: country.supportEmail,
   };
 }

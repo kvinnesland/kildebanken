@@ -26,7 +26,7 @@ import {
 import { sendTransactionalEmail, sendBulkEmail } from "@/lib/email/send";
 import { resolveSenderIdentity } from "@/lib/email/sender-identity";
 import { generateToken, hashToken } from "@/lib/auth/tokens";
-import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
+import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE, type SupportedLocale } from "@/i18n/config";
 import { createTranslator } from "@/i18n/get-messages";
 import { runRetention } from "@/lib/jobs/retention";
 import {
@@ -186,6 +186,9 @@ export async function runDigestTick(dbase: Database): Promise<TickResult> {
         digestId: createdDigest.id,
         country: country.code,
         countryTimezone: country.timezone,
+        countryDefaultLocale: isSupportedLocale(country.defaultLocale)
+          ? country.defaultLocale
+          : PLATFORM_DEFAULT_LOCALE,
         digestDate: localDate,
         requestIds,
         senderNameKey: country.senderNameKey,
@@ -214,6 +217,7 @@ async function sendDigestToRecipients(
     digestId: string;
     country: string;
     countryTimezone: string;
+    countryDefaultLocale: SupportedLocale;
     digestDate: string;
     requestIds: string[];
     senderNameKey: string;
@@ -295,9 +299,18 @@ async function sendDigestToRecipients(
     if (!renderedByLocale.has(locale)) {
       renderedByLocale.set(
         locale,
-        renderDigestContent(locale, digestItems, args.countryTimezone, args.digestDate)
+        renderDigestContent(
+          locale,
+          digestItems,
+          args.countryTimezone,
+          args.digestDate,
+          args.countryDefaultLocale
+        )
       );
-      senderNameByLocale.set(locale, createTranslator(locale)(args.senderNameKey));
+      senderNameByLocale.set(
+        locale,
+        createTranslator(locale, args.countryDefaultLocale)(args.senderNameKey)
+      );
     }
   }
 

@@ -62,6 +62,22 @@ describe("renderDigestContent", () => {
     expect(rendered.html).toContain("__UNSUBSCRIBE_TOKEN__");
   });
 
+  // SPEC-V1.md 3.4 sitt mellomledd (landets default_locale), nå koblet inn
+  // gjennom createTranslator() (se NATTLOGG.md, økt 85/86) — bakover-
+  // kompatibilitet: samme resultat med og uten det femte, valgfrie
+  // argumentet, siden nb-NO faktisk har hver eneste nøkkel som brukes her.
+  it("gir identisk resultat med og uten countryDefaultLocale når forespurt locale allerede har nøkkelen", () => {
+    const withoutArg = renderDigestContent("nb-NO", [sampleRequest], "Europe/Oslo", "2026-08-15");
+    const withArg = renderDigestContent(
+      "nb-NO",
+      [sampleRequest],
+      "Europe/Oslo",
+      "2026-08-15",
+      "en-GB"
+    );
+    expect(withArg).toEqual(withoutArg);
+  });
+
   it("escaper HTML i brukergenerert innhold (tittel/oppsummering)", () => {
     const malicious: DigestRequestItem = {
       ...sampleRequest,

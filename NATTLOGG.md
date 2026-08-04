@@ -17738,3 +17738,94 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 86
+
+### Wired countryDefaultLocale into digest rendering and shared sender-identity helper
+
+Direkte oppfølging av forrige økts eget "Neste økt"-spor: nå som
+`createTranslator()` faktisk STØTTER landets `default_locale` som
+mellomledd i SPEC-V1.md 3.4 sin fallback-kjede (bygget, men ikke koblet
+inn noe sted i Økt 85), lette denne økten etter kallesteder som ALLEREDE
+har landkontekst i scope — der det andre argumentet er billig å sende
+uten en ny spørring — fremfor et stort refaktoreringsløp.
+
+**To kallesteder valgt, begge allerede med landraden i scope:**
+
+1. **Digest-rendringsstien**: `sendDigestToRecipients()`/`runDigestTick()`
+   i `src/lib/jobs/tick.ts` har allerede `country`-objektet fra sin egen
+   spørring (for `country.timezone` m.m.) — `country.defaultLocale`
+   krevde derfor ingen ny spørring, kun å sende den videre. Samme
+   mønster i `retryFailedDigestDeliveries()` i `src/lib/digests/digests.ts`,
+   som også allerede henter landraden for `senderNameKey`/`supportEmail`.
+   Begge kaller nå `renderDigestContent()` (`src/lib/email/digest.ts`,
+   ny valgfri 5. parameter `countryDefaultLocale?: SupportedLocale`) og
+   `createTranslator()` for avsendernavnet med det utledede
+   `countryDefaultLocale`-et (faller selv tilbake til
+   `PLATFORM_DEFAULT_LOCALE` hvis landets lagrede locale av en eller
+   annen grunn ikke er en støttet locale).
+
+2. **Den delte `resolveSenderIdentity()`-hjelpefunksjonen**
+   (`src/lib/email/sender-identity.ts`) — dokumentert i sin egen,
+   eksisterende kommentar som brukt av "ni filer" av
+   `sendTransactionalEmail()`-kallesteder. Denne funksjonen slår
+   allerede opp landraden (for `support_email`), så å legge til
+   `defaultLocale` i samme `select()` var gratis. Én retting her
+   propagerer SPEC 3.4-etterlevelsen til alle ni kallesteder uten å
+   røre noen av dem individuelt.
+
+**Bevisst utsatt, ikke gjort denne økten**: de ~24 individuelle
+e-postmalfilene under `src/lib/email/templates/*.ts` tar i dag KUN
+`locale: SupportedLocale` som parameter, uten landkontekst tilgjengelig
+lokalt — å koble inn `countryDefaultLocale` der ville kreve å røre
+både malenes egne signaturer OG hvert av deres ~24 ulike
+kallesteder (moderasjon, registrering, osv. — spredt over mange filer).
+Vurdert som for stort omfang for én økt sammenlignet med de to billige,
+allerede-landkontekst-bærende gevinstene over. Notert som friskt spor
+for en fremtidig økt, ikke en påkrevd endring.
+
+**Ny test**: `digest.test.ts` fikk én ny test som bekrefter
+bakoverkompatibilitet — identisk resultat med og uten det femte,
+valgfrie argumentet når forespurt locale (nb-NO i testen) allerede har
+hver eneste nøkkel som brukes. Samme testbarhetsbegrensning som Økt 85
+sin egen NATTLOGG-notat: å faktisk observere FORSKJELLEN mellom
+mellomleddene i kjeden krever en kunstig ufullstendig locale, som ikke
+finnes i dagens fixtures.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 86 filer, 476 tester (475 + 1 ny).
+- `npx tsx src/i18n/check-keys.ts`: OK — 533 nøkler.
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 filer, ingen brudd.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 345
+  tester, ALLE bestod uendret — ingen regresjon i
+  `tick.integration.test.ts`, `digests.integration.test.ts` eller
+  `sender-identity.integration.test.ts`.
+
+Committet: `src/lib/jobs/tick.ts`, `src/lib/email/digest.ts`,
+`src/lib/digests/digests.ts`, `src/lib/email/sender-identity.ts`,
+`src/lib/email/digest.test.ts`.
+
+### Neste økt
+
+De to billigste, mest naturlige kallestedene for
+`countryDefaultLocale` er nå koblet inn. Et friskt spor for neste økt:
+vurder OM og HVORDAN de ~24 e-postmalfilene under
+`src/lib/email/templates/` bør utvides til å ta imot landets
+`default_locale` også — dette er trolig et flerøkt-løp gitt antall
+kallesteder, så vurder først om gevinsten (et hull som per nå er usynlig
+i v1 med kun ett land) faktisk forsvarer omfanget, eller om et annet
+spor med høyere forventet avkastning bør prioriteres først (f.eks. en
+ny sweep av `src/app/api/` for asymmetriske FR-023-lignende hull, eller
+en fornyet "ubrukte eksporter"-kjøring nå som fem nye filer er endret
+denne natten). Uendret, fortsatt de tre åpne spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.
