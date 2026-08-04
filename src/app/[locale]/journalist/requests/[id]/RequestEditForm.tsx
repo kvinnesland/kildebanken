@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { SupportedLocale } from "@/i18n/config";
 import { createTranslator } from "@/i18n/get-messages";
 import { FIELD_LIMITS, type SubmitValidationError } from "@/lib/requests/validate";
@@ -82,6 +83,10 @@ export function RequestEditForm({
   const [phase, setPhase] = useState<Phase>("idle");
   const [fieldErrors, setFieldErrors] = useState<SubmitValidationError[]>([]);
   const [generalError, setGeneralError] = useState<string | null>(null);
+  // SPEC-V1.md 9.2 (FR-029): en avvist innsending pga. samtidighetsgrensen
+  // skal "liste hvilke forespørsler journalisten må lukke først", ikke bare
+  // forklare AT grensen er nådd — se submitRequest() i requests.ts.
+  const [blockingRequests, setBlockingRequests] = useState<{ id: string; title: string }[]>([]);
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -123,6 +128,7 @@ export function RequestEditForm({
     setPhase("saving");
     setGeneralError(null);
     setFieldErrors([]);
+    setBlockingRequests([]);
     try {
       const response = await fetch(`/api/requests/${requestId}`, {
         method: "PATCH",
@@ -149,6 +155,7 @@ export function RequestEditForm({
     setPhase("submitting");
     setGeneralError(null);
     setFieldErrors([]);
+    setBlockingRequests([]);
     try {
       const saveResponse = await fetch(`/api/requests/${requestId}`, {
         method: "PATCH",
@@ -165,12 +172,16 @@ export function RequestEditForm({
       }
 
       const submitResponse = await fetch(`/api/requests/${requestId}/submit`, { method: "POST" });
-      const submitData: { error?: string; fieldErrors?: SubmitValidationError[] } =
-        await submitResponse.json();
+      const submitData: {
+        error?: string;
+        fieldErrors?: SubmitValidationError[];
+        blockingRequests?: { id: string; title: string }[];
+      } = await submitResponse.json();
       if (!submitResponse.ok) {
         setPhase("error");
         setGeneralError(submitData.error ?? "errors.generic");
         setFieldErrors(submitData.fieldErrors ?? []);
+        setBlockingRequests(submitData.blockingRequests ?? []);
         focusFirstInvalidField(formRef);
         return;
       }
@@ -202,7 +213,23 @@ export function RequestEditForm({
 
   return (
     <form ref={formRef} className={styles.form} onSubmit={(event) => event.preventDefault()} noValidate>
-      {generalError ? <p className={styles.formError}>{t(generalError)}</p> : null}
+      {generalError ? (
+        <div className={styles.formError}>
+          <p>{t(generalError)}</p>
+          {blockingRequests.length > 0 ? (
+            <>
+              <p>{t("journalist.request_form.blocking_requests_heading")}</p>
+              <ul className={styles.blockingRequests}>
+                {blockingRequests.map((r) => (
+                  <li key={r.id}>
+                    <Link href={`/${locale}/journalist/requests/${r.id}`}>{r.title}</Link>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+        </div>
+      ) : null}
       {phase === "saved" ? <p className={styles.success}>{t("journalist.request_form.saved")}</p> : null}
       {phase === "submitted" ? (
         <p className={styles.success}>{t("journalist.request_form.submitted")}</p>

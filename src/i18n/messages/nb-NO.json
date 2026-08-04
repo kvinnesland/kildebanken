@@ -76,6 +76,7 @@
   "journalist.request_form.submit": "Send til vurdering",
   "journalist.request_form.submitted": "Sendt til vurdering hos moderator.",
   "journalist.request_form.not_editable_notice": "Denne forespørselen kan ikke redigeres i denne statusen.",
+  "journalist.request_form.blocking_requests_heading": "Lukk én av disse for å fortsette:",
   "journalist.request_form.rejection_reason_label": "Moderators begrunnelse for avvisning",
   "journalist.request_form.changes_requested_comment_label": "Moderators kommentar",
 

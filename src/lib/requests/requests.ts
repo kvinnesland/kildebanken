@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   auditLogs,
@@ -47,7 +47,15 @@ export interface RequestPatchInput {
 
 export type RequestActionResult =
   | { ok: true; id: string }
-  | { ok: false; error: string; fieldErrors?: SubmitValidationError[] };
+  | {
+      ok: false;
+      error: string;
+      fieldErrors?: SubmitValidationError[];
+      // SPEC-V1.md 9.2: en avvist innsending pga. FR-029s samtidighetsgrense
+      // skal "lister hvilke forespørsler journalisten må lukke først" — kun
+      // satt for nettopp `errors.too_many_published_requests`, tom ellers.
+      blockingRequests?: { id: string; title: string }[];
+    };
 
 async function findOwnedEditable(requestId: string, journalistUserId: string) {
   const [row] = await db
@@ -288,13 +296,20 @@ export async function submitRequest(
     .where(eq(countries.code, existing.countryCode))
     .limit(1);
 
-  const [publishedRow] = await db
-    .select({ value: count() })
+  // Henter selve radene (id, title), ikke bare et antall — 9.2 krever at
+  // avvisningen "lister hvilke forespørsler journalisten må lukke først",
+  // ikke bare forklarer AT grensen er nådd.
+  const publishedRows = await db
+    .select({ id: requests.id, title: requests.title })
     .from(requests)
     .where(and(eq(requests.journalistId, journalistUserId), eq(requests.status, "published")));
 
-  if ((publishedRow?.value ?? 0) >= (country?.maxConcurrentPublishedRequests ?? 5)) {
-    return { ok: false, error: "errors.too_many_published_requests" };
+  if (publishedRows.length >= (country?.maxConcurrentPublishedRequests ?? 5)) {
+    return {
+      ok: false,
+      error: "errors.too_many_published_requests",
+      blockingRequests: publishedRows.map((r) => ({ id: r.id, title: r.title ?? "" })),
+    };
   }
 
   await db

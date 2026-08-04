@@ -17955,3 +17955,111 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 88: fant og rettet et reelt spec-hull i FR-029s avvisningsmelding
+under en fornyet SPEC-V1.md-gjennomgang (seksjon 9)
+
+Fulgte opp Økt 87 sitt spor: startet en fornyet, fra bunnen av,
+linje-for-linje-gjennomgang av SPEC-V1.md, siden det var lenge siden
+forrige hele sveip. Kom til seksjon 9 (Forespørsel) denne økten.
+
+### Kvitteringer, ingen handling
+
+- 9.1 sin fastlagte temaliste (21 nøkler, `work` … `other`) stemmer
+  eksakt (rekkefølge og alt) med `REQUEST_TOPICS` i
+  `src/lib/requests/topics.ts`.
+- 9.1s feltgrenser (120/300/5000/500/100/100 tegn) stemmer med
+  `FIELD_LIMITS` i `requests/validate.ts` (allerede verifisert i
+  tidligere økter, bekreftet på nytt).
+
+### Reelt funn: FR-029s avvisningsmelding manglet halvparten av det
+spec-en krever
+
+9.2 sier eksplisitt: en journalist som prøver å publisere et sjette
+samtidig `published`-forespørsel skal avvises "med en feilmelding som
+forklarer hvorfor, **og lister hvilke forespørsler journalisten må
+lukke først**." `submitRequest()` i `src/lib/requests/requests.ts`
+returnerte kun `errors.too_many_published_requests` — en generisk,
+oversatt tekst ("Du har allerede for mange åpne forespørsler. Lukk én
+før du sender en ny.") uten noen liste over HVILKE forespørsler.
+Frontend (`RequestEditForm.tsx`) viste kun denne ene teksten, ingen
+lenker til journalistens egne publiserte forespørsler.
+
+**Retting:**
+
+1. `RequestActionResult` sin feilvariant fikk et nytt, valgfritt felt
+   `blockingRequests?: { id: string; title: string }[]`.
+2. `submitRequest()` henter nå selve radene (id, title) i stedet for
+   bare et `count()`, og fyller `blockingRequests` når grensen er nådd.
+   Ingen ny spørring lagt til — samme WHERE-betingelse som før, bare
+   flere kolonner valgt.
+3. `POST /requests/:id/submit` (API-ruten) sender `blockingRequests`
+   videre i JSON-responsen.
+4. `RequestEditForm.tsx` viser nå en overskrift
+   ("Lukk én av disse for å fortsette:") og en lenkeliste til hver
+   blokkerende forespørsel (`/${locale}/journalist/requests/${id}`,
+   samme lenkemønster som journalist-oversikten allerede bruker) når
+   nettopp denne feilen oppstår — tom liste for alle andre feil.
+5. Ny oversettelsesnøkkel
+   `journalist.request_form.blocking_requests_heading` (nb-NO/en-GB).
+
+**Bevisst utelatt**: `publishRequest()` sin egen, moderator-vendte
+re-sjekk av samme grense (`moderation/requests.ts`, dokumentert som et
+TOCTOU-lukkende dobbeltsjekk mellom submit og faktisk godkjenning) fikk
+IKKE samme utvidelse — 9.2s tekst gjelder eksplisitt journalistens
+INNSENDING, og re-sjekken ved publisering er et sjeldent race-vindu vist
+til MODERATOREN, ikke journalisten, en annen aktør enn den spec-teksten
+sikter til.
+
+**Nye tester**: to nye komponenttester i en ny
+`RequestEditForm.test.tsx` (fantes ikke fra før) — bekrefter at
+lenkene til de blokkerende forespørslene vises med riktig `href` ved
+nettopp denne feilen, og at listen IKKE vises for andre feil. To
+eksisterende integrasjonstester i `requests.integration.test.ts`
+(FR-029s grense, og "landets egen grense, ikke hardkodet 5") oppdatert
+til å faktisk asserte på `blockingRequests`-listens innhold (id-ene
+matcher de sådde publiserte forespørslene, sortert for å unngå en
+skjør rekkefølge-antagelse — spørringen har ingen `ORDER BY`).
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 87 filer, 479 tester (477 + 2 nye).
+- `npx tsx src/i18n/check-keys.ts`: OK — 534 nøkler (533 + 1 ny).
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 filer, ingen brudd.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 345
+  tester, ALLE bestod (inkludert de to oppdaterte FR-029-testene, som
+  nå faktisk verifiserer selve listen, ikke bare feilkoden).
+
+Committet: `src/lib/requests/requests.ts`,
+`src/lib/requests/requests.integration.test.ts`,
+`src/app/api/requests/[id]/submit/route.ts`,
+`src/app/[locale]/journalist/requests/[id]/RequestEditForm.tsx`,
+`src/app/[locale]/journalist/requests/[id]/RequestEditForm.module.css`,
+`src/app/[locale]/journalist/requests/[id]/RequestEditForm.test.tsx`
+(ny fil), `src/i18n/messages/nb-NO.json`, `src/i18n/messages/en-GB.json`.
+
+### Neste økt
+
+Fortsett den fornyede SPEC-V1.md-gjennomgangen fra der denne økten
+sluttet: seksjon 10 (Daglig utsendelse — sannsynligvis ren kvittering
+gitt hvor mye arbeid som nettopp er lagt ned der i Økt 85-87, men verdt
+å bekrefte), deretter 11 (Forespørselsside), 12 (Svar), 13
+(Journalistens svarinnboks), 14 (Videre kontakt), 15 (E-postmaler,
+også trolig ren kvittering), 16 (Administrasjonsgrensesnitt), 17
+(Personvern — verdt ekstra grundighet, retensjonsjobben sletter/
+anonymiserer persondata), 18 (Sikkerhet). Seksjon 19-23 (datamodell,
+API, ikke-funksjonelle/funksjonelle krav, akseptansekriterier) er
+allerede dekket av tidligere, dedikerte sveiper (se økt-historikken) og
+trenger ikke gjentas fra bunnen av, men en rask stikkprøve etter
+seksjon 18 kan være verdt det uansett siden det er lenge siden sist.
+Uendret, fortsatt de tre åpne spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.

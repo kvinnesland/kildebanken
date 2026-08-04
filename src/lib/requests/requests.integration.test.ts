@@ -561,7 +561,12 @@ describe("submitRequest mot ekte Postgres (draft/changes_requested → submitted
 
     try {
       const result = await submitRequest(requestId, journalist.id);
-      expect(result).toEqual({ ok: false, error: "errors.too_many_published_requests" });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toBe("errors.too_many_published_requests");
+      // SPEC-V1.md 9.2: avvisningen skal "liste hvilke forespørsler
+      // journalisten må lukke først" — se requests.ts sin egen kommentar.
+      expect(result.blockingRequests?.map((r) => r.id).sort()).toEqual([...publishedIds].sort());
       const [after] = await db.select().from(requests).where(eq(requests.id, requestId));
       expect(after?.status).toBe("draft");
     } finally {
@@ -645,7 +650,10 @@ describe("submitRequest mot ekte Postgres (draft/changes_requested → submitted
 
     try {
       const result = await submitRequest(requestId, journalistUser.id);
-      expect(result).toEqual({ ok: false, error: "errors.too_many_published_requests" });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toBe("errors.too_many_published_requests");
+      expect(result.blockingRequests?.map((r) => r.id).sort()).toEqual([...publishedIds].sort());
     } finally {
       await db.delete(requests).where(inArray(requests.id, [...publishedIds, requestId]));
     }

@@ -13,7 +13,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const result = await submitRequest(id, session.userId);
   if (!result.ok) {
     const status = result.error === "errors.not_found" ? 404 : 422;
-    return NextResponse.json({ error: result.error, fieldErrors: result.fieldErrors }, { status });
+    return NextResponse.json(
+      { error: result.error, fieldErrors: result.fieldErrors, blockingRequests: result.blockingRequests },
+      { status }
+    );
   }
 
   return NextResponse.json({ ok: true });

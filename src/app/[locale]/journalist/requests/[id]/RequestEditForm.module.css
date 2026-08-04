@@ -19,6 +19,16 @@
   padding-inline: var(--space-3);
 }
 
+.blockingRequests {
+  margin-block-start: var(--space-2);
+  padding-inline-start: var(--space-5);
+}
+
+.blockingRequests a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .success {
   font-family: var(--font-ui);
   font-size: var(--text-base);

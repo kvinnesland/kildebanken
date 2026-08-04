@@ -76,6 +76,7 @@
   "journalist.request_form.submit": "Submit for review",
   "journalist.request_form.submitted": "Submitted for review by a moderator.",
   "journalist.request_form.not_editable_notice": "This request can't be edited in its current status.",
+  "journalist.request_form.blocking_requests_heading": "Close one of these to continue:",
   "journalist.request_form.rejection_reason_label": "Moderator's reason for rejection",
   "journalist.request_form.changes_requested_comment_label": "Moderator's comment",
 
