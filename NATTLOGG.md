@@ -18882,3 +18882,127 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 96: fullførte den ferske DESIGN.md-gjennomgangen (seksjon 7-10) og
+fant et reelt hull — `processed_email_webhook_events` manglet HELT en
+retensjonskategori og ville vokst ubegrenset
+
+Fortsatte den ferske DESIGN.md-gjennomgangen fra der Økt 95 slapp
+(seksjon 7 E-post, 8 Innholdsdesign, 9 Akseptansekriterier,
+10 Uavklart) — nå fullført fra bunnen av, seksjon 1-10.
+
+### Kvitteringer, ingen handling
+
+- Seksjon 7 (E-post): tabellbasert layout/inlinet CSS/mørkt tema via
+  `prefers-color-scheme`/`lang`-attributt — alt stemmer med faktisk
+  kode. Ren tekst-varianten i BÅDE `simple-cta-email.ts` og
+  `digest.ts` er en genuin, håndkomponert variant (`const text = [...]
+  .join("\n")`), IKKE en maskinstrippet kopi av HTML-en — bekreftet
+  ved lesing av selve kildekoden, ikke bare kommentaren som hevder det.
+  "Logo har alt" er ikke krenket: det finnes ingen `<img>`/logo i noen
+  e-postmal ennå i det hele tatt (kjent, dokumentert hull i seksjon
+  10.3 "Logo og delingsbilde mangler"), så kravet har ingenting å
+  gjelde for ennå.
+- Seksjon 8 (Innholdsdesign): tonekravene er kvalitative
+  redaksjonelle vurderinger av nøkkeltekstene, ikke noe som lar seg
+  automatisk verifisere — ingen handling mulig her utover det som
+  allerede er dekket av 12.3s egen "juridisk gjennomgått"-sperre
+  (Økt 89).
+- Seksjon 9 (Akseptansekriterier), punkt 1, 3-8: alle enkeltpunktene
+  er allerede individuelt verifisert i tidligere økter (temabytte
+  Økt 86, kontrasttest-dekning Økt 111, tastatur/skjermleser Økt 88,
+  360px Økt 87, e-post-temagjennomslag Økt 112, 40%-lengre-tekst
+  Økt 113, ingen ekstern vert Økt 114) — en samlet ny gjennomlesning
+  denne økten bekreftet at ingen av disse har regredert. Punkt 2
+  ("CI feiler på fargeverdier/px-verdier/lag-1-variabler i
+  komponentfiler") stemmer med `check-tokens.ts`, som fortsatt kjøres
+  i CI og fortsatt feiler bygget ved brudd.
+- Seksjon 10 (Uavklart): alle tre punktene (visuell identitet,
+  serif-valg, logo/delingsbilde) er fortsatt reelt uavklarte
+  virksomhetsbeslutninger, ikke noe kode kan løse.
+- Sjekket samtidig om `RequestEditForm.tsx` (journalistens
+  redigeringsskjema) har samme klasse hull som `ResponseForm.tsx`
+  hadde før Økt 95s retting: NEI — det har allerede en eksplisitt
+  "Lagre"-knapp som PATCHer til serveren, altså en EKTE, allerede
+  fungerende (om enn manuell, ikke automatisk, og server- ikke
+  lokallagret) persisteringsmekanisme. DESIGN.md 5 navngir uttrykkelig
+  "et halvskrevet SVAR", som pekte mot respondentflyten spesifikt —
+  journalistflyten har en annen, allerede tilstrekkelig løsning.
+  Ingen retting nødvendig.
+
+### Reelt funn: `processed_email_webhook_events` (19.17, lagt til
+Økt 92) manglet HELT en retensjonskategori
+
+I motsetning til ENHVER annen driftstabell i seksjon 19, fikk denne
+tabellen aldri en tilsvarende `purge*()`-kategori i `runRetention()`
+(`src/lib/jobs/retention.ts`) da den ble lagt til under Økt 92s
+webhook-idempotens-retting, og manglet fra 17.4s
+lagringstidstabell — et selvpåført hull fra en tidligere økt i denne
+samme natten, ikke noe som lå i den opprinnelige spec-en. Tabellen
+ville dermed vokst UBEGRENSET: én rad for hvert unike (meldings-ID,
+hendelsestype)-par Brevo noensinne har sendt et webhook-kall for —
+potensielt tusenvis i uken ved reell skala (digest-utsendelser til
+alle mottakere, hver med sin egen `delivered`-hendelse, pluss enhver
+bounce/klage).
+
+**Retting, spec først**: SPEC-V1.md 17.4 fikk en ny rad — "Webhook-
+hendelseslogg (idempotens, 19.17): 12 måneder" — og 19.17 fikk et nytt
+avsnitt som dokumenterer hullet og valget. 12 måneder er valgt for
+konsistens med "Digest og leveringsstatus" (samme funksjonsområde),
+selv om en KORTERE periode ville vært funksjonelt tilstrekkelig for
+selve idempotens-formålet (en leverandør gjenleverer typisk innen
+timer/dager, ikke måneder) — se 19.17s eget avsnitt for begrunnelsen
+for ikke å innføre en ny, særegen periode uten et klart behov.
+
+**Kode**: ny kategori `purgeOldProcessedWebhookEvents()` i
+`retention.ts`, lagt til i `runRetention()`s pipeline som kategori
+`"processed_webhook_events"`. Ingen fremmednøkkel peker INN i denne
+tabellen fra noe annet sted i skjemaet, så `DELETE`-en her har ingen
+av de rekkefølgehensynene `purgeOldDigests()`/`purgeOldResponses()`
+må ta.
+
+**Nye tester**: to nye integrasjonstester i
+`retention.integration.test.ts`, samme mønster som de andre fem
+kategoriene — dry run teller en 13 måneder gammel hendelse uten å
+slette, ekte kjøring sletter den gamle hendelsen og lar en 1 måned
+gammel stå.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 88 filer, 490 tester, uendret (ingen enhetstester
+  berørt — alle nye tester er integrasjonstester mot ekte Postgres).
+- `npx tsx src/i18n/check-keys.ts`: OK — 535 nøkler.
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 filer, ingen brudd.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 351
+  tester (349 + 2 nye), alle bestod.
+
+Committet: `SPEC-V1.md`, `src/lib/jobs/retention.ts`,
+`src/lib/jobs/retention.integration.test.ts`.
+
+### Neste økt
+
+Den ferske DESIGN.md-gjennomgangen er nå fullført fra bunnen av
+(Økt 94-96, seksjon 1-10) — samme status som SPEC-V1.md/
+INFRASTRUCTURE.md hadde etter sine respektive gjennomganger. Et
+naturlig neste spor: samme type "manglet retensjonskategori"-sjekk
+som denne økten avdekket kan gjentas systematisk — gå gjennom HELE
+19-tabellen i SPEC-V1.md og kryssjekk hver tabell mot 17.4s
+lagringstidstabell OG mot `runRetention()`s faktiske kategoriliste,
+for å bekrefte at ingen FLERE tabeller har samme klasse hull (denne
+økten fant kun ÉN, men sjekket ikke systematisk alle fjorten). Et
+annet friskt spor: en fornyet gjennomgang av selve `INFRASTRUCTURE.md`
+og `SPEC-V1.md` er ikke gjort på en stund nå (siste var Økt 85-94) —
+begge kan ha driftet siden da, gitt hvor mye kode som er endret i
+mellomtiden.
+
+Uendret, fortsatt de tre åpne spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.

@@ -7,6 +7,7 @@ import {
   digestDeliveries,
   digests,
   journalistProfiles,
+  processedEmailWebhookEvents,
   requests,
   responses,
   users,
@@ -783,6 +784,81 @@ describe("runRetention mot ekte Postgres (17.4)", () => {
         .from(digests)
         .where(eq(digests.id, recentDigestId));
       expect(recentDigestStillThere).toBeDefined();
+    });
+  });
+
+  // 17.4/19.17. Reelt hull frem til nå (se NATTLOGG.md, økt 96): denne
+  // tabellen manglet HELT en retensjonskategori da den ble lagt til
+  // (økt 92) — se retention.ts sin egen kommentar på
+  // purgeOldProcessedWebhookEvents().
+  describe("webhook-hendelseslogg (idempotens) — 12 måneder", () => {
+    let oldEventId: string;
+    let recentEventId: string;
+
+    beforeAll(async () => {
+      const now = new Date();
+      const thirteenMonthsAgo = new Date(now);
+      thirteenMonthsAgo.setUTCMonth(thirteenMonthsAgo.getUTCMonth() - 13);
+      const oneMonthAgo = new Date(now);
+      oneMonthAgo.setUTCMonth(oneMonthAgo.getUTCMonth() - 1);
+
+      const [oldEvent] = await db
+        .insert(processedEmailWebhookEvents)
+        .values({
+          providerMessageId: `old-msg-${Date.now()}`,
+          event: "delivered",
+          createdAt: thirteenMonthsAgo,
+        })
+        .returning({ id: processedEmailWebhookEvents.id });
+      if (!oldEvent) throw new Error("Klarte ikke opprette test-hendelse");
+      oldEventId = oldEvent.id;
+
+      const [recentEvent] = await db
+        .insert(processedEmailWebhookEvents)
+        .values({
+          providerMessageId: `recent-msg-${Date.now()}`,
+          event: "delivered",
+          createdAt: oneMonthAgo,
+        })
+        .returning({ id: processedEmailWebhookEvents.id });
+      if (!recentEvent) throw new Error("Klarte ikke opprette test-hendelse");
+      recentEventId = recentEvent.id;
+    });
+
+    afterAll(async () => {
+      await db.delete(processedEmailWebhookEvents).where(eq(processedEmailWebhookEvents.id, oldEventId));
+      await db.delete(processedEmailWebhookEvents).where(eq(processedEmailWebhookEvents.id, recentEventId));
+    });
+
+    it("dry run: teller den gamle hendelsen, men sletter INGENTING", async () => {
+      setDryRun("true");
+      const summary = await runRetention(db);
+      const category = summary.results.find((r) => r.category === "processed_webhook_events");
+      expect(category?.dryRun).toBe(true);
+      expect(category?.affectedCount).toBeGreaterThanOrEqual(1);
+
+      const [stillThere] = await db
+        .select({ id: processedEmailWebhookEvents.id })
+        .from(processedEmailWebhookEvents)
+        .where(eq(processedEmailWebhookEvents.id, oldEventId));
+      expect(stillThere).toBeDefined();
+    });
+
+    it("ekte kjøring: sletter en gammel hendelse, lar en ny stå", async () => {
+      setDryRun("false");
+      await runRetention(db);
+
+      const [oldEventGone] = await db
+        .select({ id: processedEmailWebhookEvents.id })
+        .from(processedEmailWebhookEvents)
+        .where(eq(processedEmailWebhookEvents.id, oldEventId));
+      expect(oldEventGone).toBeUndefined();
+
+      const [recentEventStillThere] = await db
+        .select({ id: processedEmailWebhookEvents.id })
+        .from(processedEmailWebhookEvents)
+        .where(eq(processedEmailWebhookEvents.id, recentEventId));
+      expect(recentEventStillThere).toBeDefined();
     });
   });
 });

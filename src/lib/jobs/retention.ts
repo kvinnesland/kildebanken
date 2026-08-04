@@ -23,6 +23,7 @@ import {
   digestDeliveries,
   digests,
   journalistProfiles,
+  processedEmailWebhookEvents,
   requests,
   responses,
   sessions,
@@ -35,6 +36,11 @@ const RETENTION_PERIOD = {
   contactRequestMonthsAfterResolution: 12,
   rejectedJournalistMonths: 6,
   digestMonths: 12,
+  // SPEC-V1.md 17.4/19.17: samme periode som "Digest og leveringsstatus",
+  // valgt for konsistens fremfor en ny, særegen kategori — se 19.17 sin
+  // egen kommentar for hvorfor en kortere periode ville vært funksjonelt
+  // tilstrekkelig men ikke er valgt.
+  processedWebhookEventMonths: 12,
 } as const;
 const AUDIT_LOG_RETENTION_YEARS = 3;
 
@@ -83,6 +89,7 @@ export async function runRetention(dbase: Database = db): Promise<RetentionSumma
   results.push(await purgeRejectedJournalistApplications(dbase, dryRun));
   results.push(await purgeOldAuditLogs(dbase, dryRun));
   results.push(await purgeOldDigests(dbase, dryRun));
+  results.push(await purgeOldProcessedWebhookEvents(dbase, dryRun));
 
   return { ranAt: new Date().toISOString(), dryRun, results };
 }
@@ -314,5 +321,41 @@ async function purgeOldDigests(dbase: Database, dryRun: boolean): Promise<Retent
   } catch (err) {
     errors.push(sanitizeErrorMessage(err));
     return { category: "digests", dryRun, affectedCount: 0, errors };
+  }
+}
+
+/**
+ * "Webhook-hendelseslogg (idempotens): 12 måneder" (17.4/19.17). Reelt hull
+ * frem til nå (se NATTLOGG.md, økt 96): tabellen fikk aldri en egen
+ * `purge*()`-kategori da den ble lagt til (økt 92) — i motsetning til
+ * enhver annen driftstabell i 19 hadde den ingen retensjonstid i det hele
+ * tatt, og ville dermed vokst UBEGRENSET, én rad for hvert unike
+ * (meldings-ID, hendelsestype)-par noensinne behandlet av
+ * `processEmailEvent()`. Ingen fremmednøkkel peker INN i denne tabellen fra
+ * noe annet sted i skjemaet, så en enkel `DELETE` her har ingen
+ * ryddehensyn av samme type som f.eks. `purgeOldDigests()`.
+ */
+async function purgeOldProcessedWebhookEvents(
+  dbase: Database,
+  dryRun: boolean
+): Promise<RetentionCategoryResult> {
+  const errors: string[] = [];
+  const cutoff = monthsAgo(RETENTION_PERIOD.processedWebhookEventMonths);
+
+  try {
+    const candidates = await dbase
+      .select({ id: processedEmailWebhookEvents.id })
+      .from(processedEmailWebhookEvents)
+      .where(lt(processedEmailWebhookEvents.createdAt, cutoff));
+
+    if (!dryRun && candidates.length > 0) {
+      const ids = candidates.map((c) => c.id);
+      await dbase.delete(processedEmailWebhookEvents).where(inArray(processedEmailWebhookEvents.id, ids));
+    }
+
+    return { category: "processed_webhook_events", dryRun, affectedCount: candidates.length, errors };
+  } catch (err) {
+    errors.push(sanitizeErrorMessage(err));
+    return { category: "processed_webhook_events", dryRun, affectedCount: 0, errors };
   }
 }

@@ -969,6 +969,7 @@ bygges når volumet krever det.
 | Sikkerhetslogg | 6 måneder |
 | Revisjonslogg | 3 år |
 | Digest og leveringsstatus | 12 måneder |
+| Webhook-hendelseslogg (idempotens, 19.17) | 12 måneder |
 | Juridiske dokumentversjoner | Så lenge et samtykke viser til dem |
 
 Alle lagringstider settes som konfigurasjon per land, ikke som konstanter i
@@ -1496,6 +1497,23 @@ leverandøren faktisk oppgir en meldings-ID (ikke alle hendelsestyper gjør
 det, se webhook-ruten sin egen kommentar); uten en ID er endepunktet
 fortsatt ikke idempotent for den hendelsen, samme begrensning som før
 denne rettingen.
+
+**Reelt hull i selve denne rettingen, oppdaget og lukket under senere
+autonomt arbeid (se `NATTLOGG.md`, økt 96):** tabellen ble opprinnelig
+lagt til uten noen retensjonstid — i motsetning til enhver annen
+driftstabell i 19, hadde den ingen `purge*()`-kategori i
+`runRetention()` (`src/lib/jobs/retention.ts`) og manglet fra 17.4s
+tabell. Den ville dermed vokst ubegrenset, én rad for hver unike
+(meldings-ID, hendelsestype) noensinne behandlet. Rettet: 17.4 setter nå
+"Webhook-hendelseslogg (idempotens): 12 måneder", samme periode som
+"Digest og leveringsstatus" siden dette er samme funksjonsområde
+(leveringsstatus-sporing via webhook), selv om denne tabellen også
+dekker transaksjonelle e-poster (magic link, bekreftelse, osv.), ikke
+bare digester. En KORTERE periode ville vært funksjonelt tilstrekkelig
+for selve idempotens-formålet (en leverandør gjenleverer typisk innen
+timer/dager, ikke måneder) — 12 måneder er valgt for konsistens med
+den nærmest beslektede kategorien fremfor å innføre en ny, særegen
+periode uten et tydelig behov.
 
 ---
 
