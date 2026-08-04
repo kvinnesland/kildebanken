@@ -16923,3 +16923,116 @@ et svars innhold;
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 79: lukket det siste hullet i linje-for-linje-metoden
+(SPEC-V1.md 1, 18-20), og en visuell nettleser-verifisering av selve
+digest-e-postens faktiske utseende
+
+Ingen kodefeil funnet. To deler.
+
+### Del 1: SPEC-V1.md seksjon 1 og 18-20 mot faktisk kode
+
+Seksjon 1 (Formål) er, som forventet, ren beskrivende tekst — hele
+kjeden forespørsel → moderering → digest → svar → kontakt den
+beskriver er allerede bygget og grundig testet fra alle andre vinkler.
+Ingen handling mulig eller nødvendig.
+
+Seksjon 18 (Sikkerhet): 18.2 (eget bekreftelsestoken, eksplisitt
+knappetrykk for irreversible handlinger) er allerede korrekt
+implementert (task #58). 18.1 ("hvem kan lese et svar") bekrefter det
+KJENTE, uavklarte spørsmål (b) — se under, ingen ny informasjon utover
+at 19.4 ("Administrator trenger ingen rader her – rollen gir tilgang
+til alle land") faktisk FORKLARER hvorfor koden ikke sjekker
+landtildeling for administrator (det er strukturelt underforstått,
+ikke et hull i seg selv) — den gjenværende, reelle uklarheten er kun om
+MODERATOR (i tillegg til administrator) skal ha samme unntaksvise
+tilgang, siden FR-051 og koden eksplisitt sier "administrator", ikke
+"moderator eller administrator" som 18.1 sier. Fortsatt en
+produktbeslutning, ikke noe å gjette seg til.
+
+Seksjon 19 (Datamodell): lest gjennom på nytt i sin helhet (19.1
+t.o.m. 19.16/17 tabeller). Ingen nye avvik — stemmer med `schema.ts`,
+konsistent med den grundige diffen fra task #26.
+
+Seksjon 20 (API): krysset ALLE 55 rutene i listen direkte mot faktiske
+`route.ts`-filer i `src/app/api/`. Fullstendig 1:1-treff, ingen
+manglende og ingen overflødige ruter. Bekrefter at økt 7 sin tidligere,
+grundige rute-til-spec-forsoning fortsatt er komplett og uendret.
+
+Med dette er linje-for-linje-metoden nå kjørt mot HELE SPEC-V1.md (alle
+26 seksjoner), hele DESIGN.md (alle 9 kriterier i seksjon 9), og hele
+INFRASTRUCTURE.md (alle 16 seksjoner). Metodedekningen er komplett —
+videre gjennomganger av samme type vil sannsynligvis ha lav treffrate
+med mindre koden endres på nytt.
+
+### Del 2: visuell nettleser-verifisering av selve digest-e-posten
+
+Med metoden uttømt, gjensto en konkret idé fra Økt 78 sin "Neste
+økt": selve digest-e-postens faktiske, RENDREDE utseende har ALDRI blitt
+sett — verken i en tidligere økt eller nå — kun verifisert via
+streng-assertions i `digest.test.ts` (tekstinnhold, hex-fargeverdier).
+
+Skrev et frittstående, ikke-committet script som kalte
+`renderDigestContent()` direkte med to realistiske eksempel-
+forespørsler (én norsk, én engelsk — for å utløse
+fremmedspråk-varselet, se `request.foreign_language_notice`), satte inn
+per-mottaker-tokens via `insertPerRecipientTokens()`, og skrev den
+faktiske HTML-en til fil. Brukte deretter Playwright (samme
+løsning på modulimport som Økt 78 — absolutt filsti til
+`/opt/node22/lib/node_modules/playwright/index.mjs`, IKKE `NODE_PATH`)
+til å ta skjermbilde av filen i BÅDE lys og mørk fargeskjema
+(`colorScheme: "light"`/`"dark"` i en egen browser-kontekst per skjema).
+
+**Resultat, begge skjermbilder inspisert direkte**: alt stemmer.
+Formatert dato ("tirsdag 4. august 2026") vises øverst, hver
+forespørsel viser tittel, sammendrag, organisasjon, svarfrist MED
+tidssone i parentes ("9. aug. 2026, 04:42 (Europe/Oslo)"),
+geografisk-notis-linjen vises for den norske forespørselen, og
+fremmedspråk-varselet vises korrekt KUN for den engelske. Mørk modus
+bytter faktisk bakgrunn/tekst/kort-farger (mørk bakgrunn, lys tekst,
+lysere blå lenke-/knappfarge for kontrast) uten noen synlig
+kontrast- eller layoutfeil — samme konklusjon som den strengbaserte
+verifiseringen i task #112, men nå faktisk SETT, ikke bare bevist via
+tekst-assertions.
+
+Dette bekrefter, i én kombinert visning, at fem tidligere separate
+rettinger (digest-dato økt 74, tidssone-frist økt 73,
+fremmedspråk-varsel — eksisterende, geografisk notis — eksisterende, og
+e-post-mørk-modus — DESIGN.md 9 kriterium 6) faktisk fungerer SAMMEN i
+én faktisk rendret e-post, ikke bare hver for seg i isolerte tester.
+
+**Opprydding**: de to scratch-scriptene
+(`scratch-render-digest.ts`, `scratch-screenshot-digest.mjs`) og den
+mellomlagrede HTML-filen ble slettet igjen — ingen av dem ble
+committet.
+
+### Verifisert
+
+Ingen kode endret denne økten (ren verifisering, samme som Økt 78).
+Siste kjente grønne fullkjøring av hele testkjeden er fortsatt fra Økt
+77, uendret siden. Den visuelle Playwright-sjekken er beskrevet over.
+
+### Neste økt
+
+Begge de etablerte linje-for-linje-metodene (spec-vs-kode og
+live-nettleser-visning) har nå dekket det meste av lavthengende frukt.
+Foreslåtte retninger videre: (a) en tredje type verifisering —
+faktisk KJØRE `runTick()` sin `digest-tick`-jobb mot en sådd,
+realistisk database og observere de faktiske sendte e-postene (via
+Brevo-stubbens konsoll-logging når `BREVO_API_KEY` mangler) i stedet
+for å kalle rendringsfunksjonen direkte, som denne økten gjorde — dette
+ville også legge til en ende-til-ende-sjekk av selve
+mottakerfiltreringen og `DigestDelivery`-radene, ikke bare selve
+malen; (b) journalist-søknadsflyten i en ekte nettleser (nevnt i Økt
+78, ikke gjort ennå); (c) et helt nytt spor: lese README.md og
+package.json sine faktiske npm-scripts og bekrefte at ALLE er dekket av
+CI-workflowen (`.github/workflows/ci.yml`) — et sted linje-for-linje-
+metoden aldri har vært rettet mot. Uendret, fortsatt de tre åpne
+spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.
