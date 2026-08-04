@@ -18063,3 +18063,130 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 89: fant og rettet et arkitektonisk hull i FR-012/21.3 sin
+oversettelseskontroll — enkelte nøkler har IKKE lov til å falle tilbake
+
+Fortsatte den fornyede SPEC-V1.md-gjennomgangen fra Økt 88, seksjon
+11-14 denne økten (Forespørselsside, Svar, Journalistens svarinnboks,
+Videre kontakt).
+
+### Kvitteringer, ingen handling
+
+- 11: `canRespond = request.status === "published"` — svarknapp vises
+  KUN for `published`, med egne varsler for `closed`/`expired`, akkurat
+  som spec-en krever. Journalistens e-postadresse er aldri en del av
+  siden sine props/rendring.
+- 12.4: `withdrawResponse()` kansellerer pending kontaktforespørsler og
+  fjerner koblingen, ingen varsling til journalisten — stemmer med
+  "Journalisten varsles ikke særskilt."
+- 12.6: prioriteringsrekkefølgen for utledet status
+  (`not_selected > contact_requested > viewed > submitted`) i
+  `responses.ts` stemmer EKSAKT med spec-eksempelet ("et sett OG ikke
+  valgt svar viser «ikke valgt»").
+- 12.3: alle 7 punktene i bekreftelsesskjermen er til stede i
+  `ResponseForm.tsx` (`confirm_journalist`, `sharing_email`/
+  `sharing_none`, `may_be_quoted`, `confirm_no_guarantee`,
+  `journalist_responsibility`, `platform_verification`,
+  `no_withdrawal_from_journalist`), krever et eksplisitt knappetrykk
+  (ingen forhåndsavkryssing/auto-bekreftelse).
+- 14.1: meldingsgrensen (1000 tegn) er faktisk håndhevet
+  (`MESSAGE_MAX_LENGTH` i `contact-requests.ts`). "Én
+  kontaktforespørsel per svar" (FR-043) håndheves av en ekte unik
+  indeks, ikke bare en applikasjonssjekk.
+- 14.3: `suspendUser()` kansellerer journalistens pending
+  kontaktforespørsler ved suspendering — stemmer med
+  `cancelled (journalisten suspenderes)`.
+
+### Reelt funn: 12.3 sin "faller ikke tilbake til et annet språk"-regel
+var ALDRI faktisk håndhevet noe sted
+
+12.3 sier eksplisitt om bekreftelsesskjermens tekst: "Denne teksten er
+juridisk relevant og skal gjennomgås av jurist i hvert språk den
+tilbys på. Den faller ikke tilbake til et annet språk – mangler den,
+kan ikke locale-en tilbys i landet." Dette er et EKSPLISITT unntak fra
+21.3s ellers gjeldende regel (manglende oversettelse i et annet språk
+= bare en advarsel + 3.4-reservevei) — men INGENTING i koden faktisk
+skilte disse nøklene fra alle andre. `check-keys.ts` (FR-012) behandlet
+et hull i `response.confirm.*`/`response.form.confirm_*` nøyaktig likt
+som et hull i en hvilken som helst annen, juridisk irrelevant UI-streng
+— en advarsel, aldri en byggefeil.
+
+**Hvorfor dette ikke er observerbart akkurat nå**: samme grunn som Økt
+85 sitt 3.4-funn — v1 har kun to FULLSTENDIG synkroniserte locales
+(ingen `check-keys.ts`-advarsler noensinne). Hullet blir ekte den
+dagen en ny locale legges til `SUPPORTED_LOCALES` uten at akkurat
+disse åtte nøklene er oversatt (og jurist-gjennomgått) — da ville
+`createTranslator()` sin NYE, korrekte 3.4-kjede (Økt 85-87) stille
+vise plattformens standardspråk for akkurat DENNE juridisk sensitive
+teksten, present spec-en eksplisitt forbyr.
+
+**Retting, strukturell fremfor runtime**: i stedet for en
+per-land-databasesjekk i `createCountry()`/`updateCountry()` (som ville
+kreve å duplisere nøkkellisten inn i en kjøretids-spørring), er
+løsningen billigere og strengere plassert der FR-012 allerede lever —
+`check-keys.ts`, som allerede kjøres i CI før `next build`:
+
+1. Ny eksportert konstant `LEGALLY_REVIEWED_TRANSLATION_KEYS` i
+   `src/i18n/config.ts` — de 8 nøklene som faktisk utgjør 12.3 sin
+   tekst (`response.form.confirm_journalist`,
+   `response.form.confirm_no_guarantee`,
+   `response.confirm.sharing_none/sharing_email/may_be_quoted/
+   journalist_responsibility/platform_verification/
+   no_withdrawal_from_journalist`).
+2. Ny funksjon `findLegallyReviewedGaps()` i `check-keys.ts` — skiller
+   ut hvilke av et språks eksisterende 21.3-hull som gjelder nettopp
+   disse nøklene.
+3. `main()` behandler nå disse to hull-kategoriene ULIKT: en
+   juridisk-nøkkel-mangel er en HARD byggefeil (`process.exit(1)`,
+   samme alvorlighetsgrad som FR-012s egen hovedsjekk), mens resten av
+   21.3s hull fortsatt bare varsler.
+
+Siden `countries.available_locales` (databasen) kun kan velges fra
+`SUPPORTED_LOCALES` (håndhevet av `isSupportedLocale()` i
+`admin/countries.ts`), garanterer denne byggetids-sjekken STRUKTURELT
+at INGEN land noensinne kan tilby en locale der 12.3-teksten mangler —
+uten en egen, dupliserende runtime-sjekk per land. Billigere og
+strengere enn alternativet.
+
+**Nye tester**: to nye tester for `findLegallyReviewedGaps()` i
+`check-keys.test.ts`, samme fikstur-mønster som de eksisterende
+`findMissingKeys()`/`findLocaleGaps()`-testene. Kjørte selve scriptet
+mot de EKTE meldingsfilene etterpå — ingen endring i utdata (fortsatt
+"OK", som forventet siden nb-NO/en-GB er fullstendig synkronisert).
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 87 filer, 481 tester (479 + 2 nye).
+- `npx tsx src/i18n/check-keys.ts`: OK — 534 nøkler, ingen endring i
+  faktisk utdata.
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 filer, ingen brudd.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 345
+  tester, ALLE bestod uendret.
+
+Committet: `src/i18n/config.ts`, `src/i18n/check-keys.ts`,
+`src/i18n/check-keys.test.ts`.
+
+### Neste økt
+
+Fortsett den fornyede SPEC-V1.md-gjennomgangen fra der denne økten
+sluttet: seksjon 15 (E-postmaler — trolig ren kvittering, mye
+nylig arbeid der), 16 (Administrasjonsgrensesnitt), 17 (Personvern —
+ekstra grundighet, retensjonsjobben sletter/anonymiserer persondata),
+18 (Sikkerhet). Vurder også om DESIGN.md sin 12.3-tilstøtende regel
+(om noen finnes) bør sjekkes for samme "juridisk tekst faller ikke
+tilbake"-mønster andre steder i spec-en — et fritekstsøk etter
+"jurist" i SPEC-V1.md denne økten fant KUN 12.3, så dette er trolig
+den eneste forekomsten, men verdt å bekrefte på nytt hvis nye
+juridisk-sensitive skjermer legges til senere. Uendret, fortsatt de tre
+åpne spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.

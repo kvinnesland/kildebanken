@@ -10,7 +10,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import nbNO from "./messages/nb-NO.json";
 import enGB from "./messages/en-GB.json";
-import { PLATFORM_DEFAULT_LOCALE, SUPPORTED_LOCALES } from "./config";
+import { LEGALLY_REVIEWED_TRANSLATION_KEYS, PLATFORM_DEFAULT_LOCALE, SUPPORTED_LOCALES } from "./config";
 
 const KEY_PATTERN = /\bt\(\s*["'`]([a-zA-Z0-9_.]+)["'`]/g;
 const SRC_DIR = join(import.meta.dirname, "..");
@@ -43,6 +43,21 @@ export function findLocaleGaps(
 ): string[] {
   const otherKeys = new Set(Object.keys(otherLocaleMessages));
   return Object.keys(defaultLocaleMessages).filter((k) => !otherKeys.has(k));
+}
+
+/**
+ * SPEC-V1.md 12.3: skiller ut hvilke av et språks 21.3-hull som gjelder
+ * juridisk gjennomgått tekst (`LEGALLY_REVIEWED_TRANSLATION_KEYS`,
+ * config.ts) — disse skal ALDRI bare gi en advarsel som resten av 21.3s
+ * hull, siden akkurat denne teksten eksplisitt ikke har en tillatt
+ * reservevei. Se `main()` under for hvordan dette blir en hard byggefeil.
+ */
+export function findLegallyReviewedGaps(
+  gaps: readonly string[],
+  legallyReviewedKeys: readonly string[]
+): string[] {
+  const legallyReviewedSet = new Set(legallyReviewedKeys);
+  return gaps.filter((k) => legallyReviewedSet.has(k));
 }
 
 function collectSourceFiles(dir: string, files: string[] = []): string[] {
@@ -85,18 +100,40 @@ function main() {
     process.exit(1);
   }
 
+  let hasLegallyReviewedGap = false;
+
   for (const locale of SUPPORTED_LOCALES) {
     if (locale === PLATFORM_DEFAULT_LOCALE) continue;
     const otherMessages = MESSAGES_BY_LOCALE[locale];
     if (!otherMessages) continue;
     const gaps = findLocaleGaps(nbNO, otherMessages);
-    if (gaps.length > 0) {
-      console.warn(
-        `[i18n:check] ADVARSEL — ${gaps.length} nøkkel(er) mangler i ${locale} ` +
-          `(faller tilbake til ${PLATFORM_DEFAULT_LOCALE}, SPEC-V1.md 21.3):\n` +
-          gaps.map((k) => `  - ${k}`).join("\n")
+
+    // SPEC-V1.md 12.3: i motsetning til resten av 21.3s hull (advarsel +
+    // reservevei), skal disse ALDRI bare varsles — se
+    // LEGALLY_REVIEWED_TRANSLATION_KEYS sin egen kommentar (config.ts).
+    const legallyReviewedGaps = findLegallyReviewedGaps(gaps, LEGALLY_REVIEWED_TRANSLATION_KEYS);
+    if (legallyReviewedGaps.length > 0) {
+      hasLegallyReviewedGap = true;
+      console.error(
+        `[i18n:check] ${legallyReviewedGaps.length} juridisk gjennomgått nøkkel/nøkler ` +
+          `(SPEC-V1.md 12.3) mangler i ${locale} — denne teksten har IKKE lov til å falle ` +
+          `tilbake til et annet språk:\n` +
+          legallyReviewedGaps.map((k) => `  - ${k}`).join("\n")
       );
     }
+
+    const otherGaps = gaps.filter((k) => !legallyReviewedGaps.includes(k));
+    if (otherGaps.length > 0) {
+      console.warn(
+        `[i18n:check] ADVARSEL — ${otherGaps.length} nøkkel(er) mangler i ${locale} ` +
+          `(faller tilbake til ${PLATFORM_DEFAULT_LOCALE}, SPEC-V1.md 21.3):\n` +
+          otherGaps.map((k) => `  - ${k}`).join("\n")
+      );
+    }
+  }
+
+  if (hasLegallyReviewedGap) {
+    process.exit(1);
   }
 
   console.log(`[i18n:check] OK — ${usedKeys.length} nøkler funnet, alle finnes i nb-NO.`);
