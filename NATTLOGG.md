@@ -18190,3 +18190,97 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 90: fant og rettet et manglende personvern-opplysningskrav
+(17.5) under en fornyet SPEC-V1.md-gjennomgang (seksjon 15-17)
+
+Fortsatte den fornyede SPEC-V1.md-gjennomgangen fra Økt 89, seksjon
+15-17 denne økten (E-postmaler, Administrasjonsgrensesnitt, Personvern).
+
+### Kvitteringer, ingen handling
+
+- 15: e-postmaltabellens 24 rader stemmer med `TransactionalTemplate`
+  (23 maler) + digesten (1). "Innhold rapportert" sitt eget hull
+  (nevnt i selve spec-teksten som historikk) er allerede lukket.
+- 16.1/16.2: dashboardet, alle fem admin-funksjonsområdene
+  (journalister/forespørsler/mottakere/utsendelser/land), og
+  begrunnelseslisten for å åpne et enkeltsvar
+  (`user_support_request`/`abuse_report_investigation`/
+  `legal_or_regulatory_request`/`security_incident`, i en egen fil
+  `response-access-reasons.ts`) er alle allerede bygget og stemmer med
+  spec-teksten.
+- 17.1-17.4: behandlingsgrunnlag, juridiske dokumenter/samtykkelogg
+  (allerede versjonert per land+språk, håndhevet av
+  `setCountryStatus()`), brukerrettigheter, og lagringstider
+  (konfigurasjon per land, ikke konstanter — verifisert i tidligere
+  økter) stemmer alle med koden.
+- 17.5 sine øvrige punkter (fremtidige utsendelser stanses, kontoen
+  anonymiseres, kontaktforespørsler kanselleres m/varsel, samtykkehistorikk
+  beholdes, journalist-sletting lukker forespørsler og varsler
+  respondenter) er alle allerede implementert (`performAccountDeletion()`,
+  tidligere økters arbeid).
+
+### Reelt funn: 17.5 sitt eksplisitte opplysningskrav på selve
+slettebekreftelsen manglet helt
+
+17.5 sier eksplisitt om at svartekst beholdes til ordinær frist etter
+kontosletting: "Dette skal stå uttrykkelig i personvernerklæringen OG
+PÅ SLETTEBEKREFTELSEN, i hvert språk." Gjennomsøkte hele
+slettingsflyten (`DeleteAccountSection.tsx`, steg 1, og
+`ConfirmDeletionClient.tsx`, steg 2/"slettebekreftelsen" — siden
+brukeren når via lenken i bekreftelses-e-posten) — INGEN av dem nevnte
+noensinne at innsendte svar sin tekst beholdes. Kun
+personvernerklæringen (et `legalDocuments`-dokument, utenfor denne
+gjennomgangens kodesøk) kan ha dekket halvparten av kravet.
+
+**Hvorfor plassering ble steg 2, ikke steg 1**: "slettebekreftelsen"
+("Bekreft sletting av kontoen din") er den mest presise, bokstavelige
+matchen for selve begrepet, og komponenten trenger ingen ny
+sesjons-/rolledata for å vise en generisk, sannferdig tekst (i
+motsetning til steg 1, som HAR rollen tilgjengelig via foreldresiden,
+men er "be om sletting", ikke "bekreft sletting"). Teksten er
+formulert betinget ("Har du sendt inn svar…") slik at den er korrekt
+og harmløs å vise uansett rolle, uten å måtte tre `session.role`
+gjennom det token-only (ingen økt) steget.
+
+**Retting**: ny nøkkel
+`me.confirm_deletion.response_text_retained_notice` (nb-NO/en-GB),
+vist som et eget avsnitt rett under advarselen på `/me/slett-konto`,
+før bekreft-knappen.
+
+**Ny test**: én ny test i `ConfirmDeletionClient.test.tsx` som
+bekrefter at teksten faktisk vises på bekreftelsestrinnet.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 87 filer, 482 tester (481 + 1 ny).
+- `npx tsx src/i18n/check-keys.ts`: OK — 535 nøkler (534 + 1 ny).
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 filer, ingen brudd.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 345
+  tester, ALLE bestod uendret.
+
+Committet: `src/app/[locale]/me/slett-konto/ConfirmDeletionClient.tsx`,
+`src/app/[locale]/me/slett-konto/ConfirmDeletionClient.test.tsx`,
+`src/i18n/messages/nb-NO.json`, `src/i18n/messages/en-GB.json`.
+
+### Neste økt
+
+Fortsett den fornyede SPEC-V1.md-gjennomgangen fra der denne økten
+sluttet: seksjon 18 (Sikkerhet — siste gjenværende seksjon før 19-23,
+som allerede har dedikerte, tidligere sveiper). Etter seksjon 18 er
+hele spec-en dermed gjennomgått på nytt fra bunnen av denne natten
+(Økt 88-9x) — vurder da enten (a) et helt nytt spor (f.eks. en fornyet
+"ubrukte eksporter"-kjøring, gitt at mange filer er endret siden sist,
+eller (b) INFRASTRUCTURE.md/DESIGN.md sin egen fornyede gjennomgang,
+som ikke har vært gjort fra bunnen av på like lenge som SPEC-V1.md nå
+har fått. Uendret, fortsatt de tre åpne spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.

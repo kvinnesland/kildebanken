@@ -55,6 +55,11 @@ export function ConfirmDeletionClient({ locale }: { locale: SupportedLocale }) {
     return (
       <>
         <p className={styles.notice}>{t("me.confirm_deletion.warning")}</p>
+        {/* SPEC-V1.md 17.5: "Dette skal stå uttrykkelig i personvernerklæringen
+            OG på slettebekreftelsen, i hvert språk" — svarteksten beholdes til
+            den ordinære retensjonsfristen løper ut selv om kontoen slettes,
+            manglet frem til nå på selve denne siden (kun i personvernerklæringen). */}
+        <p className={styles.notice}>{t("me.confirm_deletion.response_text_retained_notice")}</p>
         <Button variant="danger" onPress={handleConfirm}>
           {t("me.confirm_deletion.confirm_button")}
         </Button>

@@ -495,6 +495,7 @@
   "contact_request.status.cancelled": "Kansellert",
 
   "me.confirm_deletion.warning": "Er du sikker på at du vil slette kontoen din? Dette kan ikke angres.",
+  "me.confirm_deletion.response_text_retained_notice": "Har du sendt inn svar på forespørsler, beholdes selve svarteksten til den vanlige oppbevaringsfristen løper ut, siden journalisten kan ha en pågående sak. Kontoen din anonymiseres likevel umiddelbart.",
   "me.confirm_deletion.confirm_button": "Ja, slett kontoen min permanent",
   "me.confirm_deletion.pending": "Bekrefter sletting av kontoen din …",
   "me.confirm_deletion.success": "Kontoen din er slettet.",

@@ -31,6 +31,23 @@ describe("ConfirmDeletionClient", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  // SPEC-V1.md 17.5: "Dette skal stå uttrykkelig i personvernerklæringen og
+  // på slettebekreftelsen, i hvert språk" — svarteksten beholdes til den
+  // ordinære retensjonsfristen løper ut selv om kontoen slettes. Manglet
+  // frem til nå på selve denne siden (se NATTLOGG.md, økt 90).
+  it("SPEC-V1.md 17.5: opplyser om at svartekst beholdes til ordinær frist selv om kontoen slettes", () => {
+    searchParams = new URLSearchParams({ token: "et-gyldig-token" });
+    vi.stubGlobal("fetch", vi.fn());
+
+    render(<ConfirmDeletionClient locale="nb-NO" />);
+
+    expect(
+      screen.getByText(
+        "Har du sendt inn svar på forespørsler, beholdes selve svarteksten til den vanlige oppbevaringsfristen løper ut, siden journalisten kan ha en pågående sak. Kontoen din anonymiseres likevel umiddelbart."
+      )
+    ).toBeInTheDocument();
+  });
+
   it("sender bekreftelseskallet FØRST når knappen trykkes, og viser suksess", async () => {
     searchParams = new URLSearchParams({ token: "et-gyldig-token" });
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
