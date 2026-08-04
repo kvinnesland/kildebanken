@@ -76,13 +76,19 @@ async function createAdmin(countryCode: string): Promise<{ id: string; email: st
 function testCountryInput(overrides: Partial<CreateCountryInput> = {}): CreateCountryInput {
   return {
     code: `Z${randomUUID().slice(0, 6).toUpperCase()}`,
-    nameKey: "country.test.name",
+    // Ekte oversettelsesnøkler (createCountry()/updateCountry() validerer
+    // nå at disse faktisk finnes, se NATTLOGG.md) — IKKE de bevisst falske
+    // "country.test.name"/"email.sender_name.test" som fixtures.ts sin
+    // ensureTestCountry() bruker (den setter inn direkte i databasen,
+    // utenom denne valideringen, nettopp for å teste
+    // manglende-nøkkel-reserveveien et annet sted).
+    nameKey: "country.no.name",
     defaultLocale: "nb-NO",
     availableLocales: ["nb-NO"],
     timezone: "Europe/Oslo",
     minimumAge: 18,
     digestSendTime: "07:00",
-    senderNameKey: "email.sender_name.test",
+    senderNameKey: "email.sender_name.no",
     supportEmail: "test@example.invalid",
     ...overrides,
   };
@@ -191,6 +197,32 @@ describe("admin/countries.ts mot ekte Postgres", () => {
     const admin = await createAdmin(TEST_COUNTRY_CODE);
     await loginAs(admin.id);
     const input = testCountryInput({ digestSendTime: "7:00" });
+
+    const result = await createCountry(input);
+
+    expect(result).toEqual({ ok: false, error: "errors.validation_failed" });
+    const [notCreated] = await db.select().from(countries).where(eq(countries.code, input.code));
+    expect(notCreated).toBeUndefined();
+  });
+
+  it("createCountry(): avviser en nameKey som ikke finnes som noen faktisk oversettelsesnøkkel (ville ellers vist «…» som landnavn overalt)", async () => {
+    await ensureTestCountry();
+    const admin = await createAdmin(TEST_COUNTRY_CODE);
+    await loginAs(admin.id);
+    const input = testCountryInput({ nameKey: "country.does_not_exist.name" });
+
+    const result = await createCountry(input);
+
+    expect(result).toEqual({ ok: false, error: "errors.validation_failed" });
+    const [notCreated] = await db.select().from(countries).where(eq(countries.code, input.code));
+    expect(notCreated).toBeUndefined();
+  });
+
+  it("createCountry(): avviser en senderNameKey som ikke finnes som noen faktisk oversettelsesnøkkel (ville ellers vist «…» som avsendernavn i HVER sendte e-post)", async () => {
+    await ensureTestCountry();
+    const admin = await createAdmin(TEST_COUNTRY_CODE);
+    await loginAs(admin.id);
+    const input = testCountryInput({ senderNameKey: "email.sender_name.does_not_exist" });
 
     const result = await createCountry(input);
 
@@ -316,6 +348,24 @@ describe("admin/countries.ts mot ekte Postgres", () => {
     expect(result).toEqual({ ok: false, error: "errors.validation_failed" });
     const [after] = await db.select().from(countries).where(eq(countries.code, input.code));
     expect(after?.digestSendTime).toBe("07:00");
+
+    await deleteTestCountry(input.code);
+  });
+
+  it("updateCountry(): avviser en senderNameKey som ikke finnes som noen faktisk oversettelsesnøkkel", async () => {
+    await ensureTestCountry();
+    const admin = await createAdmin(TEST_COUNTRY_CODE);
+    await loginAs(admin.id);
+    const input = testCountryInput();
+    await createCountry(input);
+
+    const result = await updateCountry(input.code, {
+      senderNameKey: "email.sender_name.does_not_exist",
+    });
+
+    expect(result).toEqual({ ok: false, error: "errors.validation_failed" });
+    const [after] = await db.select().from(countries).where(eq(countries.code, input.code));
+    expect(after?.senderNameKey).toBe("email.sender_name.no");
 
     await deleteTestCountry(input.code);
   });

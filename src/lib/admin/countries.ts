@@ -3,8 +3,29 @@ import { db } from "@/db/client";
 import { auditLogs, countries, legalDocuments, moderatorCountries, users } from "@/db/schema";
 import { isUniqueViolation } from "@/db/errors";
 import { requireAdmin } from "@/lib/auth/authorize";
-import { isSupportedLocale } from "@/i18n/config";
+import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE } from "@/i18n/config";
+import { getMessagesForLocale } from "@/i18n/get-messages";
 import { isValidTimezone } from "@/lib/me/validate";
+
+// Reelt hull funnet ved en faktisk kjøring av digest-tick mot sådd data
+// (se NATTLOGG.md): verken createCountry() eller updateCountry() validerte
+// at `nameKey`/`senderNameKey` faktisk FINNES som oversettelsesnøkler noe
+// sted. `src/i18n/check-keys.ts` (FR-012) kan ALDRI fange dette — den
+// scanner bare statiske `t("bokstavelig.nøkkel")`-kall i koden, mens disse
+// to feltene er RUNTIME-data som sendes videre til `t(dynamiskNøkkel)`
+// (se f.eks. sendDigestToRecipients() i tick.ts). En admin-skrivefeil her
+// ville ikke krasjet noe sted — `createTranslator()` sin graderte
+// reservevei (get-messages.ts) faller helt til slutt tilbake til
+// bokstavelig "…" — men ville stille vist "…" som avsendernavn i HVER
+// eneste e-post landet sender, uten en eneste feilmelding. Samme
+// bugklasse og alvorlighetsgrad som `timezone`- og
+// `digestSendTime`-valideringen over. Kravet er bevisst bare mot
+// plattformens standardspråk (nb-NO), samme styrke som FR-012 selv bruker
+// for koden sine egne nøkler — en manglende oversettelse i et ANNET språk
+// er fortsatt bare en advarsel (21.3), ikke en hindring for å lagre.
+function isKnownTranslationKey(key: string): boolean {
+  return getMessagesForLocale(PLATFORM_DEFAULT_LOCALE)[key] !== undefined;
+}
 
 export type CountryActionResult = { ok: true } | { ok: false; error: string };
 
@@ -89,6 +110,10 @@ export async function createCountry(input: CreateCountryInput): Promise<CountryA
   }
   // Se DIGEST_SEND_TIME_PATTERN sin egen kommentar over.
   if (!DIGEST_SEND_TIME_PATTERN.test(input.digestSendTime)) {
+    return { ok: false, error: "errors.validation_failed" };
+  }
+  // Se isKnownTranslationKey() sin egen kommentar over.
+  if (!isKnownTranslationKey(input.nameKey) || !isKnownTranslationKey(input.senderNameKey)) {
     return { ok: false, error: "errors.validation_failed" };
   }
   // FR-029: må være et positivt heltall — en verdi på 0 ville gjort det
@@ -182,6 +207,14 @@ export async function updateCountry(
   }
   // Samme begrunnelse som createCountry() (se DIGEST_SEND_TIME_PATTERN).
   if (input.digestSendTime !== undefined && !DIGEST_SEND_TIME_PATTERN.test(input.digestSendTime)) {
+    return { ok: false, error: "errors.validation_failed" };
+  }
+  // Samme begrunnelse som createCountry() (se isKnownTranslationKey()) —
+  // kun valider felt som faktisk er del av DENNE PATCH-en.
+  if (input.nameKey !== undefined && !isKnownTranslationKey(input.nameKey)) {
+    return { ok: false, error: "errors.validation_failed" };
+  }
+  if (input.senderNameKey !== undefined && !isKnownTranslationKey(input.senderNameKey)) {
     return { ok: false, error: "errors.validation_failed" };
   }
   // Samme begrunnelse som createCountry() (se der).

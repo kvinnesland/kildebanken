@@ -17036,3 +17036,136 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 80: kjørte digest-tick ende-til-ende mot sådd data — fant og rettet
+et reelt, upåaktet hull i createCountry()/updateCountry()s validering
+
+CI-sjekket først at ALLE `package.json`-scripts som trenger automatisert
+verifisering faktisk dekkes av `.github/workflows/ci.yml` (foreslått i
+Økt 79) — full dekning, `db:generate`/`db:seed`/`start`/`dev` er korrekt
+lokale-only og skal ikke være der. Ingen handling.
+
+### Hovedaktivitet: en faktisk kjøring av `runDigestTick()`, ikke bare
+rendringsfunksjonen isolert (som Økt 79 gjorde)
+
+Skrev et frittstående, ikke-committet script som sådde et helt FERSKT,
+tilfeldig testland (status satt direkte til `active`, egen isolert
+landkode — samme etablerte isolasjonsmønster som ellers i
+integrasjonstestene), én publisert forespørsel, og to mottakere (én
+`nb-NO`, én `en-GB`, for å teste FR-032s "én rendring per locale
+FAKTISK i bruk"). Kalte deretter `runDigestTick(db)` DIREKTE (samme
+database som `next dev` bruker) og observerte den faktiske konsoll-
+utskriften fra Brevo-stubben, samt de faktiske `Digest`- og
+`DigestDelivery`-radene som ble opprettet.
+
+**Resultatet var i all hovedsak riktig** — én `Digest`-rad
+(`recipientCount: 2`, `status: "sent"`), to `DigestDelivery`-rader (én
+per locale, `providerMessageId: null` i stubb-modus, som forventet), og
+to `[email:stub:bulk]`-linjer med korrekt emne per locale.
+
+**Men**: konsollen viste også `[i18n] mangler nøkkel
+"sender.name.default" i kjeden [nb-NO]` — testscriptets EGEN,
+oppdiktede `senderNameKey` (et skrivefeil-eksempel, ikke ment å være
+ekte). Dette avdekket et REELT, tidligere upåaktet hull: verken
+`createCountry()` eller `updateCountry()` (`src/lib/admin/countries.ts`)
+validerte at `nameKey`/`senderNameKey` faktisk FINNES som
+oversettelsesnøkler noe sted. `src/i18n/check-keys.ts` (FR-012) kan
+ALDRI fange denne klassen feil — den scanner bare statiske
+`t("bokstavelig.nøkkel")`-kall i selve koden, mens disse to feltene er
+RUNTIME-data (fra `countries`-tabellen) som sendes videre til
+`t(dynamiskNøkkel)` (se `sendDigestToRecipients()` i `tick.ts` og
+`resolveSenderIdentity()`). En admin-skrivefeil her ville ikke krasjet
+noe sted — `createTranslator()` sin graderte reservevei
+(`get-messages.ts`) faller til slutt tilbake til bokstavelig "…" — men
+ville stille vist "…" som avsendernavn i HVER ENESTE e-post landet
+sender, for alltid, uten en eneste feilmelding. Samme bugklasse og
+alvorlighetsgrad som `timezone`- og `digestSendTime`-valideringen
+(task #121/#122) — men datastrengen selv ser fullstendig normal ut
+inntil man faktisk mottar en e-post.
+
+**Et EKSTRA funn under etterforskningen**: `src/db/seed.ts` sin egen
+Norge-rad bruker `senderNameKey: "email.sender_name.no"` — en nøkkel
+som ALDRI har eksistert i `nb-NO.json`/`en-GB.json`. Siden seed-scriptet
+alltid setter status til `draft` (aldri sendt fra), har dette aldri
+vist seg som en synlig feil — men det ER nøyaktig det samme hullet, i
+den faktiske Norge-konfigurasjonen som er ment å brukes den dagen
+landet aktiveres.
+
+**Retting**:
+1. La til `isKnownTranslationKey()` i `countries.ts` (sjekker mot
+   `getMessagesForLocale(PLATFORM_DEFAULT_LOCALE)`, samme styrke som
+   FR-012 selv bruker — kun plattformens standardspråk er en HARD
+   hindring, andre språk er fortsatt bare en advarsel jf. 21.3) og kalte
+   den for `nameKey`/`senderNameKey` i BÅDE `createCountry()` og
+   `updateCountry()` (kun for felt faktisk del av en PATCH, samme mønster
+   som `timezone`/`digestSendTime`-sjekkene). Gjenbruker
+   `errors.validation_failed` — ingen ny i18n-nøkkel eller UI-endring
+   nødvendig.
+2. La til den FAKTISKE manglende nøkkelen `email.sender_name.no` i begge
+   meldingsfilene ("Kildebanken Norge"/"Kildebanken Norway") — retter
+   `seed.ts` sitt reelle hull i selve produksjonskonfigurasjonen, ikke
+   bare et testartefakt.
+3. Oppdaget at 3 tester i `countries.integration.test.ts` sin delte
+   `testCountryInput()`-hjelpefunksjon kalte `createCountry()` direkte
+   med bevisst-falske nøkler (`"country.test.name"`,
+   `"email.sender_name.test"`) — disse ville nå feile den nye
+   valideringen. Byttet DISSE til de nå-ekte `"country.no.name"`/
+   `"email.sender_name.no"` (ingen test asserterer på selve teksten, kun
+   at feltet lagres). VIKTIG: rørte IKKE `fixtures.ts` sin
+   `ensureCountryWithDocuments()` (setter inn direkte via `db.insert()`,
+   utenom `createCountry()`s validering) eller
+   `sender-identity.integration.test.ts` sin egen, eksplisitt
+   dokumenterte "bevisst IKKE en ekte nøkkel"-test — den fortsetter å
+   teste `createTranslator()`s reservevei mot en GENUINT manglende
+   nøkkel, uendret og fortsatt korrekt begrunnet, siden `fixtures.ts` sin
+   sti aldri går gjennom den nye valideringen.
+4. La til to nye tester i `countries.integration.test.ts`: `createCountry()`
+   avviser en ukjent `nameKey`/`senderNameKey`, og `updateCountry()`
+   avviser en ukjent `senderNameKey` — samme mønster som de eksisterende
+   `timezone`/`digestSendTime`-testene rett ved siden av.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 86 filer, 470 tester, alle bestod (uendret antall —
+  testendringene var kun i integrasjonssuiten).
+- `npx tsx src/i18n/check-keys.ts`: OK — 533 nøkler (uendret; de to nye
+  meldingsnøklene brukes aldri via en statisk `t("...")`-literal i
+  koden, kun som data, så de telles ikke her — forventet og korrekt).
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 filer, ingen brudd.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 345
+  tester (343 + 2 nye), ALLE bestod — inkludert
+  `sender-identity.integration.test.ts` sin uendrede
+  manglende-nøkkel-test, som bekrefter at rettingen ikke ved et uhell
+  også lukket DEN bevisst åpne reserveveien.
+
+Committet: `src/lib/admin/countries.ts`,
+`src/lib/admin/countries.integration.test.ts`,
+`src/i18n/messages/nb-NO.json`, `src/i18n/messages/en-GB.json`.
+
+**Opprydding**: scratch-scriptet (`scratch-run-digest-tick.ts`) og alle
+sådde rader (testland, forespørsel, to mottakere, digest- og
+delivery-rader) ble slettet/ryddet i selve scriptet før avslutning.
+
+### Neste økt
+
+Denne økten bekrefter verdien av "faktisk kjøre jobben mot sådd data"
+som en TREDJE verifiseringsmetode (utover spec-vs-kode-linjelesing og
+live-nettleser-skjermbilder) — det var nettopp konsoll-utskriften fra en
+EKTE kjøring, ikke en isolert kalt rendringsfunksjon eller en
+streng-assertion i en test, som avslørte dette hullet. Verdt å vurdere
+samme metode mot de andre jobbene i `tick.ts` (`runExpireRequests`,
+`runDeadlineReminders`, `runStaleRequestReminders`,
+`runPurgeUnverified`) — alle er grundig enhetstestet, men aldri kjørt
+denne måten mot friskt sådd, realistisk data. Andre kandidater fra
+tidligere økter, fortsatt ikke gjort: journalist-søknadsflyten i en ekte
+nettleser (Økt 78). Uendret, fortsatt de tre åpne spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.
