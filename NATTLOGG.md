@@ -17336,3 +17336,90 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 82: fullførte komponentsveipen fra Økt 81 — RadioGroup/TextArea
+mot en ekte produksjonsserver, rent funn
+
+Fulgte direkte opp Økt 81 sin "Neste økt": den ENESTE
+skjema-komponenttypen som ennå ikke var testet mot en ekte
+`next build`/`next start` etter CSP-rettingen. Svarskjemaet
+(`ResponseForm.tsx`, `/foresporsler/:id/svar`) bruker BEGGE de
+gjenstående typene samtidig (tre `TextArea`-felt, én `RadioGroup` for
+kontaktdeling, SPEC-V1.md 12.2) — samme mottakerside som ble
+livesjekket i Økt 78, men DEN gangen mot `next dev` (som har sin egen,
+urelaterte CSP-begrensning, se Økt 81) og uten noen sjekk for
+CSP-konsollfeil eller duplisert DOM.
+
+Sådde et fersk testland, en publisert forespørsel, og en innlogget
+mottaker. Kjørte en ekte `next build` + `next start`
+(port 3460, en ANNEN port enn forrige økt for å unngå Økt 81 sin
+`EADDRINUSE`-felle — og eksplisitt bekreftet med `ps aux` at KUN én
+`next-server`-prosess kjørte før noen sjekk ble gjort, samme
+driftslærdom fra forrige økt). Fylte ut alle tre TextArea-feltene og
+klikket et RadioGroup-alternativ via Playwright, med konsoll-lytting
+for CSP-feil.
+
+**Resultat: rent funn, ingen kodefeil.** Null
+`Content-Security-Policy`-feil i konsollen gjennom hele flyten. Nøyaktig
+to `<input type="radio">`-elementer på siden (det korrekte, forventede
+antallet — `RadioButton` fra `react-aria-components` rendrer den ekte
+radioknappen direkte og synlig-stilt, ULIKT `Select` sin
+skjulte-natvt-reserve-mekanisme som var selve kilden til Økt 81 sin feil;
+det finnes altså ikke noe TILSVARENDE skjult element å bryte for
+RadioGroup). Null `<select>`-elementer (forventet, ingen på denne
+siden). Skjermbilde bekrefter et helt rent, korrekt rendret skjema —
+tegntellere stemmer, visningsnavnet er fortsatt korrekt forhåndsutfylt
+fra kontoen (Økt 71 sin fiks, uendret), og det valgte
+RadioGroup-alternativet vises tydelig markert.
+
+Med dette er svaret på Økt 81 sin spørsmål bekreftet: `unsafe-inline`
+på `style-src` var nødvendig SPESIFIKT for `Select` sin
+`HiddenSelect`-mekanisme, ikke en generell konflikt mellom CSP og
+`react-aria-components` som helhet — `Checkbox` (bekreftet indirekte i
+Økt 81 sin egen flyt) og `RadioGroup`/`TextArea` (denne økten) har
+INGEN tilsvarende skjult-element-mekanisme som ville trengt samme
+relaksjon. Komponentsveipen er dermed fullført — alle skjema-
+komponenttypene i `src/components/` er nå verifisert LEVENDE mot en
+ekte produksjonsserver minst én gang.
+
+### Verifisert
+
+Ingen kode endret denne økten (ren verifisering). Siste kjente grønne
+fullkjøring av hele testkjeden er fortsatt fra Økt 81, uendret siden.
+Den levende Playwright-sjekken (mot ekte `next build`/`next start`) er
+beskrevet over.
+
+**Opprydding**: alle sådde rader (testland, journalist, mottaker,
+forespørsel, økt) ble slettet fra utviklingsdatabasen, scratch-
+scriptene (`scratch-seed-response-form.ts`,
+`scratch-playwright-response-form.mjs`) ble slettet, og
+produksjonsserveren ble stoppet med `kill -9` direkte på PID (bekreftet
+først med `ps aux` at nøyaktig én prosess kjørte, samme forsiktighet
+som Økt 81 sin driftslærdom anbefalte).
+
+### Neste økt
+
+Med komponentsveipen ferdig og alle tre etablerte verifiseringsmetodene
+(spec-vs-kode-linjelesing, live-nettleser-skjermbilder,
+kjør-jobb-mot-sådd-data) nå grundig anvendt flere ganger hver, er
+lavthengende frukt av disse spesifikke metodene sannsynligvis uttømt
+for denne runden. Vurder et helt nytt spor for neste økt: (a) et
+strukturert søk etter FLERE skjulte antagelser om `NODE_ENV`/
+driftsmiljø som bare viser seg ved en ekte `next start` (samme klasse
+som BREVO_API_KEY-sperren denne økten støtte på, men den var allerede
+kjent/tilsiktet — finnes det TILSVARENDE, MEN utilsiktede sperrer andre
+steder som aldri er testet i produksjonsmodus?); (b) en kritisk
+gjennomlesing av en modul som ikke har fått en dedikert økt ennå (sjekk
+NATTLOGG-historikken for hvilke `src/lib/`-filer aldri har vært
+gjenstand for en "critical-read"-økt); (c) SPEC-V1.md sin egen liste
+over ETTERSPURTE, MEN kanskje aldri bygde detaljer utenfor
+hovedflytene (varslingsinnstillinger, eksport av egne data, e.l.) —
+verdt et helt nytt gjennomsøk fra bunnen, ikke bare seksjon-for-seksjon
+slik det allerede er gjort. Uendret, fortsatt de tre åpne spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.
