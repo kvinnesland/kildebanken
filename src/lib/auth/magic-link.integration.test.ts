@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { authTokens, users } from "@/db/schema";
+import { authTokens, rateLimitHits, users } from "@/db/schema";
 import {
   createActiveJournalist,
   createActiveRecipient,
@@ -158,6 +158,36 @@ describe("requestMagicLink mot ekte Postgres (SPEC-V1.md 6.1)", () => {
     await Promise.all(Array.from({ length: 10 }, () => requestMagicLink(recipient.email)));
 
     expect(await countTokensFor(recipient.id)).toBeLessThanOrEqual(5);
+  });
+
+  // SPEC-V1.md 18/6.1: "5 innloggingsforespørsler per ADRESSE per 15 min" —
+  // reelt hull frem til nå (se NATTLOGG.md, økt 91): rategrensen ble kun
+  // sjekket ETTER at brukeroppslaget bekreftet at kontoen faktisk finnes,
+  // så en angriper kunne sende et UBEGRENSET antall forespørsler mot en
+  // oppdiktet adresse på dette offentlige, uautentiserte endepunktet uten
+  // noensinne å treffe noen grense. Siden verken et token eller en e-post
+  // sendes for en ikke-eksisterende adresse (uansett om rategrensen faktisk
+  // håndheves eller ikke), må selve `rate_limit_hits`-tabellen inspiseres
+  // direkte for å bevise at grensen likevel registreres og håndheves.
+  it("rategrensen gjelder OGSÅ en IKKE-eksisterende adresse — spec sier «per adresse», ikke «per konto»", async () => {
+    vi.stubEnv("BREVO_API_KEY", "");
+    const email = uniqueTestEmail("does-not-exist-rate-limited");
+    const bucket = `magic-link:${email}`;
+
+    for (let i = 0; i < 5; i++) {
+      await requestMagicLink(email);
+    }
+    const hitsAfterFive = await db.select().from(rateLimitHits).where(eq(rateLimitHits.bucket, bucket));
+    expect(hitsAfterFive.length).toBe(5);
+
+    await requestMagicLink(email);
+
+    // Den sjette skal IKKE registrere et nytt treff — checkRateLimit() sin
+    // egen "ikke legg til en ny rad når allerede avvist"-oppførsel (en
+    // avvist forespørsel skal ikke i seg selv gjøre neste forespørsel enda
+    // mer avvist enn den allerede er, se rate-limit.ts sin egen kommentar).
+    const hitsAfterSix = await db.select().from(rateLimitHits).where(eq(rateLimitHits.bucket, bucket));
+    expect(hitsAfterSix.length).toBe(5);
   });
 });
 

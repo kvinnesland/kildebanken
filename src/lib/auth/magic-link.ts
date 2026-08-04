@@ -28,6 +28,25 @@ const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
  * "magic_link". Samme `AuthToken`, samme `verifyMagicLink()`.
  */
 export async function requestMagicLink(email: string): Promise<void> {
+  // SPEC-V1.md 18/6.1: "5 innloggingsforespørsler per ADRESSE per 15 min" —
+  // sjekkes FØR (ikke etter) brukeroppslaget, og nøkkelen er selve
+  // e-postSTRENGEN, ikke user.id. Reelt hull frem til nå (se NATTLOGG.md):
+  // den forrige rekkefølgen (oppslag først, deretter rategrense) returnerte
+  // tidlig på linje 37 under for en IKKE-eksisterende adresse, FØR
+  // checkRateLimit() noensinne ble kalt — et ubegrenset antall forespørsler
+  // mot en oppdiktet adresse traff dermed ALDRI noen rategrense i det hele
+  // tatt, stikk i strid med spec-ens egen ordlyd ("per adresse", ikke "per
+  // konto"), på dette offentlige, uautentiserte endepunktet. Bruker den
+  // delte, allerede atomisk-sikrede checkRateLimit() (security/rate-limit.ts,
+  // samme mønster som createDraft() i src/lib/requests/requests.ts) i stedet
+  // for en egen "SELECT COUNT så INSERT" her — en tidligere, hånd-rullet
+  // variant var et REELT kappløp: mange samtidige forespørsler for SAMME
+  // e-postadresse kunne alle lese samme (for lave) antall og alle bestå
+  // 5-grensen, siden ingen per-bucket advisory-lås serialiserte dem (se
+  // checkRateLimit() sin egen kommentar, task #42, for hvorfor det trengs).
+  const allowed = await checkRateLimit(db, `magic-link:${email}`, RATE_LIMIT_WINDOW_MS, MAX_REQUESTS_PER_WINDOW);
+  if (!allowed) return;
+
   const [user] = await db
     .select()
     .from(users)
@@ -36,17 +55,6 @@ export async function requestMagicLink(email: string): Promise<void> {
 
   if (!user) return;
   if (user.status === "suspended" || user.status === "deleted") return;
-
-  // Bruker den delte, allerede atomisk-sikrede checkRateLimit()
-  // (security/rate-limit.ts, samme mønster som createDraft() i
-  // src/lib/requests/requests.ts) i stedet for en egen "SELECT COUNT så
-  // INSERT" her — den forrige, hånd-rullede varianten var et REELT kappløp:
-  // mange samtidige forespørsler for SAMME e-postadresse kunne alle lese
-  // samme (for lave) antall og alle bestå 5-grensen (SPEC-V1.md 6.1), siden
-  // ingen per-bucket advisory-lås serialiserte dem (se checkRateLimit() sin
-  // egen kommentar, task #42, for hvorfor det trengs).
-  const allowed = await checkRateLimit(db, `magic-link:${user.id}`, RATE_LIMIT_WINDOW_MS, MAX_REQUESTS_PER_WINDOW);
-  if (!allowed) return;
 
   const rawToken = generateToken();
   await db.insert(authTokens).values({

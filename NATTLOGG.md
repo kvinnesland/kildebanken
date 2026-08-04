@@ -18284,3 +18284,110 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 91: fant og rettet en reell rategrense-omgåelse på et offentlig,
+uautentisert endepunkt — fullførte dermed hele SPEC-V1.md-gjennomgangen
+
+Fortsatte den fornyede SPEC-V1.md-gjennomgangen fra Økt 90, seksjon 18
+denne økten (Sikkerhet) — SISTE gjenværende seksjon, siden 19-23 allerede
+har egne, tidligere dedikerte sveiper (se økt-historikken).
+
+### Kvitteringer, ingen handling
+
+- HTTPS/HSTS, RBAC håndhevet i backend, CSRF, parametriserte spørringer
+  (Drizzle ORM), output-escaping (React), CSP — alle allerede bekreftet i
+  tidligere økter.
+- `svarinnsendinger` (10/time) og `forespørselsopprettelser` (20/døgn) sine
+  EKSAKTE tall stemmer med spec-en (`RESPONSE_RATE_LIMIT_MAX`/
+  `CREATE_DRAFT_RATE_LIMIT_MAX` i sine respektive filer).
+- Tokens lagres hashet, ingen personopplysninger i URL-er (alle
+  token-baserte lenker bruker opake tokens, aldri e-postadresser i
+  spørrestrengen).
+- Revisjonslogg på administrative handlinger og all deling av
+  kontaktopplysninger (FR-050, verifisert i tidligere økter).
+- 18.2 (sensitive, irreversible handlinger krever et eksplisitt
+  knappetrykk, aldri automatisk ved sidelasting) — allerede fikset
+  (task #58), og spec-referansen til en ikke-eksisterende "24.3" allerede
+  korrigert i en tidligere natt.
+- 18.1 (hvem kan lese et svar) — uendret, fortsatt en av de tre stående
+  åpne spørsmålene (motsigelse mot 16.2/FR-051), ikke noe nytt å legge
+  til denne økten.
+
+### Reelt funn: rategrensen for innloggingslenker gjaldt kun EKSISTERENDE
+kontoer, ikke "per adresse" slik spec-en faktisk sier
+
+18 sier eksplisitt: "5 innloggingsforespørsler per **adresse** per 15
+min." `requestMagicLink()` i `src/lib/auth/magic-link.ts` slo derimot
+opp brukeren FØRST, og returnerte umiddelbart (linje 37, `if (!user)
+return`) for en IKKE-eksisterende adresse — FØR `checkRateLimit()`
+noensinne ble kalt. Konsekvens: en angriper kunne sende et UBEGRENSET
+antall forespørsler mot `POST /api/auth/request-link` (offentlig,
+uautentisert) med en oppdiktet adresse, uten å treffe noen grense i det
+hele tatt — hver forespørsel utløste fortsatt et ekte, indeksert
+databaseoppslag. Dette er den mest alvorlige typen funn denne natten:
+en REELT utnyttbar sikkerhetssvakhet i DAG (ikke et dormant hull som
+først blir synlig med en fremtidig andre locale/land, slik flere
+tidligere økters funn har vært), på et offentlig endepunkt.
+
+**Retting**: flyttet `checkRateLimit()`-kallet til FØR
+brukeroppslaget, og byttet bucket-nøkkelen fra `magic-link:${user.id}`
+til `magic-link:${email}` — den rå adressen, tilgjengelig uansett om
+kontoen finnes. Dette er også en mer presis match for spec-teksten
+("per adresse", ikke "per konto"). Ingen endring i den ellers
+eksisterende, atomisk-sikrede `checkRateLimit()`-implementasjonen
+(task #42) — bare kallstedet og nøkkelen.
+
+**Ny test**: siden verken et token eller en e-post noensinne sendes
+for en ikke-eksisterende adresse (uansett om rategrensen faktisk
+håndheves), måtte selve `rate_limit_hits`-tabellen inspiseres direkte
+for å bevise at grensen registreres — seks kall mot samme oppdiktede
+adresse gir nøyaktig 5 rader i tabellen (den sjette avvises uten å
+legge til en ny rad, samme etablerte "ikke straff en allerede avvist
+forespørsel enda hardere"-oppførsel som `checkRateLimit()` sin egen
+kommentar beskriver).
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 87 filer, 482 tester, alle bestod uendret (denne
+  rettingen berører kun en integrasjonstestet funksjon).
+- `npx tsx src/i18n/check-keys.ts`: OK — 535 nøkler.
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 filer, ingen brudd.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 346
+  tester (345 + 1 ny), ALLE bestod — inkludert alle 16 eksisterende
+  `magic-link.integration.test.ts`-testene, uendret av
+  nøkkelbyttet (de bruker alle en KONSISTENT e-post per test, så
+  bucket-nøkkelens form endrer ikke observerbar oppførsel for dem).
+
+Committet: `src/lib/auth/magic-link.ts`,
+`src/lib/auth/magic-link.integration.test.ts`.
+
+### Neste økt
+
+Hele SPEC-V1.md er nå gjennomgått på nytt fra bunnen av, seksjon for
+seksjon (Økt 88-91: 9, 11-14, 15-17, 18 — seksjon 10 var allerede
+dekket av Økt 85-87 sitt arbeid samme natt, og 19-23 av enda tidligere,
+dedikerte sveiper). Et friskt spor for neste økt, i prioritert
+rekkefølge:
+1. Gitt hvor alvorlig denne øktens funn var (en reell, utnyttbar
+   rategrense-omgåelse), vurder et RASKT, målrettet søk etter LIGNENDE
+   "sjekk-etter-tidlig-return"-mønstre andre steder i kodebasen — andre
+   steder der en rategrense eller annen sikkerhetskontroll kan stå
+   ETTER en tidlig-return-gren i stedet for FØR den. Et konkret sted å
+   starte: gjennomgå ALLE offentlige, uautentiserte API-ruter
+   (`/api/subscribe`, `/api/report`, `/api/webhooks/*`) for tilsvarende
+   rekkefølgeproblemer.
+2. Deretter, en fornyet "ubrukte eksporter"-kjøring (mange filer endret
+   siden forrige kjøring i Økt 83-85).
+3. Deretter, en fornyet INFRASTRUCTURE.md/DESIGN.md-gjennomgang fra
+   bunnen av, som ikke har vært gjort like nylig som SPEC-V1.md nå har.
+Uendret, fortsatt de tre åpne spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.
