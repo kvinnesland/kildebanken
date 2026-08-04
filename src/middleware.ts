@@ -183,18 +183,45 @@ function generateNonce(): string {
 
 function buildCsp(nonce: string): string {
   // Ingen tredjepartsskript (DESIGN.md 3, "fontene selvhostes"). Ingen
-  // 'unsafe-inline' på verken script-src ELLER style-src —
-  // INFRASTRUCTURE.md 12 krever eksplisitt "CSP uten unsafe-inline".
-  // style-src trengte tidligere 'unsafe-inline' for den eneste
-  // komponenten som brukte React sin inline `style`-prop
-  // (`src/app/[locale]/page.tsx`, en midlertidig plassholderforside) —
-  // nå migrert til en CSS-modul (samme mønster som resten av kodebasen,
-  // håndhevet av `src/styles/check-tokens.ts`), så relaksjonen er ikke
-  // lenger nødvendig. Reelt avvik frem til nå, se NATTLOGG.md.
+  // 'unsafe-inline' på script-src — det er DENNE retningen (skript, den
+  // faktiske XSS-vektoren) INFRASTRUCTURE.md 12 sin "CSP uten
+  // unsafe-inline" reelt beskytter mot, håndhevet med nonce +
+  // 'strict-dynamic' som over.
+  //
+  // style-src derimot MÅ ha 'unsafe-inline' — presisert i INFRASTRUCTURE.md
+  // 12 selv, se NATTLOGG.md. Økt 77 fjernet den (fant riktig at
+  // `src/app/[locale]/page.tsx` var den ENESTE EGNE komponenten med en
+  // inline `style`-prop, og migrerte den til en CSS-modul), men verifiserte
+  // aldri mot en side som faktisk bruker `react-aria-components` sine
+  // skjema-komponenter (Select/Checkbox/RadioGroup — designsystemets EGET
+  // grunnlag, `src/components/Select.tsx` m.fl.) — kun mot placeholder-
+  // forsiden. En senere økt kjørte FAKTISK en Select-basert side i en ekte
+  // nettleser og fant at biblioteket sin interne `HiddenSelect`
+  // (`node_modules/react-aria/dist/private/select/HiddenSelect.js`, samme
+  // mekanisme brukes av Checkbox/RadioGroup sine skjulte native
+  // input-elementer) setter en INLINE `style`-attributt for å skjule det
+  // opprinnelige, tilgjengelighet-nødvendige native `<select>`/`<input>`-
+  // elementet (kommentert i biblioteket selv: kreves for at nettleserens
+  // autoutfylling skal fungere i Safari, og for at Firefox skal koble en
+  // <label> til elementet) — UTEN 'unsafe-inline' blokkerer CSP-en akkurat
+  // DENNE stilen, og det skjulte elementet blir stående synlig og
+  // klikkbart, som et ekte, dupelisert natvt nedtrekk rett under det
+  // egentlige, stylede elementet. Ikke noe applikasjonens EGEN kode kan
+  // fikse (biblioteket eier mekanismen), og CSP-noncer dekker per
+  // spesifikasjonen ALDRI `style`-attributter (kun `<style>`-elementer) —
+  // kun `'unsafe-hashes'` + forhåndsberegnede hasher for hver eksakte
+  // stilstreng biblioteket produserer ville vært et alternativ, men er
+  // skjørt (enhver versjonsoppgradering av react-aria-components kunne
+  // stille endre stilene og gjeninnføre feilen usett, siden ingen egen
+  // test her dekker akkurat DENNE mekanismen). style-src sin 'unsafe-inline'
+  // er en velkjent, vesentlig lavere risiko enn script-src sin (CSS alene
+  // kan ikke kjøre vilkårlig JavaScript) — en akseptert, dokumentert
+  // avveining, ikke et tilbakefall til den opprinnelige, uspesifiserte
+  // tilstanden.
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
-    "style-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data:",
     "font-src 'self'",
     "connect-src 'self'",

@@ -17169,3 +17169,170 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 81: kjørte de fire gjenværende `tick.ts`-jobbene mot sådd data
+(rent), og fant/rettet en REELL, alvorlig CSP-regresjon fra Økt 77 via
+et faktisk journalist-søknadsforsøk i nettleser
+
+To deler igjen. Del 1 var ren bekreftelse. Del 2 fant noe reelt og
+alvorlig.
+
+### Del 1: `runExpireRequests`/`runDeadlineReminders`/
+`runStaleRequestReminders`/`runPurgeUnverified` mot sådd data
+
+Fortsatte Økt 80 sin metode til de fire resterende jobbene i
+`tick.ts`. Sådde ett testland med tre forespørsler (én med utløpt
+frist, én med frist om 12 timer, én publisert for 35 dager siden) og
+én ubekreftet bruker (opprettet for 20 dager siden, MED en realistisk
+`authTokens`- og `consentRecords`-rad — samme mønster som
+`runPurgeUnverified()`s egen kommentar advarer om). Kalte alle fire
+funksjonene direkte og sjekket FAKTISK databasetilstand etterpå: alle
+fire fungerte korrekt (forespørselen ble `expired`, begge
+påminnelsesfeltene ble satt, mottaker-e-postene faktisk sendt via
+stubben med riktig innhold, og den ubekreftede brukeren faktisk
+slettet). Ingen kodefeil funnet — hele `tick.ts` er nå bekreftet mot
+faktisk kjøring, ikke bare enhetstester.
+
+### Del 2: et faktisk journalist-søknadsforsøk avslører en reell
+CSP-regresjon fra Økt 77
+
+Fortsatte deretter til den lenge planlagte live-nettleser-sjekken av
+journalist-søknadsflyten (`/journalists/apply`, nevnt siden Økt 78).
+Sådde et testland med publisert `journalist_terms`-dokument, startet
+en EKTE produksjonsserver (`next build` + `next start`, samme mønster
+som Økt 77 sin CSP-verifisering — bevisst IKKE `next dev`, som viste
+seg å ha sin EGEN, urelaterte CSP-konflikt: webpack sin utviklingsmodus
+bruker `eval()`-basert HMR, som `script-src` sin `strict-dynamic` uten
+`unsafe-eval` korrekt blokkerer — forventet, ikke en feil), og drev
+skjemaet med Playwright.
+
+**Funnet**: å velge land i det stylede nedtrekket ("Land") viste et
+ANDRE, stygt natvt `<select>`-nedtrekk med SAMME verdi RETT UNDER det
+egentlige, stylede elementet — synlig og faktisk klikkbart, i en
+faktisk produksjonsserver, ikke bare i test. Samme mønster for
+"Språk". Konsollen viste gjentatte
+`Refused to apply inline style because it violates ... "style-src
+'self'"`-feil.
+
+**Rotårsak, sporet til biblioteket selv**
+(`node_modules/react-aria/dist/private/select/HiddenSelect.js`):
+`react-aria-components` sin `Select` (og, samme mekanisme, `Checkbox`/
+`RadioGroup` — designsystemets EGET fundament, `src/components/`)
+rendrer INTERNT et skjult, men tilgjengelighet-nødvendig natvt
+`<select>`/`<input>`-element, skjult via `useVisuallyHidden()` — som
+setter en INLINE `style`-attributt. Bibliotekets egen kommentar
+forklarer HVORFOR: "In Safari, the `<select>` cannot have
+`display: none` ... for autofill to work. In Firefox, there must be a
+`<label>` ... The solution is to use `<VisuallyHidden>` ..." — en
+reell, dokumentert nettleserkompatibilitetsgrunn, ikke en tilfeldighet.
+`style-src 'self'` (UTEN `unsafe-inline`, Økt 77 sin retting) blokkerer
+akkurat denne stilen, og det skjulte elementet forblir synlig og
+interaktivt.
+
+**Hvorfor Økt 77 ikke fanget dette**: den økten verifiserte CSP-en KUN
+mot plassholder-forsiden (`/`), som ikke bruker noen
+`react-aria-components`-skjemakomponent i det hele tatt — den fant og
+rettet et EKTE, isolert `unsafe-inline`-avvik i akkurat DEN siden
+(riktig gjort), men konkluderte feilaktig at hele appen var trygg uten
+å ha testet en eneste side med en faktisk Select/Checkbox. Nøyaktig det
+samme mønsteret som denne økten selv nå demonstrerer verdien av: en
+antatt fiks er ikke bekreftet før den er prøvd mot en REPRESENTATIV
+side, ikke bare en enkel én.
+
+**Vurderte og forkastede alternativer** før retting:
+- `'unsafe-hashes'` + forhåndsberegnede hasher for de eksakte
+  stilstrengene biblioteket produserer: teknisk mulig (CSP3 sin
+  hash-basert allow-listing for attributter), men skjørt — enhver
+  fremtidig versjonsoppgradering av `react-aria-components` kunne
+  stille endre disse eksakte strengene og gjeninnføre nøyaktig samme
+  feil, usett, siden ingen eksisterende test i kodebasen dekker denne
+  spesifikke mekanismen direkte.
+- CSP-noncer på `style-src`: dekker per spesifikasjonen ALDRI
+  `style`-ATTRIBUTTER (kun `<style>`-elementer) — ikke en mulig løsning
+  her, uavhengig av hvor bra noncen ellers fungerer for `script-src`.
+
+**Retting**: `style-src` fikk `'unsafe-inline'` tilbake (samme
+konfigurasjon som FØR Økt 77), MEN `script-src` er UENDRET og fortsatt
+helt uten `unsafe-inline`/`unsafe-eval` — det er `script-src`, ikke
+`style-src`, som er den faktiske XSS-forsvarslinjen INFRASTRUCTURE.md
+12 sitt krav reelt beskytter. `page.tsx`s egen migrering til CSS-modul
+(Økt 77) beholdes uendret — ingen egen komponent skal bruke inline
+`style`-proppen, kun det som er utenfor applikasjonens kontroll
+(biblioteket) trenger relaksjonen. Rettet SPEC (INFRASTRUCTURE.md 12)
+FØRST med den fulle begrunnelsen, deretter koden
+(`buildCsp()`/`middleware.ts`), som regelen krever. Delte den ene,
+upresise testen i `middleware.test.ts` ("inneholder ALDRI
+'unsafe-inline', verken på script-src eller style-src") i TO presise
+tester: én som bekrefter `script-src` ALDRI har `unsafe-inline`, én som
+bekrefter `style-src` BEVISST HAR det.
+
+**Verifisert LEVENDE, ikke bare i tester**: etter fiksen, kjørte
+samme Playwright-flyt mot en fersk `next build`/`next start` på nytt.
+Skjermbilde bekrefter det duplisert-nedtrekket er BORTE — kun ett,
+stylet element for både Land og Språk, ingen synlig natvt
+reserve-element. (Et eget, urelatert 500-svar dukket opp ved selve
+innsendingen — `sendTransactionalEmail()` nekter bevisst å falle
+tilbake til stubb-logging når `BREVO_API_KEY` mangler i
+produksjonsmodus, task #115 sin allerede korrekte, tilsiktede
+oppførsel — sandkassemiljøet her har aldri en ekte Brevo-nøkkel, så
+dette er en kjent, akseptert grense for hvor langt en fullstendig
+produksjonsmodus-E2E-test kan nå her, ikke en ny feil.)
+
+**Et driftsuhell underveis, verdt å notere for fremtidige økter**: et
+`pkill`-forsøk på å stoppe en kjørende `next start`-prosess "lyktes"
+tilsynelatende (tom `ps aux`-utskrift), men den underliggende
+`next-server`-prosessen overlevde faktisk og fortsatte å lytte på
+porten — en påfølgende `next start` FEILET stille i bakgrunnen med
+`EADDRINUSE` (kun synlig i loggfilen, ikke i selve kommandoutskriften),
+og ALLE påfølgende `curl`/Playwright-sjekker traff derfor den GAMLE,
+urettede serveren i flere runder, og ga et falskt "fiksen virker
+ikke"-inntrykk før dette ble oppdaget og prosessen ble drept direkte
+med PID (`kill -9`). Verdt å huske: bekreft ALLTID at en bakgrunnsserver
+faktisk startet (sjekk loggfilen for feil, ikke bare at `curl` svarer
+200 — en gjenværende gammel prosess svarer jo også 200) etter enhver
+omstart under en fiks-og-reverifiser-syklus.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 86 filer, 471 tester (470 + 1 ny).
+- `npx tsx src/i18n/check-keys.ts`: OK — 533 nøkler (uendret).
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 filer, ingen brudd.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 345
+  tester, ALLE bestod uendret.
+- Levende verifisering: full `next build` + `next start` +
+  Playwright-drevet skjemautfylling, se over — skjermbilde tatt før og
+  etter fiksen.
+
+Committet: `src/middleware.ts`, `src/middleware.test.ts`,
+`INFRASTRUCTURE.md`.
+
+**Opprydding**: alle scratch-scriptene fra begge deler av økten
+(`scratch-run-remaining-jobs.ts`,
+`scratch-seed-journalist-apply.ts`,
+`scratch-playwright-journalist-apply.mjs`,
+`scratch-debug-submit.mjs`, og noen korte engangs-debug-script som ble
+slettet fortløpende) ble slettet, alle sådde testland/brukere/
+forespørsler ble ryddet fra utviklingsdatabasen, og produksjonsserveren
+ble stoppet (med `kill -9` direkte på PID, se driftsnotatet over).
+
+### Neste økt
+
+Med denne rettingen er BÅDE `script-src` og `style-src` nå verifisert
+LEVENDE mot en representativ side (ikke bare plassholderforsiden) —
+verdt å vurdere en rask, bred sveip: kjør samme
+Playwright-mot-produksjonsserver-sjekk mot MINST én side per
+skjema-komponenttype i `src/components/` (Select er nå bekreftet,
+Checkbox delvis via samme flyt, men RadioGroup/TextArea er ALDRI
+sjekket denne veien) for å bekrefte at ingen ANDRE, ennå uoppdagede
+CSP-konflikter finnes andre steder i `react-aria-components` sin
+interne bruk. Uendret, fortsatt de tre åpne spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.

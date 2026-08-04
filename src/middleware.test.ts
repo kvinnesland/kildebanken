@@ -38,12 +38,24 @@ describe("middleware — locale-oversatte forespørsel-stier (SPEC-V1.md 3.7)", 
 });
 
 describe("middleware — Content-Security-Policy (INFRASTRUCTURE.md 12: 'CSP uten unsafe-inline')", () => {
-  it("inneholder ALDRI 'unsafe-inline', verken på script-src eller style-src", () => {
+  it("script-src inneholder ALDRI 'unsafe-inline' — dette er den faktiske XSS-vektoren kravet beskytter mot", () => {
     const response = middleware(makeRequest("/nb-NO/me"));
     const csp = response.headers.get("Content-Security-Policy");
-
     expect(csp).not.toBeNull();
-    expect(csp).not.toContain("unsafe-inline");
+
+    const scriptSrc = csp?.split(";").find((d) => d.trim().startsWith("script-src"));
+    expect(scriptSrc).toBeDefined();
+    expect(scriptSrc).not.toContain("unsafe-inline");
+  });
+
+  it("style-src har BEVISST 'unsafe-inline' — react-aria-components sin interne HiddenSelect-mekanisme (Select/Checkbox/RadioGroup) krever det, se buildCsp() sin egen kommentar og NATTLOGG.md", () => {
+    const response = middleware(makeRequest("/nb-NO/me"));
+    const csp = response.headers.get("Content-Security-Policy");
+    expect(csp).not.toBeNull();
+
+    const styleSrc = csp?.split(";").find((d) => d.trim().startsWith("style-src"));
+    expect(styleSrc).toBeDefined();
+    expect(styleSrc).toContain("unsafe-inline");
   });
 
   it("setter en per-forespørsel nonce på script-src, delt med x-nonce-headeren", () => {

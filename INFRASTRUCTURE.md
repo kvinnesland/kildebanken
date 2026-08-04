@@ -347,8 +347,26 @@ Loggretensjon settes til seks måneder for å matche `SPEC-V1.md` 17.4.
 - Ukentlig avhengighetsskanning. CI feiler på kjente kritiske sårbarheter.
 - Rate limiting lagres i Postgres, ikke i minnet per instans – ellers er grensen
   i `SPEC-V1.md` 18 ganget med antall instanser.
-- HSTS, CSP uten `unsafe-inline`, `X-Content-Type-Options`, `Referrer-Policy:
+- HSTS, CSP uten `unsafe-inline` på `script-src` (den faktiske
+  XSS-vektoren — håndhevet med en per-forespørsel nonce og
+  `strict-dynamic`), `X-Content-Type-Options`, `Referrer-Policy:
   strict-origin-when-cross-origin`.
+
+  `style-src` er et bevisst UNNTAK og HAR `unsafe-inline` (rettet under
+  autonomt arbeid, se `NATTLOGG.md` — en tidligere økt fjernet den også
+  her, men verifiserte det aldri mot en side med faktiske
+  skjema-komponenter). Designsystemets underliggende bibliotek
+  (`react-aria-components`, `src/components/Select.tsx`/`Checkbox.tsx`
+  m.fl.) setter en inline `style`-attributt på et skjult, men
+  tilgjengelighet-nødvendig natvt `<select>`/`<input>`-element internt
+  (kreves for at nettleserens autoutfylling skal fungere i Safari og at
+  Firefox skal koble riktig `<label>`) — uten `unsafe-inline` blokkeres
+  akkurat denne stilen, og elementet blir stående synlig og klikkbart i
+  stedet for skjult. CSP-noncer dekker aldri `style`-attributter (kun
+  `<style>`-elementer), og siden mekanismen eies av biblioteket, ikke
+  applikasjonens egen kode, er dette ikke noe egen kode kan fikse.
+  `unsafe-inline` på `style-src` er en anerkjent, vesentlig lavere risiko
+  enn på `script-src` (CSS alene kan ikke kjøre vilkårlig JavaScript).
 - Ingen tredjepartsskript. Fontene selvhostes (`DESIGN.md` 3).
 
 ---
