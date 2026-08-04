@@ -28,6 +28,7 @@ import {
   sessions,
   users,
 } from "@/db/schema";
+import { sanitizeErrorMessage } from "@/lib/jobs/error-sanitize";
 
 const RETENTION_PERIOD = {
   responseMonthsAfterClose: 12,
@@ -127,7 +128,7 @@ async function purgeOldResponses(
 
     return { category: "responses", dryRun, affectedCount: candidates.length, errors };
   } catch (err) {
-    errors.push((err as Error).message);
+    errors.push(sanitizeErrorMessage(err));
     return { category: "responses", dryRun, affectedCount: 0, errors };
   }
 }
@@ -179,7 +180,7 @@ async function purgeOldContactRequests(
 
     return { category: "contact_requests", dryRun, affectedCount: candidates.length, errors };
   } catch (err) {
-    errors.push((err as Error).message);
+    errors.push(sanitizeErrorMessage(err));
     return { category: "contact_requests", dryRun, affectedCount: 0, errors };
   }
 }
@@ -260,7 +261,7 @@ async function purgeRejectedJournalistApplications(
       errors,
     };
   } catch (err) {
-    errors.push((err as Error).message);
+    errors.push(sanitizeErrorMessage(err));
     return { category: "rejected_journalist_applications", dryRun, affectedCount: 0, errors };
   }
 }
@@ -286,7 +287,7 @@ async function purgeOldAuditLogs(
 
     return { category: "audit_logs", dryRun, affectedCount: candidates.length, errors };
   } catch (err) {
-    errors.push((err as Error).message);
+    errors.push(sanitizeErrorMessage(err));
     return { category: "audit_logs", dryRun, affectedCount: 0, errors };
   }
 }
@@ -311,7 +312,7 @@ async function purgeOldDigests(dbase: Database, dryRun: boolean): Promise<Retent
 
     return { category: "digests", dryRun, affectedCount: candidates.length, errors };
   } catch (err) {
-    errors.push((err as Error).message);
+    errors.push(sanitizeErrorMessage(err));
     return { category: "digests", dryRun, affectedCount: 0, errors };
   }
 }

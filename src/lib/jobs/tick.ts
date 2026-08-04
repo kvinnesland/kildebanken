@@ -29,6 +29,7 @@ import { generateToken, hashToken } from "@/lib/auth/tokens";
 import { isSupportedLocale, PLATFORM_DEFAULT_LOCALE, type SupportedLocale } from "@/i18n/config";
 import { createTranslator } from "@/i18n/get-messages";
 import { runRetention } from "@/lib/jobs/retention";
+import { sanitizeErrorMessage } from "@/lib/jobs/error-sanitize";
 import {
   insertPerRecipientTokens,
   renderDigestContent,
@@ -198,7 +199,7 @@ export async function runDigestTick(dbase: Database): Promise<TickResult> {
 
       processed += 1;
     } catch (err) {
-      errors.push(`${country.code}: ${(err as Error).message}`);
+      errors.push(`${country.code}: ${sanitizeErrorMessage(err)}`);
       // Bevisst: feil i ett land stopper ikke de andre (FR-036).
     }
   }
@@ -372,7 +373,7 @@ async function sendDigestToRecipients(
         .where(eq(digestDeliveries.id, deliveryId));
       sentCount += 1;
     } catch (err) {
-      const message = (err as Error).message;
+      const message = sanitizeErrorMessage(err);
       errors.push(`mottaker ${recipient.userId}: ${message}`);
       // Én mottakers feil stopper ikke resten av landets utsendelse (FR-036
       // gjelder land — samme prinsipp håndheves her på mottakernivå).
@@ -499,7 +500,7 @@ export async function runDeadlineReminders(dbase: Database): Promise<TickResult>
         .where(eq(requests.id, r.id));
       processed += 1;
     } catch (err) {
-      errors.push(`${r.id}: ${(err as Error).message}`);
+      errors.push(`${r.id}: ${sanitizeErrorMessage(err)}`);
     }
   }
 
@@ -554,7 +555,7 @@ export async function runStaleRequestReminders(dbase: Database): Promise<TickRes
         .where(eq(requests.id, r.id));
       processed += 1;
     } catch (err) {
-      errors.push(`${r.id}: ${(err as Error).message}`);
+      errors.push(`${r.id}: ${sanitizeErrorMessage(err)}`);
     }
   }
 
@@ -613,7 +614,7 @@ export async function runPurgeUnverified(dbase: Database): Promise<TickResult> {
       await dbase.delete(users).where(eq(users.id, candidate.id));
       processed += 1;
     } catch (err) {
-      errors.push(`${candidate.id}: ${(err as Error).message}`);
+      errors.push(`${candidate.id}: ${sanitizeErrorMessage(err)}`);
     }
   }
 

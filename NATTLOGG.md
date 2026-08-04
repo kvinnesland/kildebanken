@@ -18618,3 +18618,120 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 94: fant og rettet et reelt PII-i-logg-hull i jobbfeilhåndteringen
+— fullførte dermed hele den fornyede INFRASTRUCTURE.md-gjennomgangen
+
+Fullførte den fornyede INFRASTRUCTURE.md-gjennomgangen fra Økt 93,
+seksjon 16 denne økten (Stadium 0 — det FAKTISKE, kjørende oppsettet).
+
+### Kvitteringer, ingen handling
+
+- `netlify.toml` og `netlify/functions/tick.ts` stemmer eksakt med
+  16.8s portabilitetsregler: `netlify.toml` er den ENESTE filen som vet
+  om Netlify, `tick.ts`-adapteren er en ren, tynn wrapper rundt
+  `src/lib/jobs/tick.ts` sin `runTick()`, ingen forretningslogikk i
+  adapteren selv.
+- 16.3 sin "bli vekket og sjekk"-modell (i stedet for en alltid-kjørende
+  worker) stemmer med den faktiske tikkejobb-implementasjonen —
+  idempotensen ligger i databasens unike indekser, ikke i en
+  lytteprosess, akkurat som beskrevet.
+- 16.1, 16.4-16.7 (Vercel-vurderingen, grensetabellen, det bevisste
+  EØS-avviket, de vurderte europeiske alternativene) — alle
+  driftsbeslutninger uten en tilsvarende kodeforpliktelse å verifisere.
+
+### Reelt funn: rå leverandør-/databasefeilmeldinger kunne inneholde en
+ekte e-postadresse, og endte alltid i logg
+
+Gjennomgikk hele feilhåndteringskjeden fra jobbfeil til logg: ethvert
+`catch`-blokk i `tick.ts`/`retention.ts` sine jobbløkker pusher en
+feilmelding til et `errors: string[]`, som til slutt returneres fra
+`runTick()` som del av `TickSummary` — og `netlify/functions/tick.ts`
+logger DENNE, ubetinget, via `console.log`/`console.error` og
+`JSON.stringify()`, HVER gang tikkejobben kjører (hvert 15. minutt).
+Ti steder brukte `(err as Error).message` DIREKTE, uten noen form for
+sanering: fem i `tick.ts` (digest-utsendelse per land, digest-utsendelse
+per mottaker, påminnelse 24t, påminnelse 30 dager,
+sletting av ubekreftede kontoer) og fem i `retention.ts` (én per
+retensjonskategori).
+
+**Hvorfor dette er en reell, ikke bare teoretisk, PII-lekkasje**: Brevo
+sin egen API kan i praksis returnere en feilmelding som ekkoer tilbake
+den avviste mottakerens adresse (f.eks. en valideringsfeil for en
+ugyldig eller sperret adresse) — `sendViaBrevo()` (`send.ts`) kaster
+allerede den RÅ responskroppen uendret i sin egen feilmelding
+(`Brevo-sending feilet (\${status}): \${body}`). Tilsvarende kan enkelte
+Postgres-feilmeldinger (f.eks. et unikhetsbrudd) inkludere selve
+kolonneverdien. INFRASTRUCTURE.md 10 sier eksplisitt: "Personopplysninger
+logges ikke: ingen e-postadresser, ingen svartekst" — dette var aldri
+faktisk håndhevet for jobbfeil, bare for de bevisste, allerede
+dokumenterte unntakene i `send.ts`.
+
+**Retting**: ny, delt funksjon `sanitizeErrorMessage()`
+(`src/lib/jobs/error-sanitize.ts`) — fjerner ethvert e-postformet
+mønster fra en feilmelding FØR den noensinne havner i et
+`errors`-array. En GENERELL reservesperre (regex-basert), ikke en
+avhengighet av å kjenne alle mulige feiltekstformater fra hver
+leverandør/databasedriver på forhånd — samme prinsipp som 9 sin egen
+"loggredaktør på kjente nøkkelnavn", generalisert til e-postformede
+mønstre siden det faktiske formatet på en fremtidig leverandørfeil ikke
+er kjent på forhånd. Alle ti steder i `tick.ts`/`retention.ts` erstattet.
+
+**Bevisst utelatt denne økten**: `digests.ts` sin
+`retryFailedDigestDeliveries()` (linje 261) lagrer også en rå
+`(err as Error).message` — men KUN til `digestDeliveries.errorMessage`
+(en DATABASEKOLONNE, admin-synlig via 16.2 sin "Utsendelser"-side, ikke
+noe som JSON.stringify'es til driftslogger av tikkejobben). Annen
+alvorlighetsgrad og risikoklasse (tilgangsbegrenset til roller med
+allerede berettiget tilgang til leveransedata, ikke ubegrenset
+logg-tilgang) — notert som et mulig, lavere prioritert oppfølgingsspor,
+ikke rettet nå for å holde denne øktens endring presist avgrenset til
+det som faktisk beviselig havner i logger.
+
+**Nye tester**: fem nye enhetstester for `sanitizeErrorMessage()` i
+`error-sanitize.test.ts` — fjerner én adresse, fjerner flere adresser i
+samme melding, lar en melding UTEN adresse stå uendret, og håndterer et
+kastet objekt som ikke er en ekte `Error`-instans.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 88 filer, 487 tester (482 + 5 nye).
+- `npx tsx src/i18n/check-keys.ts`: OK — 535 nøkler.
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 filer, ingen brudd.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 349
+  tester, ALLE bestod uendret — ingen eksisterende
+  `tick.integration.test.ts`/`retention.integration.test.ts`-test
+  asserterer på selve feilmeldingens ordlyd, kun på om en feil
+  registreres i det hele tatt, så refaktoreringen endret ingenting
+  observerbart for dem.
+
+Committet: `src/lib/jobs/error-sanitize.ts` (ny fil),
+`src/lib/jobs/error-sanitize.test.ts` (ny fil), `src/lib/jobs/tick.ts`,
+`src/lib/jobs/retention.ts`.
+
+### Neste økt
+
+Hele INFRASTRUCTURE.md er nå gjennomgått på nytt fra bunnen av
+(Økt 92-94: seksjon 1-8, 9-16). Et friskt spor for neste økt, i
+prioritert rekkefølge:
+1. En tilsvarende fornyet DESIGN.md-gjennomgang fra bunnen av — ikke
+   gjort like nylig som SPEC-V1.md/INFRASTRUCTURE.md nå har.
+2. Vurder om `digests.ts` sin `retryFailedDigestDeliveries()`
+   (linje 261) også bør bruke `sanitizeErrorMessage()` for
+   `digestDeliveries.errorMessage` — lavere prioritet (database-lagring,
+   ikke ubetinget logging), men verdt en bevisst beslutning fremfor en
+   stille forbigåelse.
+3. `drizzle-orm`s SQL-identifikator-escaping-sårbarhet (nevnt Økt 93,
+   ikke fulgt opp ennå) — vurder om den faktisk er ufarlig i praksis
+   eller bør prioriteres for en dedikert major-oppgradering.
+Uendret, fortsatt de tre åpne spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.
