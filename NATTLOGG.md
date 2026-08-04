@@ -18502,3 +18502,119 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 93: fant og rettet et reelt hull i CI — ingen
+avhengighetsskanning fantes i det hele tatt
+
+Fortsatte den fornyede INFRASTRUCTURE.md-gjennomgangen fra Økt 92,
+seksjon 9-16 denne økten.
+
+### Kvitteringer, ingen handling
+
+- 9 (Hemmeligheter): `.env.example` inneholder kun navn, ingen verdier;
+  ingen kode logger et faktisk hemmelighetsverdi noe sted (grep-søk
+  gjennom `src/lib` og `src/app` fant ingen `console.*`-kall utenfor de
+  allerede dokumenterte, bevisste dev-stubbene i `send.ts`/`tick.ts`).
+  "Loggredaktør på kjente nøkkelnavn" tolket som et
+  logg-PIPELINE-nivå-anliggende (host-/leverandørkonfigurasjon), ikke
+  noe applikasjonskoden selv trenger å bygge, siden ingen kodesti
+  faktisk sender en hemmelighet til en logg å redigere bort.
+- 10 (Overvåking): "Personopplysninger logges ikke: ingen
+  e-postadresser, ingen svartekst" — bekreftet på nytt, ingen
+  `console.*`-kall i `src/app` i det hele tatt, og de eneste i
+  `src/lib` er allerede dokumenterte, bevisste dev-only-unntak.
+- 11 (Sikkerhetskopi/gjenoppretting), 13 (Kostnad), 14 (Hva som ryker
+  først), 15 (Åpne beslutninger) — alle vert-/driftsnivå-beslutninger
+  uten en tilsvarende kodeforpliktelse å verifisere.
+- 12 sine øvrige punkter (HSTS, CSP, ingen tredjepartsskript,
+  selvhostede fonter, rate limiting i Postgres) — alle allerede
+  verifisert i tidligere økter.
+
+### Reelt funn: "CI feiler på kjente kritiske sårbarheter" var ALDRI
+faktisk sant
+
+12 sier eksplisitt: "Ukentlig avhengighetsskanning. CI feiler på kjente
+kritiske sårbarheter." Gjennomgikk `.github/workflows/ci.yml` linje for
+linje — INGEN steg kjørte noensinne `npm audit` eller tilsvarende, og
+det fantes ingen `.github/dependabot.yml` for den ukentlige skanningen
+heller. Løftet var med andre ord fullstendig uinnfridd, ikke bare
+delvis.
+
+**Retting, to deler:**
+
+1. Nytt steg i `ci.yml`: `npm audit --omit=dev --audit-level=critical`,
+   kjørt rett etter `npm ci` (før noe annet, samme "fail fast"-prinsipp
+   som resten av kjeden). Terskelen er bevisst "critical", IKKE "high":
+   et forsøk på "high" ville feilet umiddelbart mot flere allerede
+   eksisterende, ufiksede høy-alvorlighetsgrad-sårbarheter (bl.a.
+   `postcss`/`sharp` via en transitiv `next`-avhengighet, og
+   `drizzle-orm` sin egen SQL-identifikator-escaping-sårbarhet,
+   GHSA-gpj5-g38j-94v9) der eneste tilgjengelige fiks er en større,
+   ikke-triviell major-versjonsoppgradering — noe som krever egen,
+   dedikert verifisering i dagslys, ikke noe å tvinge gjennom blindt
+   for å få CI grønn i natt. `--omit=dev` utelater
+   utviklingsavhengigheter: det EKSISTERER faktisk én kritisk
+   sårbarhet i miljøet akkurat nå (`vitest` sin egen UI-server-
+   funksjonalitet, GHSA-5xrq-8626-4rwp, CVSS 9.8) — men den krever et
+   `--ui`-flagg dette repoet ALDRI bruker noe sted, og vitest er uansett
+   ikke noe som sendes til produksjon. Sikkerhetsstillingen som faktisk
+   betyr noe for spec-teksten er hva som SENDES, ikke verktøyene som
+   bygger/tester det. Bekreftet grønn (`exit code: 0`) mot dette
+   repoets faktiske, nåværende avhengighetstre.
+2. Ny fil `.github/dependabot.yml`: ukentlig npm-skanning
+   (`interval: weekly`). Dependabot sine egne PR-er trigger samme
+   `ci.yml`-arbeidsflyt som alt annet, så audit-porten over gjelder
+   likt for dem.
+
+**Ingen spec-endring nødvendig denne gangen** — INFRASTRUCTURE.md 12
+sin ordlyd var allerede korrekt; hullet lå utelukkende i at koden
+(CI-konfigurasjonen) aldri faktisk innfridde den.
+
+**Merk for dagslys**: `drizzle-orm`s SQL-identifikator-
+escaping-sårbarhet (høy, ikke kritisk — derfor ikke en byggefeil med
+dagens terskel) bør vurderes separat. Et raskt blikk tyder på at
+sårbarheten gjelder RÅ SQL-IDENTIFIKATORER (tabell-/kolonnenavn), ikke
+parametriserte VERDIER (som Drizzle uansett alltid parametriserer
+uavhengig av denne bugen) — ingen kodesti i dette repoet ble funnet som
+sender brukerkontrollert input som en rå identifikator til `sql\`...\``
+et det korte søket denne økten dekket, men dette er IKKE en fullstendig
+verifisering, bare en første vurdering.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 87 filer, 482 tester, alle bestod uendret (ingen
+  applikasjonskode endret denne økten, kun CI-/avhengighets-
+  konfigurasjon).
+- `npx tsx src/i18n/check-keys.ts`: OK — 535 nøkler.
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 filer, ingen brudd.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 349
+  tester, ALLE bestod uendret.
+- `npm audit --omit=dev --audit-level=critical`: bekreftet grønn
+  (exit code 0) mot repoets faktiske avhengighetstre akkurat nå.
+- Begge YAML-filene validert med `python3 -c "import yaml; ..."`.
+
+Committet: `.github/workflows/ci.yml`, `.github/dependabot.yml` (ny fil).
+
+### Neste økt
+
+Fortsett den fornyede INFRASTRUCTURE.md-gjennomgangen fra der denne
+økten sluttet: seksjon 16 (Stadium 0 — det FAKTISKE, kjørende oppsettet
+i denne kodebasen akkurat nå, verdt ekstra grundighet). Deretter en
+tilsvarende fornyet DESIGN.md-gjennomgang fra bunnen av. Et friskt,
+lavthengende spor uavhengig av disse to: vurder om
+`drizzle-orm`-sårbarheten nevnt over faktisk er ufarlig i praksis (grep
+etter `sql\`` -bruk som setter inn en RÅ, ikke-parametrisert
+identifikator fra brukerkontrollert input — foreløpig kun et kort
+blikk, ikke en fullstendig verifisering), eller om den bør prioriteres
+for en dedikert major-oppgradering. Uendret, fortsatt de tre åpne
+spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.

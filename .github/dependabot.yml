@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # INFRASTRUCTURE.md 12: "Ukentlig avhengighetsskanning." Manglet helt
+  # frem til nå (se NATTLOGG.md) — ingen Dependabot-konfigurasjon fantes,
+  # så ingen periodisk skanning skjedde i det hele tatt utover den
+  # per-push npm audit-porten i .github/workflows/ci.yml (som fanger nye
+  # sårbarheter kun når noen faktisk pusher kode, ikke løpende). Dependabot
+  # sine egne PR-er trigger samme CI-arbeidsflyt som alt annet, så
+  # audit-porten der gjelder likt for disse.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"

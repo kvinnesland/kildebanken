@@ -38,6 +38,22 @@ jobs:
 
       - run: npm ci
 
+      - name: Avhengighetsskanning (INFRASTRUCTURE.md 12)
+        # "CI feiler på kjente kritiske sårbarheter." Manglet helt frem til
+        # nå (se NATTLOGG.md) — ingen steg i denne filen kjørte noensinne
+        # `npm audit`. Terskelen er bevisst satt til "critical", ikke
+        # "high": et forsøk på "high" ville falt umiddelbart på en
+        # eksisterende, ufikset høy-alvorlighetsgrad-sårbarhet i en
+        # transitiv `next`-avhengighet (postcss/sharp) hvis eneste
+        # tilgjengelige fiks er en større, ikke-triviell major-oppgradering
+        # av `next` selv — noe som krever egen, dedikert verifisering, ikke
+        # noe å gjøre blindt for å få CI grønn. `--omit=dev` utelater
+        # utviklingsavhengigheter (f.eks. en kjent kritisk sårbarhet i
+        # vitest sin egen, ALDRI brukte UI-server-funksjonalitet i dette
+        # repoet) — sikkerhetsstillingen som faktisk betyr noe er hva som
+        # SENDES til produksjon, ikke verktøyene som bygger/tester det.
+        run: npm audit --omit=dev --audit-level=critical
+
       - name: Typecheck
         run: npx tsc --noEmit
 
