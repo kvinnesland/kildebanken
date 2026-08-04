@@ -23,6 +23,7 @@ import {
 } from "@/lib/email/digest";
 import { checkModeratorForCountry, getAssignedCountryCodes } from "@/lib/auth/authorize";
 import type { CurrentSession } from "@/lib/auth/session";
+import { sanitizeErrorMessage } from "@/lib/jobs/error-sanitize";
 
 export interface DigestListItem {
   id: string;
@@ -256,9 +257,14 @@ export async function retryFailedDigestDeliveries(digestId: string): Promise<Ret
         .where(eq(digestDeliveries.id, delivery.deliveryId));
       retriedCount += 1;
     } catch (err) {
+      // INFRASTRUCTURE.md 10 — se sanitizeErrorMessage() sin egen kommentar
+      // (jobs/error-sanitize.ts). Lagres i en admin-synlig databasekolonne,
+      // ikke direkte til driftslogg, men samme forsvar-i-dybden-prinsipp
+      // gjelder: en rå leverandørfeil kan i prinsippet ekko tilbake
+      // mottakerens adresse.
       await db
         .update(digestDeliveries)
-        .set({ status: "failed", errorMessage: (err as Error).message })
+        .set({ status: "failed", errorMessage: sanitizeErrorMessage(err) })
         .where(eq(digestDeliveries.id, delivery.deliveryId));
     }
   }

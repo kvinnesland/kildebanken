@@ -28,6 +28,10 @@ async function fillOutRequiredFields() {
 describe("ResponseForm", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    // DESIGN.md 5: skjemaet mellomlagrer nå til localStorage (økt 95, se
+    // NATTLOGG.md) — uten denne opprydningen ville ett utkast lekke inn i
+    // NESTE test, siden alle testene her bruker samme requestId="req-1".
+    window.localStorage.clear();
   });
 
   it("krever relevans og svar før man kan gå videre til bekreftelse", async () => {
@@ -133,5 +137,69 @@ describe("ResponseForm", () => {
     expect(
       await screen.findByText("Du har allerede sendt et svar på denne forespørselen.")
     ).toBeInTheDocument();
+  });
+
+  // DESIGN.md 5: "Skjematilstand overlever at nettleseren legges i
+  // bakgrunnen ... Lokal mellomlagring i nettleseren, ikke på server." Reelt
+  // hull frem til nå (se NATTLOGG.md, økt 95) — ren React-state, ingenting
+  // persistert.
+  describe("mellomlagring i localStorage (DESIGN.md 5)", () => {
+    it("gjenoppretter et tidligere påbegynt svar etter en ny montering (simulerer en gjenoppfrisket fane)", async () => {
+      const { unmount } = renderForm();
+      await userEvent.type(
+        screen.getByLabelText("Hvorfor er du relevant?"),
+        "Et halvskrevet svar."
+      );
+      unmount();
+
+      renderForm();
+      expect(await screen.findByLabelText("Hvorfor er du relevant?")).toHaveValue(
+        "Et halvskrevet svar."
+      );
+    });
+
+    it("skriver til en NØKKEL SPESIFIKK for forespørselen, slik at to ulike forespørslers utkast ikke blander seg", async () => {
+      const { unmount } = render(
+        <ResponseForm
+          locale="nb-NO"
+          requestId="req-A"
+          journalistName="Kari Journalist"
+          organizationName="Avisa Eksempel"
+          sessionEmail="respondent@example.com"
+          sessionDisplayName={null}
+        />
+      );
+      await userEvent.type(screen.getByLabelText("Hvorfor er du relevant?"), "Utkast for A.");
+      unmount();
+
+      render(
+        <ResponseForm
+          locale="nb-NO"
+          requestId="req-B"
+          journalistName="Kari Journalist"
+          organizationName="Avisa Eksempel"
+          sessionEmail="respondent@example.com"
+          sessionDisplayName={null}
+        />
+      );
+      expect(await screen.findByLabelText("Hvorfor er du relevant?")).toHaveValue("");
+    });
+
+    it("tømmer utkastet etter en vellykket innsending, slik at det ikke dukker opp igjen senere", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue({ ok: true, json: () => Promise.resolve({ id: "resp-1" }) });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const { unmount } = renderForm();
+      await fillOutRequiredFields();
+      await userEvent.click(screen.getByRole("button", { name: "Gå videre til bekreftelse" }));
+      await userEvent.click(screen.getByRole("button", { name: "Bekreft og send" }));
+      await screen.findByText("Svaret ditt er sendt. Du får en kvittering på e-post.");
+      unmount();
+
+      renderForm();
+      expect(await screen.findByLabelText("Hvorfor er du relevant?")).toHaveValue("");
+    });
   });
 });

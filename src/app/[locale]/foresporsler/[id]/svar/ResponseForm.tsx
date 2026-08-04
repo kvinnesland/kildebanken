@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { SupportedLocale } from "@/i18n/config";
 import { createTranslator } from "@/i18n/get-messages";
 import { TextField } from "@/components/TextField";
@@ -18,6 +18,55 @@ import styles from "./ResponseForm.module.css";
 
 type Step = "form" | "confirm" | "submitting" | "success" | "error";
 type ContactSharing = "none" | "email";
+
+interface DraftValues {
+  relevanceStatement: string;
+  answerText: string;
+  shortBio: string;
+  displayName: string;
+  contactSharing: ContactSharing;
+}
+
+// DESIGN.md 5: "Skjematilstand overlever at nettleseren legges i
+// bakgrunnen. Et halvskrevet svar på 2 000 tegn skal ikke forsvinne fordi
+// noen sjekket en melding underveis. Lokal mellomlagring i nettleseren,
+// ikke på server." Manglet HELT frem til nå (reelt hull, se NATTLOGG.md,
+// økt 95) — ren React-state, ingenting persistert, så en bakgrunnslagt
+// eller gjenoppfrisket fane (vanlig iOS/Android-oppførsel når minnet er
+// knapt) mistet alt. Nøkkelen inkluderer requestId slik at et utkast for
+// én forespørsel aldri lekker inn i en annen.
+function draftStorageKey(requestId: string): string {
+  return `kildebanken:response-draft:${requestId}`;
+}
+
+function loadDraft(requestId: string): Partial<DraftValues> | null {
+  try {
+    const raw = window.localStorage.getItem(draftStorageKey(requestId));
+    if (!raw) return null;
+    return JSON.parse(raw) as Partial<DraftValues>;
+  } catch {
+    // localStorage kan være utilgjengelig (privat nettlesing i Safari,
+    // kvote full, m.m.) — mellomlagring er en bekvemmelighet, ikke en
+    // kritisk vei, og skal aldri stoppe selve utfyllingen.
+    return null;
+  }
+}
+
+function saveDraft(requestId: string, draft: DraftValues): void {
+  try {
+    window.localStorage.setItem(draftStorageKey(requestId), JSON.stringify(draft));
+  } catch {
+    // Se loadDraft() sin egen kommentar.
+  }
+}
+
+function clearDraft(requestId: string): void {
+  try {
+    window.localStorage.removeItem(draftStorageKey(requestId));
+  } catch {
+    // Se loadDraft() sin egen kommentar.
+  }
+}
 
 export function ResponseForm({
   locale,
@@ -47,6 +96,36 @@ export function ResponseForm({
   // SPEC-V1.md 12.1: "Visningsnavn | valgfritt, forhåndsutfylt fra kontoen".
   const [displayName, setDisplayName] = useState(sessionDisplayName ?? "");
   const [contactSharing, setContactSharing] = useState<ContactSharing>("none");
+  // Unngår at gjenopprettingseffekten under (kjører etter hydrering) skriver
+  // over et FERSKT utkast med et gammelt fra localStorage rett før det
+  // uansett ville blitt lagret på nytt — kjøres kun én gang per montering.
+  const restoredDraftRef = useRef(false);
+
+  // DESIGN.md 5 — se draftStorageKey() sin egen kommentar over. Leses i en
+  // effekt (ikke en lat useState-initialiserer) med hensikt: en
+  // "use client"-komponent rendres først på SERVEREN for SSR-HTML-en, der
+  // `window` ikke finnes — å lese localStorage synkront under selve
+  // renderingen ville gitt et hydreringsavvik mellom server og klient.
+  useEffect(() => {
+    if (restoredDraftRef.current) return;
+    restoredDraftRef.current = true;
+    const draft = loadDraft(requestId);
+    if (!draft) return;
+    if (draft.relevanceStatement) setRelevanceStatement(draft.relevanceStatement);
+    if (draft.answerText) setAnswerText(draft.answerText);
+    if (draft.shortBio) setShortBio(draft.shortBio);
+    if (draft.displayName) setDisplayName(draft.displayName);
+    if (draft.contactSharing) setContactSharing(draft.contactSharing);
+  }, [requestId]);
+
+  // Lagres på HVER endring, bevisst UTEN debounce — poenget er nettopp å
+  // overleve at fanen legges i bakgrunnen eller gjenoppfriskes midt i en
+  // innskriving, og en forsinket skriving kunne mistet akkurat det siste,
+  // ulagrede tegnet i det øyeblikket.
+  useEffect(() => {
+    if (step !== "form") return;
+    saveDraft(requestId, { relevanceStatement, answerText, shortBio, displayName, contactSharing });
+  }, [requestId, step, relevanceStatement, answerText, shortBio, displayName, contactSharing]);
 
   const relevanceValid =
     relevanceStatement.trim() !== "" && relevanceStatement.length <= LIMITS.relevanceStatement;
@@ -87,6 +166,12 @@ export function ResponseForm({
         return;
       }
       setStep("success");
+      // DESIGN.md 5 sitt mellomlagring er en bekvemmelighet under
+      // utfylling, ikke en varig lagringsplass — et vellykket innsendt svar
+      // skal ikke la et gammelt utkast dukke opp igjen ved en senere
+      // besøk (f.eks. et forsøk på å svare på nytt, avvist av den unike
+      // indeksen, FR-041).
+      clearDraft(requestId);
     } catch {
       setStep("error");
       setErrorKey("errors.generic");

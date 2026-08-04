@@ -18735,3 +18735,150 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 95: fant og rettet et reelt, brukervendt hull — lokal utkastlagring
+i svarskjemaet manglet HELT (DESIGN.md 5) — pluss to mindre oppfølginger
+
+Startet med to små, avgrensede oppfølgingspunkter fra Økt 94s "Neste
+økt", deretter en fornyet DESIGN.md-gjennomgang fra bunnen av (punkt 1
+i samme liste), som underveis avdekket øktens hovedfunn.
+
+### Oppfølging 1: `digests.ts` sin `retryFailedDigestDeliveries()` bruker
+nå også `sanitizeErrorMessage()`
+
+Økt 94 utsatte bevisst denne — feilmeldingen der lagres kun i en
+admin-synlig databasekolonne (`digestDeliveries.errorMessage`), ikke i
+driftslogg. Samme forsvar-i-dybden-begrunnelse gjelder likevel: en rå
+leverandørfeil kan i prinsippet ekko tilbake mottakerens adresse, og en
+bevisst konsekvent linje er bedre enn en stille forskjell mellom to
+strukturelt like catch-blokker. Endret linje 267 til å bruke
+`sanitizeErrorMessage(err)` i stedet for `(err as Error).message`.
+
+### Oppfølging 2: `drizzle-orm`-sårbarheten (GHSA-gpj5-g38j-94v9,
+SQL-identifikator-escaping) — undersøkt og lukket som IKKE anvendelig
+
+`grep -rn "sql\`" src --include="*.ts" | grep -v test` fant kun 4
+faktiske bruk: `pg_advisory_xact_lock(hashtext(...))` i
+`moderation/requests.ts` og `security/rate-limit.ts` (statiske
+funksjonskall med parametriserte verdier), et statisk literal-spørring
+i `health/health.ts`, og en kolonne-inkrementering i
+`subscriptions/email-events.ts` (Drizzles egen kolonneobjekt-håndtering,
+ikke en rå streng). `grep -rn "sql\.raw\|sql\.identifier\|sql\.join"
+src --include="*.ts"` ga null treff. Konklusjon: ingen kodesti i denne
+kodebasen bygger noensinne en rå/dynamisk SQL-identifikator fra
+brukerkontrollert input — sårbarheten er ikke utnyttbar slik biblioteket
+faktisk brukes her. Ingen kodeendring. Lukker punktet som "verifisert,
+ikke anvendelig" fremfor å la det stå åpent.
+
+### Reelt funn: DESIGN.md 5 sin lokale utkastlagring manglet HELT i
+svarskjemaet — et respondentflyt-kritisk, uttrykkelig spesifisert krav
+
+DESIGN.md 5 (Mobil) sier eksplisitt: "Skjematilstand overlever at
+nettleseren legges i bakgrunnen. Et halvskrevet svar på 2 000 tegn skal
+ikke forsvinne fordi noen sjekket en melding underveis. Lokal
+mellomlagring i nettleseren, ikke på server."
+
+`grep -rn "localStorage\|sessionStorage" src --include="*.tsx"
+--include="*.ts" | grep -v test` ga **null treff** i HELE kodebasen.
+`ResponseForm.tsx` (respondentens svarskjema, det eneste stedet i hele
+appen der en respondent skriver fritekst av betydelig lengde) holdt all
+skjematilstand i ren React `useState`, uten noen form for persistering.
+En bakgrunnslagt eller gjenoppfrisket fane — vanlig iOS/Android-
+oppførsel når minnet er knapt, og selve scenariet DESIGN.md 5 navngir
+eksplisitt — mistet dermed alt innhold uten varsel. Dette er
+sannsynligvis det mest brukervendt alvorlige funnet i hele denne
+sesjonen: ikke en skjult sikkerhets- eller samsvarsrisiko, men en
+konkret, garantert opplevd datatapshendelse for en respondent som gjør
+akkurat det appens egen designspesifikasjon forutser at de vil gjøre.
+
+**Retting**: `draftStorageKey(requestId)`, `loadDraft()`, `saveDraft()`,
+`clearDraft()` i `ResponseForm.tsx`, med nøkkel `kildebanken:response-
+draft:${requestId}` (inkluderer forespørsels-ID slik at et utkast for
+én forespørsel aldri lekker inn i en annen). To bevisste designvalg:
+
+1. **Gjenoppretting skjer i en `useEffect`, ikke en lat
+   `useState`-initialiserer.** En "use client"-komponent rendres først
+   på SERVEREN for SSR-HTML-en, der `window` ikke finnes — å lese
+   `localStorage` synkront under selve renderingen (som en lat
+   initialiserer ville gjort) ville gitt et hydreringsavvik mellom
+   server og klient. Kjøres kun én gang per montering via en
+   `restoredDraftRef`, slik at den ikke overskriver et fersk utkast med
+   et gammelt rett før det uansett ville blitt lagret på nytt.
+2. **Lagring skjer på HVER endring, bevisst UTEN debounce.** Poenget
+   med selve rettingen er å overleve at fanen legges i bakgrunnen eller
+   gjenoppfriskes MIDT i en innskriving — en forsinket (debounced)
+   skriving kunne mistet akkurat det siste, ulagrede tegnet i det
+   øyeblikket, altså nøyaktig den svikten som rettes.
+
+Utkastet tømmes (`clearDraft()`) rett etter en vellykket innsending —
+mellomlagringen er en bekvemmelighet under utfylling, ikke en varig
+lagringsplass, og et gammelt utkast skal ikke kunne dukke opp igjen ved
+et senere (av FR-041s unike indeks avviste) forsøk på å svare på nytt.
+
+`loadDraft()`/`saveDraft()`/`clearDraft()` svelger alle feil stille
+(try/catch, ingen kasting videre) — `localStorage` kan være utilgjengelig
+(privat nettlesing i Safari, full kvote), og mellomlagring skal aldri
+kunne stoppe selve utfyllingen eller innsendingen.
+
+**Nye tester**: tre nye tester i `ResponseForm.test.tsx`, i en egen
+`describe("mellomlagring i localStorage (DESIGN.md 5)")`-blokk —
+gjenoppretting etter en ny montering (simulerer en gjenoppfrisket fane),
+nøkkelisolasjon mellom to ulike `requestId`-er (ett utkast for `req-A`
+skal ikke dukke opp for `req-B`), og at utkastet tømmes etter en
+vellykket innsending.
+
+**Reell testhygienebug funnet og rettet underveis**: da rettingen var på
+plass, feilet 3 av de EKSISTERENDE testene i filen — f.eks. et felt som
+skulle inneholde "Fordi jeg har relevant erfaring." inneholdt i stedet
+teksten firedoblet etter hverandre. Årsak: jsdoms `localStorage`
+overlever på tvers av tester i SAMME fil, og alle eksisterende tester i
+denne filen bruker samme `requestId="req-1"` — hver påfølgende tests
+`userEvent.type()`-kall FORTSATTE å skrive inn i et felt som allerede
+var gjenopprettet med verdi fra en TIDLIGERE test. Rettet ved å legge
+`window.localStorage.clear()` til den eksisterende `afterEach`-blokken.
+Bekreftet rettet: hele filen kjører nå grønt, 12 av 12 tester (9
+eksisterende + 3 nye).
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 88 filer, 490 tester (487 + 3 nye).
+- `npx tsx src/i18n/check-keys.ts`: OK — 535 nøkler.
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 filer, ingen brudd.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 349
+  tester, ALLE bestod uendret — `digests.integration.test.ts` dekker
+  `retryFailedDigestDeliveries()` og bekrefter ingen regresjon fra
+  `sanitizeErrorMessage()`-endringen der.
+
+Committet: `src/lib/digests/digests.ts`,
+`src/app/[locale]/foresporsler/[id]/svar/ResponseForm.tsx`,
+`src/app/[locale]/foresporsler/[id]/svar/ResponseForm.test.tsx`.
+
+### Neste økt
+
+Fortsett den ferske DESIGN.md-gjennomgangen fra der denne økten ble
+avbrutt av hovedfunnet — seksjon 7 (E-post) og videre (8 Innholdsdesign,
+9 Akseptansekriterier — de fleste enkeltpunktene i 9 er riktignok
+allerede individuelt verifisert i tidligere økter, men en samlet,
+fornyet gjennomlesning er ikke gjort, 10 Uavklart). Seksjon 1-6.2 (Tre
+lag, Farger, Typografi, Rom/form/dybde, Mobil, Komponenter/Fokus-og-
+feil/Status) er nå gjennomgått på nytt denne økten.
+
+Et mulig oppfølgingsspor verdt å vurdere, oppdaget som en biprodukt av
+denne økten men ikke undersøkt: er `ResponseForm.tsx` det ENESTE stedet
+i appen der et brukerskrevet skjema av betydelig lengde/varighet kan gå
+tapt på samme måte (f.eks. `RequestEditForm.tsx` for journalister, som
+også har fritekstfelt)? Ikke undersøkt denne økten — DESIGN.md 5 nevner
+spesifikt "et halvskrevet svar", som pekte mot respondentflyten, men
+prinsippet kan gjelde bredere.
+
+Uendret, fortsatt de tre åpne spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.
