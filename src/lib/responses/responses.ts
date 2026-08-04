@@ -177,27 +177,6 @@ export async function withdrawResponse(
   return { ok: true, id: responseId };
 }
 
-export async function getRespondentView(responseId: string, respondentUserId: string) {
-  const [row] = await db
-    .select({
-      id: responses.id,
-      requestId: responses.requestId,
-      lifecycleStatus: responses.lifecycleStatus,
-      submittedAt: responses.submittedAt,
-      viewedAt: responses.viewedAt,
-      contactSharing: responses.contactSharing,
-      requestTitle: requests.title,
-      organizationName: journalistProfiles.organizationName,
-    })
-    .from(responses)
-    .innerJoin(requests, eq(responses.requestId, requests.id))
-    .innerJoin(journalistProfiles, eq(requests.journalistId, journalistProfiles.userId))
-    .where(and(eq(responses.id, responseId), eq(responses.respondentId, respondentUserId)))
-    .limit(1);
-
-  return row ?? null;
-}
-
 export type MineResponseDisplayStatus =
   | "submitted"
   | "viewed"

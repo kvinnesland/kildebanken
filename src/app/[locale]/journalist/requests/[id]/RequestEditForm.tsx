@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SupportedLocale } from "@/i18n/config";
 import { createTranslator } from "@/i18n/get-messages";
-import type { SubmitValidationError } from "@/lib/requests/validate";
+import { FIELD_LIMITS, type SubmitValidationError } from "@/lib/requests/validate";
 import { REQUEST_TOPICS } from "@/lib/requests/topics";
 import { TextField } from "@/components/TextField";
 import { TextArea } from "@/components/TextArea";
@@ -14,11 +14,14 @@ import { Button } from "@/components/Button";
 import { focusFirstInvalidField } from "@/lib/forms/focus-first-invalid";
 import styles from "./RequestEditForm.module.css";
 
+// De fire FR-021-feltene importeres fra FIELD_LIMITS i stedet for en egen,
+// duplisert kopi (reelt hull frem til nå, se NATTLOGG.md) — samme bugklasse
+// som task #57/#59/#126/#127. `geographicNote`/`internalReference` er IKKE
+// del av FIELD_LIMITS (de er valgfrie felt validert direkte i selve
+// API-rutens Zod-skjema, ikke i validateForSubmit()), derfor fortsatt
+// lokale her.
 const LIMITS = {
-  title: 120,
-  summary: 300,
-  description: 5000,
-  targetPersonDescription: 500,
+  ...FIELD_LIMITS,
   geographicNote: 100,
   internalReference: 100,
 } as const;

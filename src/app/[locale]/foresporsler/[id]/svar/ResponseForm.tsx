@@ -8,14 +8,13 @@ import { TextArea } from "@/components/TextArea";
 import { RadioGroup } from "@/components/RadioGroup";
 import { Button } from "@/components/Button";
 import { focusFirstInvalidField } from "@/lib/forms/focus-first-invalid";
+// Importert i stedet for en egen, duplisert kopi (reelt hull frem til nå,
+// se NATTLOGG.md) — samme grenser skal uansett gjelde her som i
+// serverens validateResponseSubmission(), og en lokal kopi kunne stille
+// gli fra serverens verdi uten at noe fanget det, samme bugklasse som
+// task #57/#59/#126/#127.
+import { RESPONSE_FIELD_LIMITS as LIMITS } from "@/lib/responses/validate";
 import styles from "./ResponseForm.module.css";
-
-const LIMITS = {
-  relevanceStatement: 2000,
-  answerText: 4000,
-  shortBio: 500,
-  displayName: 80,
-} as const;
 
 type Step = "form" | "confirm" | "submitting" | "success" | "error";
 type ContactSharing = "none" | "email";

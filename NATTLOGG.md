@@ -17526,3 +17526,96 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 84: gjentok grep-etter-ubrukte-eksporter-metoden fra Økt 83 — fant
+to nye, reelle funn
+
+Skrev et lite script som lister alle `export function`/`export const`/
+`export class` i `src/lib/` og `src/components/`, og sjekker om hvert
+navn faktisk forekommer NOE ANNET sted i `src/` enn sin egen fil.
+Nøyaktig samme metode som avdekket `tokensMatch()` i Økt 83. Tre treff
+denne runden, alle reelle:
+
+**1. `FIELD_LIMITS`/`RESPONSE_FIELD_LIMITS` eksportert, aldri
+importert noe sted.** `RequestEditForm.tsx` og `ResponseForm.tsx`
+hadde HVER SIN egen, hardkodede kopi av akkurat de samme tallene
+(`title: 120`, `summary: 300` osv.) i stedet for å importere de
+allerede eksisterende, kanoniske konstantene fra
+`requests/validate.ts`/`responses/validate.ts`. Tallene stemte
+FAKTISK overens akkurat nå — men dette er PRESIS samme sårbare mønster
+(en UI-kopi som kan gli fra serverens ekte grense uten at noe fanger
+det) som forårsaket fire tidligere, reelle bugs i denne kodebasen
+(task #57, #59, #126, #127 — hver gang en `maxLength` i et skjema
+falt ut av synk med serverens faktiske grense). At konstantene ALLEREDE
+var eksportert (ikke bare definert) er selv et sterkt tegn på at noen
+tidligere økt hadde til hensikt at de skulle importeres et sted, men
+det skjedde aldri.
+
+**Retting**: `ResponseForm.tsx` importerer nå
+`RESPONSE_FIELD_LIMITS` direkte (aliasert til `LIMITS` for å unngå å
+måtte endre resten av filen — alle fire nøkler stemte eksakt).
+`RequestEditForm.tsx` importerer `FIELD_LIMITS` og sprer den inn i sin
+egen lokale `LIMITS`, som fortsatt legger til `geographicNote`/
+`internalReference` lokalt (disse er IKKE del av `FIELD_LIMITS` —
+de er valgfrie felt validert direkte i selve API-rutens Zod-skjema,
+ikke i `validateForSubmit()`, en allerede etablert og korrekt
+arkitektonisk deling, ikke en feil).
+
+**2. `getRespondentView()` i `responses/responses.ts` — fullt
+implementert, eksportert, men null kallere og null tester noe sted.**
+Sporet den tilbake til hva den TYDELIGVIS var bygget for å drive: en
+enkelt-svar-detaljside for respondenten (viser status, organisasjon,
+kontaktdelingsvalg, innsendt-/lest-tidspunkt for ÉTT svar via
+`responseId`). Ingen slik side finnes — `/me/svar`
+(`MyResponsesList.tsx`) viser allerede ALT dette inline i selve listen
+(tittel, organisasjon, statusmerke, dato, trekk-knapp), uten behov for
+en egen detaljside. SPEC-V1.md seksjon 20 sin egen API-liste bekrefter
+dette — der finnes `GET /responses/mine` og
+`POST /responses/:id/withdraw`, men ALDRI en `GET /responses/:id` for
+respondenten selv. Konkluderte at dette er reell, forlatt kode fra et
+tidligere designspor (en egen detaljside som senere ble forenklet bort
+til en ren liste), ikke en glemt, fortsatt nødvendig funksjon — slettet
+den helt, samme prinsipp som README.md/systeminstruksen selv sier om
+kode man er sikker på er ubrukt.
+
+Scriptet ga nøyaktig tre treff totalt denne runden — `FIELD_LIMITS`,
+`RESPONSE_FIELD_LIMITS` og `getRespondentView` — og alle tre var
+reelle, ikke falske positiver. Etter begge rettingene: kjørte samme
+grep-script på nytt — null treff.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 86 filer, 471 tester, alle bestod uendret.
+- `npx tsx src/i18n/check-keys.ts`: OK — 533 nøkler.
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 filer, ingen brudd.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 345
+  tester, ALLE bestod uendret.
+- Ubrukte-eksporter-grepet selv: null treff igjen etter rettingen
+  (opprinnelig 3, 1 falsk positiv).
+
+Committet: `src/app/[locale]/foresporsler/[id]/svar/ResponseForm.tsx`,
+`src/app/[locale]/journalist/requests/[id]/RequestEditForm.tsx`,
+`src/lib/responses/responses.ts`.
+
+### Neste økt
+
+Metoden (grep etter eksporterte navn som aldri forekommer noe annet
+sted i `src/`) har nå funnet TRE reelle ting på to økter (en
+sikkerhetsfeil, en drift-sårbar duplisering, ett stykke reelt død kode)
+— verdt minst ÉN mer runde etter at flere av denne nattens andre
+rettinger har satt seg (nye eksporter dukker jevnlig opp). Vurder også
+å UTVIDE scriptet til å dekke `src/app/api/`-mapper (rene
+hjelpefunksjoner utenfor selve route-handlerne) og typer/interfacer,
+ikke bare funksjoner/konstanter — regex-en denne økten dekket kun de
+tre enkleste eksport-formene. Uendret, fortsatt de tre åpne
+spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.
