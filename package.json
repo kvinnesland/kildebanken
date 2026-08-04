@@ -21,7 +21,7 @@
     "test:integration": "vitest run -c vitest.integration.config.ts"
   },
   "dependencies": {
-    "@formatjs/intl-localematcher": "^0.5.10",
+    "@formatjs/intl-localematcher": "^0.8.13",
     "@sentry/nextjs": "^10.69.0",
     "drizzle-orm": "^0.38.3",
     "intl-messageformat": "^10.7.11",
