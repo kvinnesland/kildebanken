@@ -18369,19 +18369,22 @@ Committet: `src/lib/auth/magic-link.ts`,
 Hele SPEC-V1.md er nå gjennomgått på nytt fra bunnen av, seksjon for
 seksjon (Økt 88-91: 9, 11-14, 15-17, 18 — seksjon 10 var allerede
 dekket av Økt 85-87 sitt arbeid samme natt, og 19-23 av enda tidligere,
-dedikerte sveiper). Et friskt spor for neste økt, i prioritert
-rekkefølge:
-1. Gitt hvor alvorlig denne øktens funn var (en reell, utnyttbar
-   rategrense-omgåelse), vurder et RASKT, målrettet søk etter LIGNENDE
-   "sjekk-etter-tidlig-return"-mønstre andre steder i kodebasen — andre
-   steder der en rategrense eller annen sikkerhetskontroll kan stå
-   ETTER en tidlig-return-gren i stedet for FØR den. Et konkret sted å
-   starte: gjennomgå ALLE offentlige, uautentiserte API-ruter
-   (`/api/subscribe`, `/api/report`, `/api/webhooks/*`) for tilsvarende
-   rekkefølgeproblemer.
-2. Deretter, en fornyet "ubrukte eksporter"-kjøring (mange filer endret
-   siden forrige kjøring i Økt 83-85).
-3. Deretter, en fornyet INFRASTRUCTURE.md/DESIGN.md-gjennomgang fra
+dedikerte sveiper). Sjekket ALLEREDE, samme økt, spor 1 sitt eget
+forslag under (billig, direkte oppfølging): `submitResponse()`
+(responses.ts) og `createDraft()` (requests.ts), de to andre stedene
+spec-en eksplisitt nevner en rategrense. Ingen av dem deler samme
+bugklasse — begge tar imot en ALLEREDE sesjons-verifisert bruker-ID som
+parameter (aldri en rå, angriper-oppgitt streng slik
+`requestMagicLink()` sin e-postadresse var), så rolle-/status-sjekken
+FØR rategrensen i begge er en re-verifisering av en ekte konto, ikke et
+tidlig-return-hull. `POST /subscribe`/`POST /journalists/apply` har for
+øvrig INGEN rate limiting — men spec-en (18) lister eksplisitt bare de
+tre nevnte grensene, så dette er IKKE et hull mellom spec og kode, bare
+en mulig fremtidig spec-utvidelse å vurdere i dagslys. Et friskt spor
+for neste økt, i prioritert rekkefølge:
+1. En fornyet "ubrukte eksporter"-kjøring (mange filer endret siden
+   forrige kjøring i Økt 83-85).
+2. Deretter, en fornyet INFRASTRUCTURE.md/DESIGN.md-gjennomgang fra
    bunnen av, som ikke har vært gjort like nylig som SPEC-V1.md nå har.
 Uendret, fortsatt de tre åpne spørsmålene:
 (a) bør `runExpireRequests()` også sende `response_request_closed` til
