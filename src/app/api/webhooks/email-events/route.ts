@@ -1,18 +1,31 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { processEmailEvent, type EmailEventType } from "@/lib/subscriptions/email-events";
+import { tokensMatch } from "@/lib/auth/tokens";
 
 // POST /webhooks/email-events (SPEC-V1.md 10.1 punkt 9, 10.3, 20, FR-037).
 // Kalt av Brevo, ikke en innlogget bruker — beskyttet av en delt
 // hemmelighet i stedet for en økt. Feiler LUKKET (401) dersom hemmeligheten
 // mangler i miljøet, samme "trygg standard"-prinsipp som RETENTION_DRY_RUN.
+//
+// Reelt hull frem til nå (se NATTLOGG.md): sammenligningen brukte rå `===`
+// i stedet for `tokensMatch()` (auth/tokens.ts) — den ENESTE andre plassen
+// i kodebasen som sammenligner en hemmelighet direkte mot
+// angriper-kontrollert input (alle andre token-sjekker, f.eks.
+// digest-access og innloggingslenker, hasher først og slår opp i databasen,
+// et fundamentalt annet mønster som ikke er sårbart for akkurat dette).
+// `tokensMatch()` var selv allerede bygget og testet, men aldri faktisk
+// koblet inn noe sted — konstant-tid sammenligning unngår at forskjeller i
+// hvor RASKT `===` feiler kan lekke informasjon om hemmeligheten via
+// nettverkstiming.
 function isAuthorized(request: Request): boolean {
   const configuredSecret = process.env.EMAIL_WEBHOOK_SECRET;
   if (!configuredSecret) return false;
 
   const url = new URL(request.url);
   const provided = url.searchParams.get("secret") ?? request.headers.get("x-webhook-secret");
-  return provided === configuredSecret;
+  if (!provided) return false;
+  return tokensMatch(provided, configuredSecret);
 }
 
 const bodySchema = z.object({

@@ -17423,3 +17423,106 @@ et svars innhold (moderator inkludert eller ikke);
 (c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
 hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
 seg til i kode.
+
+## Økt 83: kritisk gjennomlesing av flere `src/lib/`-moduler uten
+tidligere dedikert økt — fant en reell, ubrukt sikkerhetshjelpefunksjon
+
+Fulgte opp Økt 82 sin spor (b): gikk gjennom `src/lib/`-filer som ALDRI
+har vært nevnt i en tidligere "critical-read"-oppgave
+(`datetime/timezone.ts`, `legal/documents.ts`,
+`journalists/journalist-profile.ts` + tilhørende
+`JournalistProfileForm.tsx`, `me/validate.ts`,
+`requests/validate.ts`, `responses/validate.ts`,
+`moderation/responses.ts`, `subscriptions/bounce-policy.ts` og
+`subscriptions/email-events.ts`).
+
+**Rene funn, ingen handling** (allerede solid, godt begrunnet, eller
+bevisst avgrenset kode):
+- `datetime/timezone.ts`: to-iterasjons vegg-klokkeslett↔UTC-
+  konvertering, med et EKSPLISITT dokumentert DST-overgangsavvik som
+  bevisst ikke håndteres særskilt — testdekningen inkluderer faktiske
+  sommertid-overganger og en ikke-hel-time-forskyvning (Asia/Kathmandu).
+  Ingen feil.
+- `legal/documents.ts`: `getCurrentLegalDocument()`/
+  `getRequiredLegalDocuments()` er begge korrekte og enkle.
+  `isMaterialChange` sin "tvungen re-samtykke"-del av 17.2 er allerede
+  eksplisitt dokumentert som en bevisst IKKE bygget UX-beslutning
+  (spec-en sier ikke NÅR/HVORDAN), ikke et hull.
+- `journalist-profile.ts`/`JournalistProfileForm.tsx`: `maxLength`
+  stemmer allerede korrekt med serverens Zod-grense (200) på alle tre
+  tekstfeltene — IKKE en gjentakelse av maxLength-bug-klassen fra
+  tidligere økter (task #57/#59/#126/#127).
+- `me/validate.ts`, `requests/validate.ts`, `responses/validate.ts`:
+  rene, godt strukturerte valideringsfunksjoner, ingen avvik fra sine
+  respektive spec-grenser.
+- `moderation/responses.ts` (`hideResponse()`): TOCTOU allerede lukket
+  (samme mønster som `approveJournalist()`/`publishRequest()`), inkludert
+  kansellering av ventende kontaktforespørsler ved skjuling.
+- `subscriptions/bounce-policy.ts`/`email-events.ts`: allerede
+  TOCTOU-hardet (atomisk `+1` i SQL, ikke les-så-skriv, se tidligere
+  økters egne kommentarer), korrekt normalisering av Brevo sine
+  hendelsestyper (inkludert `invalid`-fiksen fra økt 11).
+
+**Et reelt funn**: `src/lib/auth/tokens.ts` har en dedikert, testet
+`tokensMatch()`-funksjon — konstant-tid strengsammenligning via Node
+sin `timingSafeEqual`, bygget nettopp for å unngå at en hemmelighet
+lekkes via responstid-forskjeller ved sammenligning mot
+angriper-kontrollert input. Et grep etter alle faktiske bruksstinger
+viste at den ALDRI faktisk er koblet inn noe sted i selve applikasjonen
+— kun i sin egen test. Grunnen: alle ANDRE token-sjekker i kodebasen
+(innloggingslenker, digest-tilgang, avmelding) bruker et helt annet,
+i seg selv trygt mønster (hash tokenet, slå det opp i databasen via
+`WHERE tokenHash = ...`) som ikke er sårbart for akkurat denne
+angrepsklassen. Men ETT sted gjør en RÅ, direkte streng-mot-streng-
+sammenligning av en hemmelighet fra miljøet mot angriper-kontrollert
+input: `isAuthorized()` i
+`src/app/api/webhooks/email-events/route.ts` (Brevo-webhooken sin
+`EMAIL_WEBHOOK_SECRET`-sjekk), som brukte rå `===` i stedet.
+
+**Retting**: byttet `===` til `tokensMatch()` i `isAuthorized()`, satt
+den allerede bygde og testede hjelpefunksjonen faktisk i bruk for
+første gang. La også til en eksplisitt `if (!provided) return false`
+før kallet (samme oppførsel som før — `null === hemmelighet` var
+allerede alltid usann — men nødvendig for at TypeScript skal innsnevre
+`provided` fra `string | null` til `string` før `tokensMatch()` sine
+strengt typede parametre).
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run`: 86 filer, 471 tester, alle bestod uendret.
+- `npx tsx src/i18n/check-keys.ts`: OK — 533 nøkler.
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 filer, ingen brudd.
+- `npx next build`: bygget uten feil.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 345
+  tester, ALLE bestod uendret — inkludert de eksisterende
+  auth-relaterte testene for akkurat denne ruten (manglende hemmelighet,
+  feil hemmelighet via søkeparameter/header, ingen hemmelighet i det
+  hele tatt), som alle fortsatt består identisk med den nye,
+  konstant-tid sammenligningen.
+
+Committet: `src/app/api/webhooks/email-events/route.ts`.
+
+### Neste økt
+
+Kritisk-lesing-sveipen kan fortsette til de resterende, ennå ikke
+dedikert gjennomgåtte `src/lib/`-filene (f.eks.
+`http/safe-redirect.ts` sin fulle bruk utover selve den allerede
+rettede open-redirect-bugen, `forms/focus-first-invalid.ts`,
+`requests/slug.ts`/`topics.ts`, `responses/status-badge.ts`/
+`requests/status-badge.ts`/`contact-requests/status-badge.ts`) — men
+disse er hovedsakelig små, rene hjelpefunksjoner med lav forventet
+treffrate. Mer lovende: gjør et TILSVARENDE grep-basert søk etter andre
+BYGDE-MEN-ALDRI-BRUKTE hjelpefunksjoner/eksporter i kodebasen (samme
+metode som avdekket `tokensMatch()`) — dette var en direkte, effektiv
+måte å finne en reell, upåaktet sikkerhetsfeil på, og det er ingen
+grunn til å tro `tokensMatch()` var den ENESTE slike. Uendret, fortsatt
+de tre åpne spørsmålene:
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold (moderator inkludert eller ikke);
+(c) Brevo sin faktiske webhook-signaturstøtte (HMAC vs. delt
+hemmelighet) — verifiseres mot en ekte Brevo-konto, ikke noe å gjette
+seg til i kode.
