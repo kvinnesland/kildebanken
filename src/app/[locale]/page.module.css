@@ -1,0 +1,13 @@
+.main {
+  padding: var(--space-6);
+  max-width: var(--measure);
+}
+
+.title {
+  font-family: var(--font-editorial);
+  font-size: var(--text-3xl);
+}
+
+.intro {
+  color: var(--color-text-muted);
+}

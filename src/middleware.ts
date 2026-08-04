@@ -183,12 +183,18 @@ function generateNonce(): string {
 
 function buildCsp(nonce: string): string {
   // Ingen tredjepartsskript (DESIGN.md 3, "fontene selvhostes"). Ingen
-  // 'unsafe-inline' på script-src — nonce dekker Next.js sine egne
-  // hydreringsscript.
+  // 'unsafe-inline' på verken script-src ELLER style-src —
+  // INFRASTRUCTURE.md 12 krever eksplisitt "CSP uten unsafe-inline".
+  // style-src trengte tidligere 'unsafe-inline' for den eneste
+  // komponenten som brukte React sin inline `style`-prop
+  // (`src/app/[locale]/page.tsx`, en midlertidig plassholderforside) —
+  // nå migrert til en CSS-modul (samme mønster som resten av kodebasen,
+  // håndhevet av `src/styles/check-tokens.ts`), så relaksjonen er ikke
+  // lenger nødvendig. Reelt avvik frem til nå, se NATTLOGG.md.
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
-    "style-src 'self' 'unsafe-inline'", // fjernes når komponentstilene er fullt CSS-modul-basert
+    "style-src 'self'",
     "img-src 'self' data:",
     "font-src 'self'",
     "connect-src 'self'",

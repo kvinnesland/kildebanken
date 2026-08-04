@@ -37,6 +37,25 @@ describe("middleware — locale-oversatte forespørsel-stier (SPEC-V1.md 3.7)", 
   });
 });
 
+describe("middleware — Content-Security-Policy (INFRASTRUCTURE.md 12: 'CSP uten unsafe-inline')", () => {
+  it("inneholder ALDRI 'unsafe-inline', verken på script-src eller style-src", () => {
+    const response = middleware(makeRequest("/nb-NO/me"));
+    const csp = response.headers.get("Content-Security-Policy");
+
+    expect(csp).not.toBeNull();
+    expect(csp).not.toContain("unsafe-inline");
+  });
+
+  it("setter en per-forespørsel nonce på script-src, delt med x-nonce-headeren", () => {
+    const response = middleware(makeRequest("/nb-NO/me"));
+    const csp = response.headers.get("Content-Security-Policy");
+    const nonce = response.headers.get("x-nonce");
+
+    expect(nonce).toBeTruthy();
+    expect(csp).toContain(`'nonce-${nonce}'`);
+  });
+});
+
 describe("middleware — fornyer kb_session-cookiens levetid ved bruk (SPEC-V1.md 6.1)", () => {
   function makeRequestWithSessionCookie(pathname: string, rawToken = "test-raw-session-token") {
     const request = makeRequest(pathname);

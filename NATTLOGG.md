@@ -16706,3 +16706,91 @@ signatur-observasjonen over (verifiseres mot ekte Brevo-konto, ikke noe
 respondenter;
 (b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
 et svars innhold.
+
+## Økt 77: fulgte opp Økt 76 sin anbefaling (INFRASTRUCTURE.md 2-15) —
+fant og rettet et reelt `unsafe-inline`-avvik i CSP-en
+
+Leste INFRASTRUCTURE.md seksjon 7-13 mot faktisk kode/config. Som
+forutsett i Økt 76: mesteparten beskriver et FREMTIDIG Stadium 1-oppsett
+(egen VM, pg-boss, Aiven osv.) som ikke er byttet til ennå — ingen kode
+å sjekke mot der. Det som FAKTISK er kode-nivå, uavhengig av
+driftsstadium, stemte: `/health` svarer med både databasetilkobling og
+faktisk migrasjonsversjon (8.1, `checkHealth()` leser reell
+`drizzle.__drizzle_migrations`, ikke en plassholder), migrasjoner kjøres
+KUN via et eksplisitt `npm run db:migrate`-steg, aldri automatisk ved
+oppstart (4), `.env.example` inneholder bare navn og plassholdere, ingen
+ekte hemmeligheter (9), og `DB_POOL_MAX` sin dokumenterte
+standardverdi (3) stemmer med `db/client.ts`.
+
+**Hullet**: 12 sier eksplisitt "HSTS, CSP uten `unsafe-inline`,
+`X-Content-Type-Options`, `Referrer-Policy: strict-origin-when-cross-
+origin`." Alle headerne fantes (`next.config.mjs`/`middleware.ts`), MEN
+`buildCsp()` sin `style-src`-direktiv hadde faktisk
+`'unsafe-inline'` — et EKTE, upåaktet avvik fra spec-teksten, aldri
+tidligere nevnt i NATTLOGG. Kommentaren ved siden av sa selv
+"fjernes når komponentstilene er fullt CSS-modul-basert" — sporet
+årsaken til nøyaktig ÉN fil: `src/app/[locale]/page.tsx` (den midlertidige
+Fase 1-plassholder-forsiden, se dens egen kommentar) var den ENESTE
+komponenten i hele `src/app`/`src/components` som fortsatt brukte Reacts
+inline `style`-prop, tre steder (padding/maks-bredde, font, tekstfarge).
+
+**Retting**: la til `page.module.css` (samme mønster som ALLE andre
+sider) og byttet de tre inline `style={{...}}`-blokkene til
+`className`-referanser. Fjernet deretter `'unsafe-inline'` fra
+`style-src` i `buildCsp()` — nå `"style-src 'self'"`, symmetrisk med
+`script-src` som allerede var uten den.
+
+**Verifisert LEVENDE, ikke bare i tester**: bygget (`next build`),
+startet en ekte produksjonsserver lokalt (`next start`), og hentet
+selve HTML-en og CSP-headeren for `/nb-NO` med `curl`. Bekreftet at (a)
+de nye CSS-modul-klassenavnene (`page_main__…`, `page_title__…`,
+`page_intro__…`) faktisk vises i den rendrede HTML-en, IKKE inline
+`style=`, (b) den faktiske `Content-Security-Policy`-responsheaderen nå
+er `style-src 'self'` uten `unsafe-inline` noe sted i hele strengen, og
+(c) den kompilerte CSS-filen faktisk inneholder riktig oversatte
+tokenverdier (`padding:var(--space-6)` osv.) — samme grundighetsnivå som
+DESIGN.md 9 sin egen "påstått portabilitet er ikke verifisert før den
+faktisk er forsøkt"-prinsipp.
+
+**Ny test** i `middleware.test.ts`: bekrefter direkte at
+`Content-Security-Policy`-headeren ALDRI inneholder strengen
+"unsafe-inline" for en vanlig sideforespørsel, pluss én test som
+bekrefter at per-forespørsel-noncen faktisk vises i `script-src`
+(matcher `x-nonce`-headeren) — ingen eksisterende test asserterte på
+CSP-ens faktiske innhold før dette.
+
+### Verifisert før commit
+
+- `npx tsc --noEmit`: ingen feil.
+- `npx eslint .`: ingen feil.
+- `npx vitest run` (full enhetstestpakke): 86 filer, 470 tester
+  (468 + 2 nye).
+- `npx tsx src/i18n/check-keys.ts`: OK — 533 nøkler (uendret).
+- `npx tsx src/styles/check-tokens.ts`: OK — 55 komponent-CSS-filer
+  (opp fra 54 — den nye `page.module.css`), ingen brudd.
+- `npx next build`: bygget uten feil.
+- Levende verifisering: `next start` + `curl` mot faktisk kjørende
+  produksjonsbygg, se over.
+- `npx vitest run -c vitest.integration.config.ts`: 33 filer, 342
+  tester, ALLE bestod uendret.
+
+### Neste økt
+
+INFRASTRUCTURE.md 7-13 er nå gjennomgått (sammen med 16 fra Økt 76).
+Gjenstår av samme metode: seksjon 2 (kjøretidsarkitektur), 3
+(komponentvalg), 5 (jobbkø og planlegging — sannsynligvis allerede
+dekket av tidligere jobbtabell-fiks, task #29, men ikke bekreftet med
+DENNE spesifikke linje-for-linje-metoden), 6 (e-post, delvis dekket
+denne økten via 6.4s webhook-observasjon i Økt 76), 11 (sikkerhetskopi),
+14 (hva som ryker først), 15 (åpne beslutninger). De fleste av disse er,
+som allerede fastslått, Stadium 1-beskrivelser uten tilsvarende kode å
+sjekke ennå — lavere forventet treffrate enn denne økten, men seksjon 5
+er verdt en rask bekreftelse siden jobbkø-logikken FAKTISK eksisterer
+(tick.ts), bare under et annet kjøremønster (16.3) enn det seksjon 5
+beskriver (pg-boss). Uendret: de to gjenværende GENUINE åpne
+spec-spørsmålene, pluss Brevo-webhook-signatur-observasjonen fra Økt 76
+(verifiseres mot ekte Brevo-konto):
+(a) bør `runExpireRequests()` også sende `response_request_closed` til
+respondenter;
+(b) SPEC-V1.md 18.1 vs. 16.2/FR-051 sin motsigelse om hvem som kan lese
+et svars innhold.
